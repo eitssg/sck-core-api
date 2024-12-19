@@ -1,0 +1,11 @@
+prod:
+  description: Production environment variables for the branch "prod"
+  environment: production
+
+nonprod:
+  description: Nonproduction environment variables for the branch "nonprod"
+  environment: nonproduction
+
+dev:
+  description: Development environment variables for the branch "dev"
+  environment: development

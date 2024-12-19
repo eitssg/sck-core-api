@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create Core Automation API roles
+Parameters:
+  Build:
+    Type: String
+  ClientsTableName:
+    Type: String
+    Default: core-automation-clients
+  PortfoliosTableName:
+    Type: String
+    Default: core-automation-portfolios
+  AppsTableName:
+    Type: String
+    Default: core-automation-apps
+  ZonesTableName:
+    Type: String
+    Default: core-automation-zones
+
+Resources:
+  CoreAutomationApiReadRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "CoreAutomationApiReadRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "CoreAutomationApiReadPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:ConditionCheckItem"
+                  - "dynamodb:Scan"
+                  - "dynamodb:Query"
+                  - "dynamodb:DescribeTimeToLive"
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:GetShardIterator"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:GetRecords"
+                Resource:
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ClientsTableName}"
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PortfoliosTableName}"
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AppsTableName}"
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ZonesTableName}"
+
+  CoreAutomationApiWriteRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "CoreAutomationApiWriteRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "CoreAutomationApiWritePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:UpdateTimeToLive"
+                  - "dynamodb:ConditionCheckItem"
+                  - "dynamodb:PutItem"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:Scan"
+                  - "dynamodb:Query"
+                  - "dynamodb:UpdateItem"
+                  - "dynamodb:DescribeTimeToLive"
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:GetShardIterator"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:GetRecords"
+                Resources:
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ClientsTableName}"
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PortfoliosTableName}"
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AppsTableName}"
+                  - Fn::Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ZonesTableName}"
+
+Outputs:
+  CoreAutomationApiReadRoleArn:
+    Description: "ARN of the CoreAutomationApiReadRole"
+    Value:
+      Fn::GetAtt: CoreAutomationApiReadRole.Arn
+
+  CoreAutomationApiWriteRoleArn:
+    Description: "ARN of the CoreAutomationApiWriteRole"
+    Value:
+      Fn::GetAtt: CoreAutomationApiWriteRole.Arn

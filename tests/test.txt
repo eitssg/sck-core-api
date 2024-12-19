@@ -1,0 +1,1536 @@
+/Users/yunarta/Projects/my-devops/foundation/simple-core-automation/lambdas/api/venv/bin/python /Users/yunarta/Projects/my-devops/foundation/simple-core-automation/lambdas/api/test.py
+Input is being redirected from /Users/yunarta/Projects/my-devops/foundation/simple-core-automation/lambdas/api/test.json
+{"Timestamp": "2022-09-14 04:51:44.574825", "Type": "DEBUG", "Message": "Loading enviroment configuration", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.575001", "Type": "DEBUG", "Message": "Finished loading environment configuration", "Details": {"DYNAMODB_HOST": "http://localhost:8000", "DYNAMODB_REGION": null, "EVENT_TABLE_NAME": "test-table-events", "INVOKER_LAMBDA_ARN": null, "ITEM_TABLE_NAME": "test-table-items"}, "Resource": null}
+== Recreating DynamoDB Items table ==
+Deleting items table
+Creating items table
+== Recreating DynamoDB Events table ==
+Deleting events table
+Creating events table
+
+// // == Events ==
+// Lambda payload: {"action": "event:create", "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "COMPILE_IN_PROGRESS"}}
+{"Timestamp": "2022-09-14 04:51:44.880429", "Type": "INFO", "Message": "Executing action", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "COMPILE_IN_PROGRESS"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.881122", "Type": "DEBUG", "Message": "Saving event <Event(prn=prn:port1:app1:feature-test-111:1,timestamp=2022-09-14 04:51:44.881040+00:00,item_type=build,status=COMPILE_IN_PROGRESS,message=None)>", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.884691", "Type": "INFO", "Message": "Action complete", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "COMPILE_IN_PROGRESS", "item_type": "build"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.881040+00:00", "message": null, "event_type": "STATUS", "status": "COMPILE_IN_PROGRESS", "item_type": "build"}, "code": 200, "timestamp": "2022-09-14T04:51:44.884676+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "event_type": "STATUS",
+        "item_type": "build",
+        "message": null,
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "COMPILE_IN_PROGRESS",
+        "timestamp": "2022-09-14T04:51:44.881040+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.884676+00:00"
+}
+
+// Lambda payload: {"action": "event:create", "data": {"message": "No errors", "prn": "prn:port1:app1:feature-test-111:1", "status": "COMPILE_COMPLETE"}}
+{"Timestamp": "2022-09-14 04:51:44.884938", "Type": "INFO", "Message": "Executing action", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "COMPILE_COMPLETE", "message": "No errors"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.885143", "Type": "DEBUG", "Message": "Saving event <Event(prn=prn:port1:app1:feature-test-111:1,timestamp=2022-09-14 04:51:44.885110+00:00,item_type=build,status=COMPILE_COMPLETE,message=No errors)>", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.887795", "Type": "INFO", "Message": "Action complete", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "COMPILE_COMPLETE", "message": "No errors", "item_type": "build"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.885110+00:00", "message": "No errors", "event_type": "STATUS", "status": "COMPILE_COMPLETE", "item_type": "build"}, "code": 200, "timestamp": "2022-09-14T04:51:44.887780+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "event_type": "STATUS",
+        "item_type": "build",
+        "message": "No errors",
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "COMPILE_COMPLETE",
+        "timestamp": "2022-09-14T04:51:44.885110+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.887780+00:00"
+}
+
+// Lambda payload: {"action": "event:create", "data": {"message": "Triggered by user", "prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_IN_PROGRESS"}}
+{"Timestamp": "2022-09-14 04:51:44.887923", "Type": "INFO", "Message": "Executing action", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_IN_PROGRESS", "message": "Triggered by user"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.888125", "Type": "DEBUG", "Message": "Saving event <Event(prn=prn:port1:app1:feature-test-111:1,timestamp=2022-09-14 04:51:44.888092+00:00,item_type=build,status=DEPLOY_IN_PROGRESS,message=Triggered by user)>", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.890763", "Type": "INFO", "Message": "Action complete", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_IN_PROGRESS", "message": "Triggered by user", "item_type": "build"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.888092+00:00", "message": "Triggered by user", "event_type": "STATUS", "status": "DEPLOY_IN_PROGRESS", "item_type": "build"}, "code": 200, "timestamp": "2022-09-14T04:51:44.890748+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "event_type": "STATUS",
+        "item_type": "build",
+        "message": "Triggered by user",
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "DEPLOY_IN_PROGRESS",
+        "timestamp": "2022-09-14T04:51:44.888092+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.890748+00:00"
+}
+
+// Lambda payload: {"action": "event:create", "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}}
+{"Timestamp": "2022-09-14 04:51:44.890894", "Type": "INFO", "Message": "Executing action", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.891086", "Type": "DEBUG", "Message": "Saving event <Event(prn=prn:port1:app1:feature-test-111:1,timestamp=2022-09-14 04:51:44.891055+00:00,item_type=build,status=DEPLOY_COMPLETE,message=None)>", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.894938", "Type": "INFO", "Message": "Action complete", "Details": {"action": "event:create", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE", "item_type": "build"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.891055+00:00", "message": null, "event_type": "STATUS", "status": "DEPLOY_COMPLETE", "item_type": "build"}, "code": 200, "timestamp": "2022-09-14T04:51:44.894923+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "event_type": "STATUS",
+        "item_type": "build",
+        "message": null,
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "DEPLOY_COMPLETE",
+        "timestamp": "2022-09-14T04:51:44.891055+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.894923+00:00"
+}
+
+// Lambda payload: {"action": "event:list", "data": {"prn": "prn:port1:app1:feature-test-111:1"}}
+{"Timestamp": "2022-09-14 04:51:44.895071", "Type": "INFO", "Message": "Executing action", "Details": {"action": "event:list", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.895174", "Type": "DEBUG", "Message": "Retrieving events for prn 'prn:port1:app1:feature-test-111:1'", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.898169", "Type": "INFO", "Message": "Action complete", "Details": {"action": "event:list", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}, "result": {"status": "ok", "data": [{"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.891055+00:00", "message": null, "event_type": "STATUS", "status": "DEPLOY_COMPLETE", "item_type": "build"}, {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.888092+00:00", "message": "Triggered by user", "event_type": "STATUS", "status": "DEPLOY_IN_PROGRESS", "item_type": "build"}, {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.885110+00:00", "message": "No errors", "event_type": "STATUS", "status": "COMPILE_COMPLETE", "item_type": "build"}, {"prn": "prn:port1:app1:feature-test-111:1", "timestamp": "2022-09-14T04:51:44.881040+00:00", "message": null, "event_type": "STATUS", "status": "COMPILE_IN_PROGRESS", "item_type": "build"}], "code": 200, "timestamp": "2022-09-14T04:51:44.898155+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": [
+        {
+            "event_type": "STATUS",
+            "item_type": "build",
+            "message": null,
+            "prn": "prn:port1:app1:feature-test-111:1",
+            "status": "DEPLOY_COMPLETE",
+            "timestamp": "2022-09-14T04:51:44.891055+00:00"
+        },
+        {
+            "event_type": "STATUS",
+            "item_type": "build",
+            "message": "Triggered by user",
+            "prn": "prn:port1:app1:feature-test-111:1",
+            "status": "DEPLOY_IN_PROGRESS",
+            "timestamp": "2022-09-14T04:51:44.888092+00:00"
+        },
+        {
+            "event_type": "STATUS",
+            "item_type": "build",
+            "message": "No errors",
+            "prn": "prn:port1:app1:feature-test-111:1",
+            "status": "COMPILE_COMPLETE",
+            "timestamp": "2022-09-14T04:51:44.885110+00:00"
+        },
+        {
+            "event_type": "STATUS",
+            "item_type": "build",
+            "message": null,
+            "prn": "prn:port1:app1:feature-test-111:1",
+            "status": "COMPILE_IN_PROGRESS",
+            "timestamp": "2022-09-14T04:51:44.881040+00:00"
+        }
+    ],
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.898155+00:00"
+}
+
+
+// == Portfolios ==
+// Lambda payload: {"action": "portfolio:create", "data": {"contact_email": "port1@company.com", "name": "port1"}}
+{"Timestamp": "2022-09-14 04:51:44.898349", "Type": "INFO", "Message": "Executing action", "Details": {"action": "portfolio:create", "auth": {}, "data": {"name": "port1", "contact_email": "port1@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.898386", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port1@company.com", "name": "port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.898518", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port1@company.com", "item_type": "portfolio", "name": "port1", "prn": "prn:port1"}, "Resource": null}
+prn
+{"Timestamp": "2022-09-14 04:51:44.898870", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port1@company.com", "created_at": "2022-09-14T04:51:44.898803+00:00", "item_type": "portfolio", "name": "port1", "prn": "prn:port1", "updated_at": "2022-09-14T04:51:44.898810+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.902118", "Type": "INFO", "Message": "Action complete", "Details": {"action": "portfolio:create", "auth": {}, "data": {"name": "port1", "contact_email": "port1@company.com", "item_type": "portfolio", "prn": "prn:port1"}, "result": {"status": "ok", "data": {"prn": "prn:port1", "created_at": "2022-09-14T04:51:44.898803+00:00", "contact_email": "port1@company.com", "updated_at": "2022-09-14T04:51:44.898810+00:00", "item_type": "portfolio", "name": "port1"}, "code": 201, "timestamp": "2022-09-14T04:51:44.902104+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port1@company.com",
+        "created_at": "2022-09-14T04:51:44.898803+00:00",
+        "item_type": "portfolio",
+        "name": "port1",
+        "prn": "prn:port1",
+        "updated_at": "2022-09-14T04:51:44.898810+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.902104+00:00"
+}
+
+// Lambda payload: {"action": "portfolio:create", "data": {"contact_email": "port2@company.com", "name": "port2"}}
+{"Timestamp": "2022-09-14 04:51:44.902252", "Type": "INFO", "Message": "Executing action", "Details": {"action": "portfolio:create", "auth": {}, "data": {"name": "port2", "contact_email": "port2@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.902289", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port2@company.com", "name": "port2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.902403", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port2@company.com", "item_type": "portfolio", "name": "port2", "prn": "prn:port2"}, "Resource": null}
+prn
+{"Timestamp": "2022-09-14 04:51:44.902581", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port2@company.com", "created_at": "2022-09-14T04:51:44.902521+00:00", "item_type": "portfolio", "name": "port2", "prn": "prn:port2", "updated_at": "2022-09-14T04:51:44.902529+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.905374", "Type": "INFO", "Message": "Action complete", "Details": {"action": "portfolio:create", "auth": {}, "data": {"name": "port2", "contact_email": "port2@company.com", "item_type": "portfolio", "prn": "prn:port2"}, "result": {"status": "ok", "data": {"prn": "prn:port2", "created_at": "2022-09-14T04:51:44.902521+00:00", "contact_email": "port2@company.com", "updated_at": "2022-09-14T04:51:44.902529+00:00", "item_type": "portfolio", "name": "port2"}, "code": 201, "timestamp": "2022-09-14T04:51:44.905361+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port2@company.com",
+        "created_at": "2022-09-14T04:51:44.902521+00:00",
+        "item_type": "portfolio",
+        "name": "port2",
+        "prn": "prn:port2",
+        "updated_at": "2022-09-14T04:51:44.902529+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.905361+00:00"
+}
+
+// Lambda payload: {"action": "portfolio:create", "data": {"contact_email": "port3@company.com", "name": "port3"}}
+{"Timestamp": "2022-09-14 04:51:44.905528", "Type": "INFO", "Message": "Executing action", "Details": {"action": "portfolio:create", "auth": {}, "data": {"name": "port3", "contact_email": "port3@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.905575", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port3@company.com", "name": "port3"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.905692", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port3@company.com", "item_type": "portfolio", "name": "port3", "prn": "prn:port3"}, "Resource": null}
+prn
+{"Timestamp": "2022-09-14 04:51:44.905874", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port3@company.com", "created_at": "2022-09-14T04:51:44.905812+00:00", "item_type": "portfolio", "name": "port3", "prn": "prn:port3", "updated_at": "2022-09-14T04:51:44.905819+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.909246", "Type": "INFO", "Message": "Action complete", "Details": {"action": "portfolio:create", "auth": {}, "data": {"name": "port3", "contact_email": "port3@company.com", "item_type": "portfolio", "prn": "prn:port3"}, "result": {"status": "ok", "data": {"prn": "prn:port3", "created_at": "2022-09-14T04:51:44.905812+00:00", "contact_email": "port3@company.com", "updated_at": "2022-09-14T04:51:44.905819+00:00", "item_type": "portfolio", "name": "port3"}, "code": 201, "timestamp": "2022-09-14T04:51:44.909231+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port3@company.com",
+        "created_at": "2022-09-14T04:51:44.905812+00:00",
+        "item_type": "portfolio",
+        "name": "port3",
+        "prn": "prn:port3",
+        "updated_at": "2022-09-14T04:51:44.905819+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.909231+00:00"
+}
+
+// Lambda payload: {"action": "portfolio:get", "data": {"prn": "prn:port1"}}
+{"Timestamp": "2022-09-14 04:51:44.909380", "Type": "INFO", "Message": "Executing action", "Details": {"action": "portfolio:get", "auth": {}, "data": {"prn": "prn:port1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.909416", "Type": "DEBUG", "Message": "Received get request", "Details": {"prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.910898", "Type": "DEBUG", "Message": "Loaded get request", "Details": {"prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.910961", "Type": "DEBUG", "Message": "Retrieving item prn:port1", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.913073", "Type": "INFO", "Message": "Action complete", "Details": {"action": "portfolio:get", "auth": {}, "data": {"prn": "prn:port1"}, "result": {"status": "ok", "data": {"prn": "prn:port1", "created_at": "2022-09-14T04:51:44.898803+00:00", "contact_email": "port1@company.com", "updated_at": "2022-09-14T04:51:44.898810+00:00", "item_type": "portfolio", "name": "port1"}, "code": 200, "timestamp": "2022-09-14T04:51:44.913061+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "contact_email": "port1@company.com",
+        "created_at": "2022-09-14T04:51:44.898803+00:00",
+        "item_type": "portfolio",
+        "name": "port1",
+        "prn": "prn:port1",
+        "updated_at": "2022-09-14T04:51:44.898810+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.913061+00:00"
+}
+
+// Lambda payload: {"action": "portfolio:update", "data": {"contact_email": "port1@updated-company.com", "prn": "prn:port1"}}
+{"Timestamp": "2022-09-14 04:51:44.913198", "Type": "INFO", "Message": "Executing action", "Details": {"action": "portfolio:update", "auth": {}, "data": {"prn": "prn:port1", "contact_email": "port1@updated-company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.913234", "Type": "DEBUG", "Message": "Received update request", "Details": {"contact_email": "port1@updated-company.com", "prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.913332", "Type": "DEBUG", "Message": "Loaded update request", "Details": {"contact_email": "port1@updated-company.com", "prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.918967", "Type": "INFO", "Message": "Action complete", "Details": {"action": "portfolio:update", "auth": {}, "data": {"prn": "prn:port1", "contact_email": "port1@updated-company.com"}, "result": {"status": "ok", "data": {"prn": "prn:port1", "created_at": "2022-09-14T04:51:44.898803+00:00", "contact_email": "port1@updated-company.com", "updated_at": "2022-09-14T04:51:44.914995+00:00", "item_type": "portfolio", "name": "port1"}, "code": 200, "timestamp": "2022-09-14T04:51:44.918953+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "contact_email": "port1@updated-company.com",
+        "created_at": "2022-09-14T04:51:44.898803+00:00",
+        "item_type": "portfolio",
+        "name": "port1",
+        "prn": "prn:port1",
+        "updated_at": "2022-09-14T04:51:44.914995+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.918953+00:00"
+}
+
+// Lambda payload: {"action": "portfolio:list"}
+{"Timestamp": "2022-09-14 04:51:44.919098", "Type": "INFO", "Message": "Executing action", "Details": {"action": "portfolio:list", "auth": {}, "data": {}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.919135", "Type": "DEBUG", "Message": "Received list request", "Details": {}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.919236", "Type": "DEBUG", "Message": "Loaded list request", "Details": {"data_paginator": null, "earliest_time": null, "latest_time": null, "limit": 100, "parent_prn": "prn", "sort": "descending"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.919271", "Type": "DEBUG", "Message": "Retrieving items by parent 'prn'", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.921828", "Type": "INFO", "Message": "Action complete", "Details": {"action": "portfolio:list", "auth": {}, "data": {"parent_prn": "prn"}, "result": {"status": "ok", "data": [{"prn": "prn:port3", "created_at": "2022-09-14T04:51:44.905812+00:00", "contact_email": "port3@company.com", "updated_at": "2022-09-14T04:51:44.905819+00:00", "item_type": "portfolio", "name": "port3"}, {"prn": "prn:port2", "created_at": "2022-09-14T04:51:44.902521+00:00", "contact_email": "port2@company.com", "updated_at": "2022-09-14T04:51:44.902529+00:00", "item_type": "portfolio", "name": "port2"}, {"prn": "prn:port1", "created_at": "2022-09-14T04:51:44.898803+00:00", "contact_email": "port1@updated-company.com", "updated_at": "2022-09-14T04:51:44.914995+00:00", "item_type": "portfolio", "name": "port1"}], "code": 200, "timestamp": "2022-09-14T04:51:44.921813+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": [
+        {
+            "contact_email": "port3@company.com",
+            "created_at": "2022-09-14T04:51:44.905812+00:00",
+            "item_type": "portfolio",
+            "name": "port3",
+            "prn": "prn:port3",
+            "updated_at": "2022-09-14T04:51:44.905819+00:00"
+        },
+        {
+            "contact_email": "port2@company.com",
+            "created_at": "2022-09-14T04:51:44.902521+00:00",
+            "item_type": "portfolio",
+            "name": "port2",
+            "prn": "prn:port2",
+            "updated_at": "2022-09-14T04:51:44.902529+00:00"
+        },
+        {
+            "contact_email": "port1@updated-company.com",
+            "created_at": "2022-09-14T04:51:44.898803+00:00",
+            "item_type": "portfolio",
+            "name": "port1",
+            "prn": "prn:port1",
+            "updated_at": "2022-09-14T04:51:44.914995+00:00"
+        }
+    ],
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.921813+00:00"
+}
+
+
+// == Apps ==
+// Lambda payload: {"action": "app:create", "data": {"contact_email": "port1-app1@company.com", "name": "app1", "portfolio_prn": "prn:port1"}}
+{"Timestamp": "2022-09-14 04:51:44.921995", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port1", "name": "app1", "contact_email": "port1-app1@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.922034", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port1-app1@company.com", "name": "app1", "portfolio_prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.922169", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port1-app1@company.com", "item_type": "app", "name": "app1", "portfolio_prn": "prn:port1", "prn": "prn:port1:app1"}, "Resource": null}
+prn:port1
+{"Timestamp": "2022-09-14 04:51:44.922647", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port1-app1@company.com", "created_at": "2022-09-14T04:51:44.922502+00:00", "item_type": "app", "name": "app1", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1", "updated_at": "2022-09-14T04:51:44.922510+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.925745", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port1", "name": "app1", "contact_email": "port1-app1@company.com", "item_type": "app", "prn": "prn:port1:app1"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1", "created_at": "2022-09-14T04:51:44.922502+00:00", "contact_email": "port1-app1@company.com", "updated_at": "2022-09-14T04:51:44.922510+00:00", "portfolio": {"prn": "prn:port1"}, "item_type": "app", "name": "app1"}, "code": 201, "timestamp": "2022-09-14T04:51:44.925730+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port1-app1@company.com",
+        "created_at": "2022-09-14T04:51:44.922502+00:00",
+        "item_type": "app",
+        "name": "app1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1",
+        "updated_at": "2022-09-14T04:51:44.922510+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.925730+00:00"
+}
+
+// Lambda payload: {"action": "app:create", "data": {"contact_email": "port1-app2@company.com", "name": "app2", "portfolio_prn": "prn:port1"}}
+{"Timestamp": "2022-09-14 04:51:44.925937", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port1", "name": "app2", "contact_email": "port1-app2@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.925983", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port1-app2@company.com", "name": "app2", "portfolio_prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.926114", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port1-app2@company.com", "item_type": "app", "name": "app2", "portfolio_prn": "prn:port1", "prn": "prn:port1:app2"}, "Resource": null}
+prn:port1
+{"Timestamp": "2022-09-14 04:51:44.926334", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port1-app2@company.com", "created_at": "2022-09-14T04:51:44.926237+00:00", "item_type": "app", "name": "app2", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app2", "updated_at": "2022-09-14T04:51:44.926245+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.929617", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port1", "name": "app2", "contact_email": "port1-app2@company.com", "item_type": "app", "prn": "prn:port1:app2"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app2", "created_at": "2022-09-14T04:51:44.926237+00:00", "contact_email": "port1-app2@company.com", "updated_at": "2022-09-14T04:51:44.926245+00:00", "portfolio": {"prn": "prn:port1"}, "item_type": "app", "name": "app2"}, "code": 201, "timestamp": "2022-09-14T04:51:44.929603+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port1-app2@company.com",
+        "created_at": "2022-09-14T04:51:44.926237+00:00",
+        "item_type": "app",
+        "name": "app2",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app2",
+        "updated_at": "2022-09-14T04:51:44.926245+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.929603+00:00"
+}
+
+// Lambda payload: {"action": "app:create", "data": {"contact_email": "port1-app3@company.com", "name": "app3", "portfolio_prn": "prn:port2"}}
+{"Timestamp": "2022-09-14 04:51:44.929752", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port2", "name": "app3", "contact_email": "port1-app3@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.929787", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port1-app3@company.com", "name": "app3", "portfolio_prn": "prn:port2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.929979", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port1-app3@company.com", "item_type": "app", "name": "app3", "portfolio_prn": "prn:port2", "prn": "prn:port2:app3"}, "Resource": null}
+prn:port2
+{"Timestamp": "2022-09-14 04:51:44.930183", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port1-app3@company.com", "created_at": "2022-09-14T04:51:44.930095+00:00", "item_type": "app", "name": "app3", "portfolio": {"prn": "prn:port2"}, "prn": "prn:port2:app3", "updated_at": "2022-09-14T04:51:44.930102+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.933934", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port2", "name": "app3", "contact_email": "port1-app3@company.com", "item_type": "app", "prn": "prn:port2:app3"}, "result": {"status": "ok", "data": {"prn": "prn:port2:app3", "created_at": "2022-09-14T04:51:44.930095+00:00", "contact_email": "port1-app3@company.com", "updated_at": "2022-09-14T04:51:44.930102+00:00", "portfolio": {"prn": "prn:port2"}, "item_type": "app", "name": "app3"}, "code": 201, "timestamp": "2022-09-14T04:51:44.933920+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port1-app3@company.com",
+        "created_at": "2022-09-14T04:51:44.930095+00:00",
+        "item_type": "app",
+        "name": "app3",
+        "portfolio": {
+            "prn": "prn:port2"
+        },
+        "prn": "prn:port2:app3",
+        "updated_at": "2022-09-14T04:51:44.930102+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.933920+00:00"
+}
+
+// Lambda payload: {"action": "app:create", "data": {"contact_email": "port1-app4@company.com", "name": "app4", "portfolio_prn": "prn:port2"}}
+{"Timestamp": "2022-09-14 04:51:44.934069", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port2", "name": "app4", "contact_email": "port1-app4@company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.934105", "Type": "DEBUG", "Message": "Received create request", "Details": {"contact_email": "port1-app4@company.com", "name": "app4", "portfolio_prn": "prn:port2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.934223", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"contact_email": "port1-app4@company.com", "item_type": "app", "name": "app4", "portfolio_prn": "prn:port2", "prn": "prn:port2:app4"}, "Resource": null}
+prn:port2
+{"Timestamp": "2022-09-14 04:51:44.934429", "Type": "DEBUG", "Message": "Saving item", "Details": {"contact_email": "port1-app4@company.com", "created_at": "2022-09-14T04:51:44.934341+00:00", "item_type": "app", "name": "app4", "portfolio": {"prn": "prn:port2"}, "prn": "prn:port2:app4", "updated_at": "2022-09-14T04:51:44.934348+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.937463", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:create", "auth": {}, "data": {"portfolio_prn": "prn:port2", "name": "app4", "contact_email": "port1-app4@company.com", "item_type": "app", "prn": "prn:port2:app4"}, "result": {"status": "ok", "data": {"prn": "prn:port2:app4", "created_at": "2022-09-14T04:51:44.934341+00:00", "contact_email": "port1-app4@company.com", "updated_at": "2022-09-14T04:51:44.934348+00:00", "portfolio": {"prn": "prn:port2"}, "item_type": "app", "name": "app4"}, "code": 201, "timestamp": "2022-09-14T04:51:44.937448+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "contact_email": "port1-app4@company.com",
+        "created_at": "2022-09-14T04:51:44.934341+00:00",
+        "item_type": "app",
+        "name": "app4",
+        "portfolio": {
+            "prn": "prn:port2"
+        },
+        "prn": "prn:port2:app4",
+        "updated_at": "2022-09-14T04:51:44.934348+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.937448+00:00"
+}
+
+// Lambda payload: {"action": "app:get", "data": {"prn": "prn:port1:app1"}}
+{"Timestamp": "2022-09-14 04:51:44.937594", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:get", "auth": {}, "data": {"prn": "prn:port1:app1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.937629", "Type": "DEBUG", "Message": "Received get request", "Details": {"prn": "prn:port1:app1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.937704", "Type": "DEBUG", "Message": "Loaded get request", "Details": {"prn": "prn:port1:app1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.937734", "Type": "DEBUG", "Message": "Retrieving item prn:port1:app1", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.939923", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:get", "auth": {}, "data": {"prn": "prn:port1:app1"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1", "created_at": "2022-09-14T04:51:44.922502+00:00", "contact_email": "port1-app1@company.com", "updated_at": "2022-09-14T04:51:44.922510+00:00", "portfolio": {"prn": "prn:port1"}, "item_type": "app", "name": "app1"}, "code": 200, "timestamp": "2022-09-14T04:51:44.939909+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "contact_email": "port1-app1@company.com",
+        "created_at": "2022-09-14T04:51:44.922502+00:00",
+        "item_type": "app",
+        "name": "app1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1",
+        "updated_at": "2022-09-14T04:51:44.922510+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.939909+00:00"
+}
+
+// Lambda payload: {"action": "app:update", "data": {"contact_email": "port1-app1@updated-company.com", "prn": "prn:port1:app1"}}
+{"Timestamp": "2022-09-14 04:51:44.940088", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:update", "auth": {}, "data": {"prn": "prn:port1:app1", "contact_email": "port1-app1@updated-company.com"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.940144", "Type": "DEBUG", "Message": "Received update request", "Details": {"contact_email": "port1-app1@updated-company.com", "prn": "prn:port1:app1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.940235", "Type": "DEBUG", "Message": "Loaded update request", "Details": {"contact_email": "port1-app1@updated-company.com", "prn": "prn:port1:app1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.945249", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:update", "auth": {}, "data": {"prn": "prn:port1:app1", "contact_email": "port1-app1@updated-company.com"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1", "created_at": "2022-09-14T04:51:44.922502+00:00", "contact_email": "port1-app1@updated-company.com", "updated_at": "2022-09-14T04:51:44.941939+00:00", "portfolio": {"prn": "prn:port1"}, "item_type": "app", "name": "app1"}, "code": 200, "timestamp": "2022-09-14T04:51:44.945232+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "contact_email": "port1-app1@updated-company.com",
+        "created_at": "2022-09-14T04:51:44.922502+00:00",
+        "item_type": "app",
+        "name": "app1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1",
+        "updated_at": "2022-09-14T04:51:44.941939+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.945232+00:00"
+}
+
+// Lambda payload: {"action": "app:list", "data": {"portfolio_prn": "prn:port1"}}
+{"Timestamp": "2022-09-14 04:51:44.945391", "Type": "INFO", "Message": "Executing action", "Details": {"action": "app:list", "auth": {}, "data": {"portfolio_prn": "prn:port1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.945428", "Type": "DEBUG", "Message": "Received list request", "Details": {"portfolio_prn": "prn:port1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.945520", "Type": "DEBUG", "Message": "Loaded list request", "Details": {"data_paginator": null, "earliest_time": null, "latest_time": null, "limit": 100, "parent_prn": "prn:port1", "sort": "descending"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.945561", "Type": "DEBUG", "Message": "Retrieving items by parent 'prn:port1'", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.947725", "Type": "INFO", "Message": "Action complete", "Details": {"action": "app:list", "auth": {}, "data": {"portfolio_prn": "prn:port1"}, "result": {"status": "ok", "data": [{"prn": "prn:port1:app2", "created_at": "2022-09-14T04:51:44.926237+00:00", "contact_email": "port1-app2@company.com", "updated_at": "2022-09-14T04:51:44.926245+00:00", "portfolio": {"prn": "prn:port1"}, "item_type": "app", "name": "app2"}, {"prn": "prn:port1:app1", "created_at": "2022-09-14T04:51:44.922502+00:00", "contact_email": "port1-app1@updated-company.com", "updated_at": "2022-09-14T04:51:44.941939+00:00", "portfolio": {"prn": "prn:port1"}, "item_type": "app", "name": "app1"}], "code": 200, "timestamp": "2022-09-14T04:51:44.947711+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": [
+        {
+            "contact_email": "port1-app2@company.com",
+            "created_at": "2022-09-14T04:51:44.926237+00:00",
+            "item_type": "app",
+            "name": "app2",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app2",
+            "updated_at": "2022-09-14T04:51:44.926245+00:00"
+        },
+        {
+            "contact_email": "port1-app1@updated-company.com",
+            "created_at": "2022-09-14T04:51:44.922502+00:00",
+            "item_type": "app",
+            "name": "app1",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1",
+            "updated_at": "2022-09-14T04:51:44.941939+00:00"
+        }
+    ],
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.947711+00:00"
+}
+
+
+// == Branches ==
+// Lambda payload: {"action": "branch:create", "data": {"app_prn": "prn:port1:app1", "name": "feature/TEST-111", "released_build_prn": "prn:port1:app1:feature-test-111:1"}}
+{"Timestamp": "2022-09-14 04:51:44.947887", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app1", "name": "feature/TEST-111", "released_build_prn": "prn:port1:app1:feature-test-111:1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.947924", "Type": "DEBUG", "Message": "Received create request", "Details": {"app_prn": "prn:port1:app1", "name": "feature/TEST-111", "released_build_prn": "prn:port1:app1:feature-test-111:1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.948427", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"app_prn": "prn:port1:app1", "item_type": "branch", "name": "feature/TEST-111", "prn": "prn:port1:app1:feature-test-111", "released_build_prn": "prn:port1:app1:feature-test-111:1", "short_name": "feature-test-111"}, "Resource": null}
+prn:port1:app1
+{"Timestamp": "2022-09-14 04:51:44.948914", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "created_at": "2022-09-14T04:51:44.948788+00:00", "item_type": "branch", "name": "feature/TEST-111", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111", "released_build": {"prn": "prn:port1:app1:feature-test-111:1"}, "short_name": "feature-test-111", "updated_at": "2022-09-14T04:51:44.948796+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.952378", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app1", "name": "feature/TEST-111", "released_build_prn": "prn:port1:app1:feature-test-111:1", "item_type": "branch", "prn": "prn:port1:app1:feature-test-111", "short_name": "feature-test-111"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111", "created_at": "2022-09-14T04:51:44.948788+00:00", "short_name": "feature-test-111", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.948796+00:00", "released_build": {"prn": "prn:port1:app1:feature-test-111:1"}, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-111"}, "code": 201, "timestamp": "2022-09-14T04:51:44.952364+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.948788+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-111",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111",
+        "released_build": {
+            "prn": "prn:port1:app1:feature-test-111:1"
+        },
+        "short_name": "feature-test-111",
+        "updated_at": "2022-09-14T04:51:44.948796+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.952364+00:00"
+}
+
+// Lambda payload: {"action": "branch:create", "data": {"app_prn": "prn:port1:app1", "name": "feature/TEST-222"}}
+{"Timestamp": "2022-09-14 04:51:44.952532", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app1", "name": "feature/TEST-222"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.952596", "Type": "DEBUG", "Message": "Received create request", "Details": {"app_prn": "prn:port1:app1", "name": "feature/TEST-222"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.952845", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"app_prn": "prn:port1:app1", "item_type": "branch", "name": "feature/TEST-222", "prn": "prn:port1:app1:feature-test-222", "short_name": "feature-test-222"}, "Resource": null}
+prn:port1:app1
+{"Timestamp": "2022-09-14 04:51:44.953101", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "created_at": "2022-09-14T04:51:44.952982+00:00", "item_type": "branch", "name": "feature/TEST-222", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-222", "released_build": null, "short_name": "feature-test-222", "updated_at": "2022-09-14T04:51:44.952991+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.956406", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app1", "name": "feature/TEST-222", "item_type": "branch", "prn": "prn:port1:app1:feature-test-222", "short_name": "feature-test-222"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-222", "created_at": "2022-09-14T04:51:44.952982+00:00", "short_name": "feature-test-222", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.952991+00:00", "released_build": null, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-222"}, "code": 201, "timestamp": "2022-09-14T04:51:44.956391+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.952982+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-222",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-222",
+        "released_build": null,
+        "short_name": "feature-test-222",
+        "updated_at": "2022-09-14T04:51:44.952991+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.956391+00:00"
+}
+
+// Lambda payload: {"action": "branch:create", "data": {"app_prn": "prn:port1:app2", "name": "feature/TEST-333"}}
+{"Timestamp": "2022-09-14 04:51:44.956553", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app2", "name": "feature/TEST-333"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.956588", "Type": "DEBUG", "Message": "Received create request", "Details": {"app_prn": "prn:port1:app2", "name": "feature/TEST-333"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.956731", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"app_prn": "prn:port1:app2", "item_type": "branch", "name": "feature/TEST-333", "prn": "prn:port1:app2:feature-test-333", "short_name": "feature-test-333"}, "Resource": null}
+prn:port1:app2
+{"Timestamp": "2022-09-14 04:51:44.956951", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app2"}, "created_at": "2022-09-14T04:51:44.956839+00:00", "item_type": "branch", "name": "feature/TEST-333", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app2:feature-test-333", "released_build": null, "short_name": "feature-test-333", "updated_at": "2022-09-14T04:51:44.956848+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.960011", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app2", "name": "feature/TEST-333", "item_type": "branch", "prn": "prn:port1:app2:feature-test-333", "short_name": "feature-test-333"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app2:feature-test-333", "created_at": "2022-09-14T04:51:44.956839+00:00", "short_name": "feature-test-333", "app": {"prn": "prn:port1:app2"}, "updated_at": "2022-09-14T04:51:44.956848+00:00", "released_build": null, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-333"}, "code": 201, "timestamp": "2022-09-14T04:51:44.959995+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app2"
+        },
+        "created_at": "2022-09-14T04:51:44.956839+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-333",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app2:feature-test-333",
+        "released_build": null,
+        "short_name": "feature-test-333",
+        "updated_at": "2022-09-14T04:51:44.956848+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.959995+00:00"
+}
+
+// Lambda payload: {"action": "branch:create", "data": {"app_prn": "prn:port1:app2", "name": "feature/TEST-444"}}
+{"Timestamp": "2022-09-14 04:51:44.960158", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app2", "name": "feature/TEST-444"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.960194", "Type": "DEBUG", "Message": "Received create request", "Details": {"app_prn": "prn:port1:app2", "name": "feature/TEST-444"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.960315", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"app_prn": "prn:port1:app2", "item_type": "branch", "name": "feature/TEST-444", "prn": "prn:port1:app2:feature-test-444", "short_name": "feature-test-444"}, "Resource": null}
+prn:port1:app2
+{"Timestamp": "2022-09-14 04:51:44.960539", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app2"}, "created_at": "2022-09-14T04:51:44.960426+00:00", "item_type": "branch", "name": "feature/TEST-444", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app2:feature-test-444", "released_build": null, "short_name": "feature-test-444", "updated_at": "2022-09-14T04:51:44.960435+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.963757", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port1:app2", "name": "feature/TEST-444", "item_type": "branch", "prn": "prn:port1:app2:feature-test-444", "short_name": "feature-test-444"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app2:feature-test-444", "created_at": "2022-09-14T04:51:44.960426+00:00", "short_name": "feature-test-444", "app": {"prn": "prn:port1:app2"}, "updated_at": "2022-09-14T04:51:44.960435+00:00", "released_build": null, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-444"}, "code": 201, "timestamp": "2022-09-14T04:51:44.963744+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app2"
+        },
+        "created_at": "2022-09-14T04:51:44.960426+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-444",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app2:feature-test-444",
+        "released_build": null,
+        "short_name": "feature-test-444",
+        "updated_at": "2022-09-14T04:51:44.960435+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.963744+00:00"
+}
+
+// Lambda payload: {"action": "branch:create", "data": {"app_prn": "prn:port2:app1", "name": "feature/TEST-555"}}
+{"Timestamp": "2022-09-14 04:51:44.963906", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port2:app1", "name": "feature/TEST-555"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.963945", "Type": "DEBUG", "Message": "Received create request", "Details": {"app_prn": "prn:port2:app1", "name": "feature/TEST-555"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.964067", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"app_prn": "prn:port2:app1", "item_type": "branch", "name": "feature/TEST-555", "prn": "prn:port2:app1:feature-test-555", "short_name": "feature-test-555"}, "Resource": null}
+prn:port2:app1
+{"Timestamp": "2022-09-14 04:51:44.964290", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port2:app1"}, "created_at": "2022-09-14T04:51:44.964178+00:00", "item_type": "branch", "name": "feature/TEST-555", "portfolio": {"prn": "prn:port2"}, "prn": "prn:port2:app1:feature-test-555", "released_build": null, "short_name": "feature-test-555", "updated_at": "2022-09-14T04:51:44.964187+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.967202", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port2:app1", "name": "feature/TEST-555", "item_type": "branch", "prn": "prn:port2:app1:feature-test-555", "short_name": "feature-test-555"}, "result": {"status": "ok", "data": {"prn": "prn:port2:app1:feature-test-555", "created_at": "2022-09-14T04:51:44.964178+00:00", "short_name": "feature-test-555", "app": {"prn": "prn:port2:app1"}, "updated_at": "2022-09-14T04:51:44.964187+00:00", "released_build": null, "portfolio": {"prn": "prn:port2"}, "item_type": "branch", "name": "feature/TEST-555"}, "code": 201, "timestamp": "2022-09-14T04:51:44.967187+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port2:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.964178+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-555",
+        "portfolio": {
+            "prn": "prn:port2"
+        },
+        "prn": "prn:port2:app1:feature-test-555",
+        "released_build": null,
+        "short_name": "feature-test-555",
+        "updated_at": "2022-09-14T04:51:44.964187+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.967187+00:00"
+}
+
+// Lambda payload: {"action": "branch:create", "data": {"app_prn": "prn:port2:app1", "name": "feature/TEST-666"}}
+{"Timestamp": "2022-09-14 04:51:44.967345", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port2:app1", "name": "feature/TEST-666"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.967381", "Type": "DEBUG", "Message": "Received create request", "Details": {"app_prn": "prn:port2:app1", "name": "feature/TEST-666"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.967503", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"app_prn": "prn:port2:app1", "item_type": "branch", "name": "feature/TEST-666", "prn": "prn:port2:app1:feature-test-666", "short_name": "feature-test-666"}, "Resource": null}
+prn:port2:app1
+{"Timestamp": "2022-09-14 04:51:44.967727", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port2:app1"}, "created_at": "2022-09-14T04:51:44.967615+00:00", "item_type": "branch", "name": "feature/TEST-666", "portfolio": {"prn": "prn:port2"}, "prn": "prn:port2:app1:feature-test-666", "released_build": null, "short_name": "feature-test-666", "updated_at": "2022-09-14T04:51:44.967624+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.971177", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:create", "auth": {}, "data": {"app_prn": "prn:port2:app1", "name": "feature/TEST-666", "item_type": "branch", "prn": "prn:port2:app1:feature-test-666", "short_name": "feature-test-666"}, "result": {"status": "ok", "data": {"prn": "prn:port2:app1:feature-test-666", "created_at": "2022-09-14T04:51:44.967615+00:00", "short_name": "feature-test-666", "app": {"prn": "prn:port2:app1"}, "updated_at": "2022-09-14T04:51:44.967624+00:00", "released_build": null, "portfolio": {"prn": "prn:port2"}, "item_type": "branch", "name": "feature/TEST-666"}, "code": 201, "timestamp": "2022-09-14T04:51:44.971163+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port2:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.967615+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-666",
+        "portfolio": {
+            "prn": "prn:port2"
+        },
+        "prn": "prn:port2:app1:feature-test-666",
+        "released_build": null,
+        "short_name": "feature-test-666",
+        "updated_at": "2022-09-14T04:51:44.967624+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.971163+00:00"
+}
+
+// Lambda payload: {"action": "branch:update", "data": {"prn": "prn:port1:app1:feature-test-111", "released_build_prn": "prn:port1:app1:feature-test-111:2"}}
+{"Timestamp": "2022-09-14 04:51:44.971318", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:update", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111", "released_build_prn": "prn:port1:app1:feature-test-111:2"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.971354", "Type": "DEBUG", "Message": "Received update request", "Details": {"prn": "prn:port1:app1:feature-test-111", "released_build_prn": "prn:port1:app1:feature-test-111:2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.971442", "Type": "DEBUG", "Message": "Loaded update request", "Details": {"prn": "prn:port1:app1:feature-test-111", "released_build_prn": "prn:port1:app1:feature-test-111:2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.976266", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:update", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111", "released_build_prn": "prn:port1:app1:feature-test-111:2"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111", "created_at": "2022-09-14T04:51:44.948788+00:00", "short_name": "feature-test-111", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.973098+00:00", "released_build": {"prn": "prn:port1:app1:feature-test-111:2"}, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-111"}, "code": 200, "timestamp": "2022-09-14T04:51:44.976236+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.948788+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-111",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111",
+        "released_build": {
+            "prn": "prn:port1:app1:feature-test-111:2"
+        },
+        "short_name": "feature-test-111",
+        "updated_at": "2022-09-14T04:51:44.973098+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.976236+00:00"
+}
+
+// Lambda payload: {"action": "branch:get", "data": {"prn": "prn:port1:app1:feature-test-111"}}
+{"Timestamp": "2022-09-14 04:51:44.976426", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.976464", "Type": "DEBUG", "Message": "Received get request", "Details": {"prn": "prn:port1:app1:feature-test-111"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.976543", "Type": "DEBUG", "Message": "Loaded get request", "Details": {"prn": "prn:port1:app1:feature-test-111"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.976575", "Type": "DEBUG", "Message": "Retrieving item prn:port1:app1:feature-test-111", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.978854", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111", "created_at": "2022-09-14T04:51:44.948788+00:00", "short_name": "feature-test-111", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.973098+00:00", "released_build": {"prn": "prn:port1:app1:feature-test-111:2"}, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-111"}, "code": 200, "timestamp": "2022-09-14T04:51:44.978841+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.948788+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-111",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111",
+        "released_build": {
+            "prn": "prn:port1:app1:feature-test-111:2"
+        },
+        "short_name": "feature-test-111",
+        "updated_at": "2022-09-14T04:51:44.973098+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.978841+00:00"
+}
+
+// Lambda payload: {"action": "branch:list", "data": {"app_prn": "prn:port1:app1"}}
+{"Timestamp": "2022-09-14 04:51:44.978997", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:list", "auth": {}, "data": {"app_prn": "prn:port1:app1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.979031", "Type": "DEBUG", "Message": "Received list request", "Details": {"app_prn": "prn:port1:app1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.979123", "Type": "DEBUG", "Message": "Loaded list request", "Details": {"data_paginator": null, "earliest_time": null, "latest_time": null, "limit": 100, "parent_prn": "prn:port1:app1", "sort": "descending"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.979155", "Type": "DEBUG", "Message": "Retrieving items by parent 'prn:port1:app1'", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.981543", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:list", "auth": {}, "data": {"app_prn": "prn:port1:app1"}, "result": {"status": "ok", "data": [{"prn": "prn:port1:app1:feature-test-222", "created_at": "2022-09-14T04:51:44.952982+00:00", "short_name": "feature-test-222", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.952991+00:00", "released_build": null, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-222"}, {"prn": "prn:port1:app1:feature-test-111", "created_at": "2022-09-14T04:51:44.948788+00:00", "short_name": "feature-test-111", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.973098+00:00", "released_build": {"prn": "prn:port1:app1:feature-test-111:2"}, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-111"}], "code": 200, "timestamp": "2022-09-14T04:51:44.981529+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": [
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "created_at": "2022-09-14T04:51:44.952982+00:00",
+            "item_type": "branch",
+            "name": "feature/TEST-222",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-222",
+            "released_build": null,
+            "short_name": "feature-test-222",
+            "updated_at": "2022-09-14T04:51:44.952991+00:00"
+        },
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "created_at": "2022-09-14T04:51:44.948788+00:00",
+            "item_type": "branch",
+            "name": "feature/TEST-111",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-111",
+            "released_build": {
+                "prn": "prn:port1:app1:feature-test-111:2"
+            },
+            "short_name": "feature-test-111",
+            "updated_at": "2022-09-14T04:51:44.973098+00:00"
+        }
+    ],
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.981529+00:00"
+}
+
+
+// == Builds ==
+// Lambda payload: {"action": "build:create", "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "1"}}
+{"Timestamp": "2022-09-14 04:51:44.981714", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.981753", "Type": "DEBUG", "Message": "Received create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.981870", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111", "item_type": "build", "name": "1", "prn": "prn:port1:app1:feature-test-111:1"}, "Resource": null}
+prn:port1:app1:feature-test-111
+{"Timestamp": "2022-09-14 04:51:44.982166", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "context": null, "created_at": "2022-09-14T04:51:44.982010+00:00", "item_type": "build", "message": null, "name": "1", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:1", "status": "INIT", "updated_at": "2022-09-14T04:51:44.982018+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.985542", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "1", "item_type": "build", "prn": "prn:port1:app1:feature-test-111:1"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.982010+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.982018+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "1"}, "code": 201, "timestamp": "2022-09-14T04:51:44.985513+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:44.982010+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:44.982018+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.985513+00:00"
+}
+
+// Lambda payload: {"action": "build:create", "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "2"}}
+{"Timestamp": "2022-09-14 04:51:44.985802", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "2"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.985867", "Type": "DEBUG", "Message": "Received create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.986035", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111", "item_type": "build", "name": "2", "prn": "prn:port1:app1:feature-test-111:2"}, "Resource": null}
+prn:port1:app1:feature-test-111
+{"Timestamp": "2022-09-14 04:51:44.986345", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "context": null, "created_at": "2022-09-14T04:51:44.986193+00:00", "item_type": "build", "message": null, "name": "2", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:2", "status": "INIT", "updated_at": "2022-09-14T04:51:44.986203+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.991244", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "2", "item_type": "build", "prn": "prn:port1:app1:feature-test-111:2"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:2", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.986193+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.986203+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "2"}, "code": 201, "timestamp": "2022-09-14T04:51:44.991215+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:44.986193+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "2",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:2",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:44.986203+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.991215+00:00"
+}
+
+// Lambda payload: {"action": "build:create", "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "3"}}
+{"Timestamp": "2022-09-14 04:51:44.991466", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "3"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.991509", "Type": "DEBUG", "Message": "Received create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "3"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.991629", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111", "item_type": "build", "name": "3", "prn": "prn:port1:app1:feature-test-111:3"}, "Resource": null}
+prn:port1:app1:feature-test-111
+{"Timestamp": "2022-09-14 04:51:44.992195", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "context": null, "created_at": "2022-09-14T04:51:44.991776+00:00", "item_type": "build", "message": null, "name": "3", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:3", "status": "INIT", "updated_at": "2022-09-14T04:51:44.991791+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.996677", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111", "name": "3", "item_type": "build", "prn": "prn:port1:app1:feature-test-111:3"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:3", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.991776+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.991791+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "3"}, "code": 201, "timestamp": "2022-09-14T04:51:44.996661+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:44.991776+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "3",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:3",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:44.991791+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:44.996661+00:00"
+}
+
+// Lambda payload: {"action": "build:create", "data": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "1"}}
+{"Timestamp": "2022-09-14 04:51:44.996843", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.996881", "Type": "DEBUG", "Message": "Received create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:44.997026", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-222", "item_type": "build", "name": "1", "prn": "prn:port1:app1:feature-test-222:1"}, "Resource": null}
+prn:port1:app1:feature-test-222
+{"Timestamp": "2022-09-14 04:51:44.997311", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "context": null, "created_at": "2022-09-14T04:51:44.997163+00:00", "item_type": "build", "message": null, "name": "1", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-222:1", "status": "INIT", "updated_at": "2022-09-14T04:51:44.997173+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.001023", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "1", "item_type": "build", "prn": "prn:port1:app1:feature-test-222:1"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-222:1", "branch": {"prn": "prn:port1:app1:feature-test-222"}, "created_at": "2022-09-14T04:51:44.997163+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.997173+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "1"}, "code": 201, "timestamp": "2022-09-14T04:51:45.001006+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-222"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:44.997163+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-222:1",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:44.997173+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.001006+00:00"
+}
+
+// Lambda payload: {"action": "build:create", "data": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "2"}}
+{"Timestamp": "2022-09-14 04:51:45.001264", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "2"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.001337", "Type": "DEBUG", "Message": "Received create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "2"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.001534", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"branch_prn": "prn:port1:app1:feature-test-222", "item_type": "build", "name": "2", "prn": "prn:port1:app1:feature-test-222:2"}, "Resource": null}
+prn:port1:app1:feature-test-222
+{"Timestamp": "2022-09-14 04:51:45.002023", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "context": null, "created_at": "2022-09-14T04:51:45.001809+00:00", "item_type": "build", "message": null, "name": "2", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-222:2", "status": "INIT", "updated_at": "2022-09-14T04:51:45.001823+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.005142", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-222", "name": "2", "item_type": "build", "prn": "prn:port1:app1:feature-test-222:2"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-222:2", "branch": {"prn": "prn:port1:app1:feature-test-222"}, "created_at": "2022-09-14T04:51:45.001809+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.001823+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "2"}, "code": 201, "timestamp": "2022-09-14T04:51:45.005128+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-222"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:45.001809+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "2",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-222:2",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.001823+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.005128+00:00"
+}
+
+// Lambda payload: {"action": "build:create", "data": {"branch_prn": "prn:port2:app1:feature-test-555", "name": "1"}}
+{"Timestamp": "2022-09-14 04:51:45.005309", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port2:app1:feature-test-555", "name": "1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.005347", "Type": "DEBUG", "Message": "Received create request", "Details": {"branch_prn": "prn:port2:app1:feature-test-555", "name": "1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.005462", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"branch_prn": "prn:port2:app1:feature-test-555", "item_type": "build", "name": "1", "prn": "prn:port2:app1:feature-test-555:1"}, "Resource": null}
+prn:port2:app1:feature-test-555
+{"Timestamp": "2022-09-14 04:51:45.005825", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port2:app1"}, "branch": {"prn": "prn:port2:app1:feature-test-555"}, "context": null, "created_at": "2022-09-14T04:51:45.005621+00:00", "item_type": "build", "message": null, "name": "1", "portfolio": {"prn": "prn:port2"}, "prn": "prn:port2:app1:feature-test-555:1", "status": "INIT", "updated_at": "2022-09-14T04:51:45.005635+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.011037", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:create", "auth": {}, "data": {"branch_prn": "prn:port2:app1:feature-test-555", "name": "1", "item_type": "build", "prn": "prn:port2:app1:feature-test-555:1"}, "result": {"status": "ok", "data": {"prn": "prn:port2:app1:feature-test-555:1", "branch": {"prn": "prn:port2:app1:feature-test-555"}, "created_at": "2022-09-14T04:51:45.005621+00:00", "message": null, "app": {"prn": "prn:port2:app1"}, "updated_at": "2022-09-14T04:51:45.005635+00:00", "portfolio": {"prn": "prn:port2"}, "status": "INIT", "item_type": "build", "context": null, "name": "1"}, "code": 201, "timestamp": "2022-09-14T04:51:45.011019+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port2:app1"
+        },
+        "branch": {
+            "prn": "prn:port2:app1:feature-test-555"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:45.005621+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "1",
+        "portfolio": {
+            "prn": "prn:port2"
+        },
+        "prn": "prn:port2:app1:feature-test-555:1",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.005635+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.011019+00:00"
+}
+
+// Lambda payload: {"action": "build:update", "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}}
+{"Timestamp": "2022-09-14 04:51:45.011280", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:update", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.011368", "Type": "DEBUG", "Message": "Received update request", "Details": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.011543", "Type": "DEBUG", "Message": "Loaded update request", "Details": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.020121", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:update", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1", "status": "DEPLOY_COMPLETE"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.982010+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.014415+00:00", "portfolio": {"prn": "prn:port1"}, "status": "DEPLOY_COMPLETE", "item_type": "build", "context": null, "name": "1"}, "code": 200, "timestamp": "2022-09-14T04:51:45.020105+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:44.982010+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "DEPLOY_COMPLETE",
+        "updated_at": "2022-09-14T04:51:45.014415+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.020105+00:00"
+}
+
+// Lambda payload: {"action": "build:get", "data": {"prn": "prn:port1:app1:feature-test-111:1"}}
+{"Timestamp": "2022-09-14 04:51:45.020293", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.020336", "Type": "DEBUG", "Message": "Received get request", "Details": {"prn": "prn:port1:app1:feature-test-111:1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.020447", "Type": "DEBUG", "Message": "Loaded get request", "Details": {"prn": "prn:port1:app1:feature-test-111:1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.020492", "Type": "DEBUG", "Message": "Retrieving item prn:port1:app1:feature-test-111:1", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.023215", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.982010+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.014415+00:00", "portfolio": {"prn": "prn:port1"}, "status": "DEPLOY_COMPLETE", "item_type": "build", "context": null, "name": "1"}, "code": 200, "timestamp": "2022-09-14T04:51:45.023196+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "context": null,
+        "created_at": "2022-09-14T04:51:44.982010+00:00",
+        "item_type": "build",
+        "message": null,
+        "name": "1",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1",
+        "status": "DEPLOY_COMPLETE",
+        "updated_at": "2022-09-14T04:51:45.014415+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.023196+00:00"
+}
+
+// Lambda payload: {"action": "build:list", "data": {"branch_prn": "prn:port1:app1:feature-test-111"}}
+{"Timestamp": "2022-09-14 04:51:45.023388", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:list", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.023428", "Type": "DEBUG", "Message": "Received list request", "Details": {"branch_prn": "prn:port1:app1:feature-test-111"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.023550", "Type": "DEBUG", "Message": "Loaded list request", "Details": {"data_paginator": null, "earliest_time": null, "latest_time": null, "limit": 100, "parent_prn": "prn:port1:app1:feature-test-111", "sort": "descending"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.023628", "Type": "DEBUG", "Message": "Retrieving items by parent 'prn:port1:app1:feature-test-111'", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.028335", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:list", "auth": {}, "data": {"branch_prn": "prn:port1:app1:feature-test-111"}, "result": {"status": "ok", "data": [{"prn": "prn:port1:app1:feature-test-111:3", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.991776+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.991791+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "3"}, {"prn": "prn:port1:app1:feature-test-111:2", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.986193+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.986203+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "build", "context": null, "name": "2"}, {"prn": "prn:port1:app1:feature-test-111:1", "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:44.982010+00:00", "message": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.014415+00:00", "portfolio": {"prn": "prn:port1"}, "status": "DEPLOY_COMPLETE", "item_type": "build", "context": null, "name": "1"}], "code": 200, "timestamp": "2022-09-14T04:51:45.028279+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": [
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "branch": {
+                "prn": "prn:port1:app1:feature-test-111"
+            },
+            "context": null,
+            "created_at": "2022-09-14T04:51:44.991776+00:00",
+            "item_type": "build",
+            "message": null,
+            "name": "3",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-111:3",
+            "status": "INIT",
+            "updated_at": "2022-09-14T04:51:44.991791+00:00"
+        },
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "branch": {
+                "prn": "prn:port1:app1:feature-test-111"
+            },
+            "context": null,
+            "created_at": "2022-09-14T04:51:44.986193+00:00",
+            "item_type": "build",
+            "message": null,
+            "name": "2",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-111:2",
+            "status": "INIT",
+            "updated_at": "2022-09-14T04:51:44.986203+00:00"
+        },
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "branch": {
+                "prn": "prn:port1:app1:feature-test-111"
+            },
+            "context": null,
+            "created_at": "2022-09-14T04:51:44.982010+00:00",
+            "item_type": "build",
+            "message": null,
+            "name": "1",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-111:1",
+            "status": "DEPLOY_COMPLETE",
+            "updated_at": "2022-09-14T04:51:45.014415+00:00"
+        }
+    ],
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.028279+00:00"
+}
+
+
+// == Components ==
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-111:1", "component_type": "AWS::AutoScale", "name": "my-web"}}
+{"Timestamp": "2022-09-14 04:51:45.028716", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:1", "name": "my-web", "component_type": "AWS::AutoScale"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.028803", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:1", "component_type": "AWS::AutoScale", "name": "my-web"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.028969", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:1", "component_type": "AWS::AutoScale", "item_type": "component", "name": "my-web", "prn": "prn:port1:app1:feature-test-111:1:my-web"}, "Resource": null}
+prn:port1:app1:feature-test-111:1
+{"Timestamp": "2022-09-14 04:51:45.030082", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "component_type": "AWS::AutoScale", "created_at": "2022-09-14T04:51:45.029843+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-web", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:1:my-web", "status": "INIT", "updated_at": "2022-09-14T04:51:45.029856+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.034867", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:1", "name": "my-web", "component_type": "AWS::AutoScale", "item_type": "component", "prn": "prn:port1:app1:feature-test-111:1:my-web"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web", "component_type": "AWS::AutoScale", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.029843+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.029856+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-web"}, "code": 201, "timestamp": "2022-09-14T04:51:45.034833+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:1"
+        },
+        "component_type": "AWS::AutoScale",
+        "created_at": "2022-09-14T04:51:45.029843+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-web",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1:my-web",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.029856+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.034833+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-111:1", "component_type": "AWS::RDS::MariaDB", "name": "my-db"}}
+{"Timestamp": "2022-09-14 04:51:45.035101", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:1", "name": "my-db", "component_type": "AWS::RDS::MariaDB"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.035145", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:1", "component_type": "AWS::RDS::MariaDB", "name": "my-db"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.035364", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:1", "component_type": "AWS::RDS::MariaDB", "item_type": "component", "name": "my-db", "prn": "prn:port1:app1:feature-test-111:1:my-db"}, "Resource": null}
+prn:port1:app1:feature-test-111:1
+{"Timestamp": "2022-09-14 04:51:45.035814", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "component_type": "AWS::RDS::MariaDB", "created_at": "2022-09-14T04:51:45.035553+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-db", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:1:my-db", "status": "INIT", "updated_at": "2022-09-14T04:51:45.035566+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.041823", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:1", "name": "my-db", "component_type": "AWS::RDS::MariaDB", "item_type": "component", "prn": "prn:port1:app1:feature-test-111:1:my-db"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1:my-db", "component_type": "AWS::RDS::MariaDB", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.035553+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.035566+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-db"}, "code": 201, "timestamp": "2022-09-14T04:51:45.041801+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:1"
+        },
+        "component_type": "AWS::RDS::MariaDB",
+        "created_at": "2022-09-14T04:51:45.035553+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-db",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1:my-db",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.035566+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.041801+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::AutoScale", "name": "my-web"}}
+{"Timestamp": "2022-09-14 04:51:45.042082", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "name": "my-web", "component_type": "AWS::AutoScale"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.042143", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::AutoScale", "name": "my-web"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.042418", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::AutoScale", "item_type": "component", "name": "my-web", "prn": "prn:port1:app1:feature-test-111:2:my-web"}, "Resource": null}
+prn:port1:app1:feature-test-111:2
+{"Timestamp": "2022-09-14 04:51:45.042825", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "build": {"prn": "prn:port1:app1:feature-test-111:2"}, "component_type": "AWS::AutoScale", "created_at": "2022-09-14T04:51:45.042554+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-web", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:2:my-web", "status": "INIT", "updated_at": "2022-09-14T04:51:45.042565+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.048176", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "name": "my-web", "component_type": "AWS::AutoScale", "item_type": "component", "prn": "prn:port1:app1:feature-test-111:2:my-web"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:2:my-web", "component_type": "AWS::AutoScale", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.042554+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:2"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.042565+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-web"}, "code": 201, "timestamp": "2022-09-14T04:51:45.048153+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:2"
+        },
+        "component_type": "AWS::AutoScale",
+        "created_at": "2022-09-14T04:51:45.042554+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-web",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:2:my-web",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.042565+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.048153+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::RDS::MariaDB", "name": "my-db"}}
+{"Timestamp": "2022-09-14 04:51:45.048441", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "name": "my-db", "component_type": "AWS::RDS::MariaDB"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.048530", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::RDS::MariaDB", "name": "my-db"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.048782", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::RDS::MariaDB", "item_type": "component", "name": "my-db", "prn": "prn:port1:app1:feature-test-111:2:my-db"}, "Resource": null}
+prn:port1:app1:feature-test-111:2
+{"Timestamp": "2022-09-14 04:51:45.049419", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "build": {"prn": "prn:port1:app1:feature-test-111:2"}, "component_type": "AWS::RDS::MariaDB", "created_at": "2022-09-14T04:51:45.049036+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-db", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:2:my-db", "status": "INIT", "updated_at": "2022-09-14T04:51:45.049048+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.054752", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "name": "my-db", "component_type": "AWS::RDS::MariaDB", "item_type": "component", "prn": "prn:port1:app1:feature-test-111:2:my-db"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:2:my-db", "component_type": "AWS::RDS::MariaDB", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.049036+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:2"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.049048+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-db"}, "code": 201, "timestamp": "2022-09-14T04:51:45.054736+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:2"
+        },
+        "component_type": "AWS::RDS::MariaDB",
+        "created_at": "2022-09-14T04:51:45.049036+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-db",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:2:my-db",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.049048+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.054736+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::S3::Bucket", "name": "my-bucket"}}
+{"Timestamp": "2022-09-14 04:51:45.054937", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "name": "my-bucket", "component_type": "AWS::S3::Bucket"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.054990", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::S3::Bucket", "name": "my-bucket"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.055120", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:2", "component_type": "AWS::S3::Bucket", "item_type": "component", "name": "my-bucket", "prn": "prn:port1:app1:feature-test-111:2:my-bucket"}, "Resource": null}
+prn:port1:app1:feature-test-111:2
+{"Timestamp": "2022-09-14 04:51:45.055526", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "build": {"prn": "prn:port1:app1:feature-test-111:2"}, "component_type": "AWS::S3::Bucket", "created_at": "2022-09-14T04:51:45.055281+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-bucket", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-111:2:my-bucket", "status": "INIT", "updated_at": "2022-09-14T04:51:45.055297+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.060229", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:2", "name": "my-bucket", "component_type": "AWS::S3::Bucket", "item_type": "component", "prn": "prn:port1:app1:feature-test-111:2:my-bucket"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:2:my-bucket", "component_type": "AWS::S3::Bucket", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.055281+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:2"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.055297+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-bucket"}, "code": 201, "timestamp": "2022-09-14T04:51:45.060214+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:2"
+        },
+        "component_type": "AWS::S3::Bucket",
+        "created_at": "2022-09-14T04:51:45.055281+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-bucket",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:2:my-bucket",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.055297+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.060214+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::AutoScale", "name": "my-web"}}
+{"Timestamp": "2022-09-14 04:51:45.060388", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "name": "my-web", "component_type": "AWS::AutoScale"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.060424", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::AutoScale", "name": "my-web"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.060538", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::AutoScale", "item_type": "component", "name": "my-web", "prn": "prn:port1:app1:feature-test-222:1:my-web"}, "Resource": null}
+prn:port1:app1:feature-test-222:1
+{"Timestamp": "2022-09-14 04:51:45.060862", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "build": {"prn": "prn:port1:app1:feature-test-222:1"}, "component_type": "AWS::AutoScale", "created_at": "2022-09-14T04:51:45.060651+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-web", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-222:1:my-web", "status": "INIT", "updated_at": "2022-09-14T04:51:45.060660+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.066293", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "name": "my-web", "component_type": "AWS::AutoScale", "item_type": "component", "prn": "prn:port1:app1:feature-test-222:1:my-web"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-222:1:my-web", "component_type": "AWS::AutoScale", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "created_at": "2022-09-14T04:51:45.060651+00:00", "build": {"prn": "prn:port1:app1:feature-test-222:1"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.060660+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-web"}, "code": 201, "timestamp": "2022-09-14T04:51:45.066229+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-222"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-222:1"
+        },
+        "component_type": "AWS::AutoScale",
+        "created_at": "2022-09-14T04:51:45.060651+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-web",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-222:1:my-web",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.060660+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.066229+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::RDS::MariaDB", "name": "my-db"}}
+{"Timestamp": "2022-09-14 04:51:45.066567", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "name": "my-db", "component_type": "AWS::RDS::MariaDB"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.066633", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::RDS::MariaDB", "name": "my-db"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.066824", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::RDS::MariaDB", "item_type": "component", "name": "my-db", "prn": "prn:port1:app1:feature-test-222:1:my-db"}, "Resource": null}
+prn:port1:app1:feature-test-222:1
+{"Timestamp": "2022-09-14 04:51:45.067501", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "build": {"prn": "prn:port1:app1:feature-test-222:1"}, "component_type": "AWS::RDS::MariaDB", "created_at": "2022-09-14T04:51:45.067056+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-db", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-222:1:my-db", "status": "INIT", "updated_at": "2022-09-14T04:51:45.067072+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.073070", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "name": "my-db", "component_type": "AWS::RDS::MariaDB", "item_type": "component", "prn": "prn:port1:app1:feature-test-222:1:my-db"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-222:1:my-db", "component_type": "AWS::RDS::MariaDB", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "created_at": "2022-09-14T04:51:45.067056+00:00", "build": {"prn": "prn:port1:app1:feature-test-222:1"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.067072+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-db"}, "code": 201, "timestamp": "2022-09-14T04:51:45.073043+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-222"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-222:1"
+        },
+        "component_type": "AWS::RDS::MariaDB",
+        "created_at": "2022-09-14T04:51:45.067056+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-db",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-222:1:my-db",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.067072+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.073043+00:00"
+}
+
+// Lambda payload: {"action": "component:create", "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::S3::Bucket", "name": "my-bucket"}}
+{"Timestamp": "2022-09-14 04:51:45.073485", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "name": "my-bucket", "component_type": "AWS::S3::Bucket"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.073583", "Type": "DEBUG", "Message": "Received create request", "Details": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::S3::Bucket", "name": "my-bucket"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.073791", "Type": "DEBUG", "Message": "Loaded create request", "Details": {"build_prn": "prn:port1:app1:feature-test-222:1", "component_type": "AWS::S3::Bucket", "item_type": "component", "name": "my-bucket", "prn": "prn:port1:app1:feature-test-222:1:my-bucket"}, "Resource": null}
+prn:port1:app1:feature-test-222:1
+{"Timestamp": "2022-09-14 04:51:45.074510", "Type": "DEBUG", "Message": "Saving item", "Details": {"app": {"prn": "prn:port1:app1"}, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "build": {"prn": "prn:port1:app1:feature-test-222:1"}, "component_type": "AWS::S3::Bucket", "created_at": "2022-09-14T04:51:45.073962+00:00", "image_alias": null, "image_id": null, "item_type": "component", "message": null, "name": "my-bucket", "portfolio": {"prn": "prn:port1"}, "prn": "prn:port1:app1:feature-test-222:1:my-bucket", "status": "INIT", "updated_at": "2022-09-14T04:51:45.073975+00:00"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.079621", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:create", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-222:1", "name": "my-bucket", "component_type": "AWS::S3::Bucket", "item_type": "component", "prn": "prn:port1:app1:feature-test-222:1:my-bucket"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-222:1:my-bucket", "component_type": "AWS::S3::Bucket", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-222"}, "created_at": "2022-09-14T04:51:45.073962+00:00", "build": {"prn": "prn:port1:app1:feature-test-222:1"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.073975+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-bucket"}, "code": 201, "timestamp": "2022-09-14T04:51:45.079604+00:00"}}, "Resource": null}
+{
+    "code": 201,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-222"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-222:1"
+        },
+        "component_type": "AWS::S3::Bucket",
+        "created_at": "2022-09-14T04:51:45.073962+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": null,
+        "name": "my-bucket",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-222:1:my-bucket",
+        "status": "INIT",
+        "updated_at": "2022-09-14T04:51:45.073975+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.079604+00:00"
+}
+
+// Lambda payload: {"action": "component:update", "data": {"message": "Deploy completed", "prn": "prn:port1:app1:feature-test-111:1:my-web", "status": "DEPLOY_COMPLETE"}}
+{"Timestamp": "2022-09-14 04:51:45.079857", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:update", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web", "status": "DEPLOY_COMPLETE", "message": "Deploy completed"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.079914", "Type": "DEBUG", "Message": "Received update request", "Details": {"message": "Deploy completed", "prn": "prn:port1:app1:feature-test-111:1:my-web", "status": "DEPLOY_COMPLETE"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.080023", "Type": "DEBUG", "Message": "Loaded update request", "Details": {"message": "Deploy completed", "prn": "prn:port1:app1:feature-test-111:1:my-web", "status": "DEPLOY_COMPLETE"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.088985", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:update", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web", "status": "DEPLOY_COMPLETE", "message": "Deploy completed"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web", "component_type": "AWS::AutoScale", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.029843+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "message": "Deploy completed", "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.082943+00:00", "portfolio": {"prn": "prn:port1"}, "status": "DEPLOY_COMPLETE", "item_type": "component", "name": "my-web"}, "code": 200, "timestamp": "2022-09-14T04:51:45.088957+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:1"
+        },
+        "component_type": "AWS::AutoScale",
+        "created_at": "2022-09-14T04:51:45.029843+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": "Deploy completed",
+        "name": "my-web",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1:my-web",
+        "status": "DEPLOY_COMPLETE",
+        "updated_at": "2022-09-14T04:51:45.082943+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.088957+00:00"
+}
+
+// Lambda payload: {"action": "component:get", "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web"}}
+{"Timestamp": "2022-09-14 04:51:45.089261", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.089337", "Type": "DEBUG", "Message": "Received get request", "Details": {"prn": "prn:port1:app1:feature-test-111:1:my-web"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.089448", "Type": "DEBUG", "Message": "Loaded get request", "Details": {"prn": "prn:port1:app1:feature-test-111:1:my-web"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.089526", "Type": "DEBUG", "Message": "Retrieving item prn:port1:app1:feature-test-111:1:my-web", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.093848", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111:1:my-web", "component_type": "AWS::AutoScale", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.029843+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "message": "Deploy completed", "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.082943+00:00", "portfolio": {"prn": "prn:port1"}, "status": "DEPLOY_COMPLETE", "item_type": "component", "name": "my-web"}, "code": 200, "timestamp": "2022-09-14T04:51:45.093830+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "branch": {
+            "prn": "prn:port1:app1:feature-test-111"
+        },
+        "build": {
+            "prn": "prn:port1:app1:feature-test-111:1"
+        },
+        "component_type": "AWS::AutoScale",
+        "created_at": "2022-09-14T04:51:45.029843+00:00",
+        "image_alias": null,
+        "image_id": null,
+        "item_type": "component",
+        "message": "Deploy completed",
+        "name": "my-web",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111:1:my-web",
+        "status": "DEPLOY_COMPLETE",
+        "updated_at": "2022-09-14T04:51:45.082943+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.093830+00:00"
+}
+
+// Lambda payload: {"action": "component:list", "data": {"build_prn": "prn:port1:app1:feature-test-111:1"}}
+{"Timestamp": "2022-09-14 04:51:45.094100", "Type": "INFO", "Message": "Executing action", "Details": {"action": "component:list", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.094179", "Type": "DEBUG", "Message": "Received list request", "Details": {"build_prn": "prn:port1:app1:feature-test-111:1"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.094412", "Type": "DEBUG", "Message": "Loaded list request", "Details": {"data_paginator": null, "earliest_time": null, "latest_time": null, "limit": 100, "parent_prn": "prn:port1:app1:feature-test-111:1", "sort": "descending"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.094487", "Type": "DEBUG", "Message": "Retrieving items by parent 'prn:port1:app1:feature-test-111:1'", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.099859", "Type": "INFO", "Message": "Action complete", "Details": {"action": "component:list", "auth": {}, "data": {"build_prn": "prn:port1:app1:feature-test-111:1"}, "result": {"status": "ok", "data": [{"prn": "prn:port1:app1:feature-test-111:1:my-db", "component_type": "AWS::RDS::MariaDB", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.035553+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "message": null, "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.035566+00:00", "portfolio": {"prn": "prn:port1"}, "status": "INIT", "item_type": "component", "name": "my-db"}, {"prn": "prn:port1:app1:feature-test-111:1:my-web", "component_type": "AWS::AutoScale", "image_alias": null, "branch": {"prn": "prn:port1:app1:feature-test-111"}, "created_at": "2022-09-14T04:51:45.029843+00:00", "build": {"prn": "prn:port1:app1:feature-test-111:1"}, "message": "Deploy completed", "image_id": null, "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:45.082943+00:00", "portfolio": {"prn": "prn:port1"}, "status": "DEPLOY_COMPLETE", "item_type": "component", "name": "my-web"}], "code": 200, "timestamp": "2022-09-14T04:51:45.099830+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": [
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "branch": {
+                "prn": "prn:port1:app1:feature-test-111"
+            },
+            "build": {
+                "prn": "prn:port1:app1:feature-test-111:1"
+            },
+            "component_type": "AWS::RDS::MariaDB",
+            "created_at": "2022-09-14T04:51:45.035553+00:00",
+            "image_alias": null,
+            "image_id": null,
+            "item_type": "component",
+            "message": null,
+            "name": "my-db",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-111:1:my-db",
+            "status": "INIT",
+            "updated_at": "2022-09-14T04:51:45.035566+00:00"
+        },
+        {
+            "app": {
+                "prn": "prn:port1:app1"
+            },
+            "branch": {
+                "prn": "prn:port1:app1:feature-test-111"
+            },
+            "build": {
+                "prn": "prn:port1:app1:feature-test-111:1"
+            },
+            "component_type": "AWS::AutoScale",
+            "created_at": "2022-09-14T04:51:45.029843+00:00",
+            "image_alias": null,
+            "image_id": null,
+            "item_type": "component",
+            "message": "Deploy completed",
+            "name": "my-web",
+            "portfolio": {
+                "prn": "prn:port1"
+            },
+            "prn": "prn:port1:app1:feature-test-111:1:my-web",
+            "status": "DEPLOY_COMPLETE",
+            "updated_at": "2022-09-14T04:51:45.082943+00:00"
+        }
+    ],
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.099830+00:00"
+}
+
+
+// == Released build ==
+// Lambda payload: {"action": "build:release", "data": {"prn": "prn:port1:app1:feature-test-111:1"}}
+{"Timestamp": "2022-09-14 04:51:45.100152", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:release", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.106202", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:release", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}, "result": {"status": "ok", "data": "", "code": 204, "timestamp": "2022-09-14T04:51:45.106117+00:00"}}, "Resource": null}
+{
+    "code": 204,
+    "data": "",
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.106117+00:00"
+}
+
+// Lambda payload: {"action": "branch:get", "data": {"prn": "prn:port1:app1:feature-test-111"}}
+{"Timestamp": "2022-09-14 04:51:45.106480", "Type": "INFO", "Message": "Executing action", "Details": {"action": "branch:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.106549", "Type": "DEBUG", "Message": "Received get request", "Details": {"prn": "prn:port1:app1:feature-test-111"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.106721", "Type": "DEBUG", "Message": "Loaded get request", "Details": {"prn": "prn:port1:app1:feature-test-111"}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.106782", "Type": "DEBUG", "Message": "Retrieving item prn:port1:app1:feature-test-111", "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.110103", "Type": "INFO", "Message": "Action complete", "Details": {"action": "branch:get", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111"}, "result": {"status": "ok", "data": {"prn": "prn:port1:app1:feature-test-111", "created_at": "2022-09-14T04:51:44.948788+00:00", "short_name": "feature-test-111", "app": {"prn": "prn:port1:app1"}, "updated_at": "2022-09-14T04:51:44.973098+00:00", "released_build": {"prn": "prn:port1:app1:feature-test-111:2"}, "portfolio": {"prn": "prn:port1"}, "item_type": "branch", "name": "feature/TEST-111"}, "code": 200, "timestamp": "2022-09-14T04:51:45.110087+00:00"}}, "Resource": null}
+{
+    "code": 200,
+    "data": {
+        "app": {
+            "prn": "prn:port1:app1"
+        },
+        "created_at": "2022-09-14T04:51:44.948788+00:00",
+        "item_type": "branch",
+        "name": "feature/TEST-111",
+        "portfolio": {
+            "prn": "prn:port1"
+        },
+        "prn": "prn:port1:app1:feature-test-111",
+        "released_build": {
+            "prn": "prn:port1:app1:feature-test-111:2"
+        },
+        "short_name": "feature-test-111",
+        "updated_at": "2022-09-14T04:51:44.973098+00:00"
+    },
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.110087+00:00"
+}
+
+
+// == Teardown build ==
+// Lambda payload: {"action": "build:teardown", "data": {"prn": "prn:port1:app1:feature-test-111:1"}}
+{"Timestamp": "2022-09-14 04:51:45.110315", "Type": "INFO", "Message": "Executing action", "Details": {"action": "build:teardown", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}}, "Resource": null}
+{"Timestamp": "2022-09-14 04:51:45.116873", "Type": "INFO", "Message": "Action complete", "Details": {"action": "build:teardown", "auth": {}, "data": {"prn": "prn:port1:app1:feature-test-111:1"}, "result": {"status": "ok", "data": "", "code": 204, "timestamp": "2022-09-14T04:51:45.116851+00:00"}}, "Resource": null}
+{
+    "code": 204,
+    "data": "",
+    "status": "ok",
+    "timestamp": "2022-09-14T04:51:45.116851+00:00"
+}
+
+
+Process finished with exit code 0

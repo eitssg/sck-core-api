@@ -1,0 +1,790 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS::DynamoDB::Table - core-automation-api-app - resources
+Parameters:
+  Build:
+    Type: String
+  ClientsTableName:
+    Type: String
+    Default: core-automation-clients
+  PortfoliosTableName:
+    Type: String
+    Default: core-automation-portfolios
+  AppsTableName:
+    Type: String
+    Default: core-automation-apps
+  ZonesTableName:
+    Type: String
+    Default: core-automation-zones
+
+Resources:
+  DummyResource:
+    Type: AWS::CloudFormation::WaitConditionHandle
+    Metadata:
+      Build:
+        Ref: Build
+
+  ChangeClientsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/lambda/core-automation-change-clients-lambda
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value: core-automation-change-events-clients-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ChangePortfoliosLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/lambda/core-automation-change-portfolios-lambda
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: core-automation-change-events-portfolios-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ChangeAppsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/core-automation-change-apps-lambda
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value: core-automation-change-events-apps-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ChangeZonesLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/lambda/core-automation-change-zones-lambda
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value: core-automation-change-events-zones-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+      - ChangeClientsLogGroup
+      - ChangePortfoliosLogGroup
+      - ChangeAppsLogGroup
+      - ChangeZonesLogGroup
+    Properties:
+      RoleName:
+        Fn::Sub: 'core-automation-api-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBStreamPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:DescribeStream
+                  - dynamodb:ListStreams
+                Resource:
+                  - Fn::GetAtt:
+                      - ClientsTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - PortfoliosTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - AppsTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - ZonesTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - ClientsTable
+                      - StreamArn
+                  - Fn::GetAtt:
+                      - PortfoliosTable
+                      - StreamArn
+                  - Fn::GetAtt:
+                      - AppsTable
+                      - StreamArn
+                  - Fn::GetAtt:
+                      - ZonesTable
+                      - StreamArn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - Fn::Sub: 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/core-automation-change-clients-lambda:*'
+                  - Fn::Sub: 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/core-automation-change-portfolios-lambda:*'
+                  - Fn::Sub: 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/core-automation-change-aps-lambda:*'
+                  - Fn::Sub: 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/core-automation-change-zones-lambda:*'
+      Path: /
+
+  ChangeClientsLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaExecutionRole
+      - ChangeClientsLogGroup
+    Properties:
+      FunctionName: core-automation-change-clients-lambda
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - LambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from boto3.dynamodb.conditions import Attr
+
+          def handler(event, context):
+              dynamodb = boto3.resource('dynamodb')
+
+              # When removing clients, we need to remove the Portfolios for the client
+
+              porfolios_table = dynamodb.Table(os.environ['PORTFOLIOS_TABLE'])
+
+              log_level = os.environ.get('LOG_LEVEL', 'ERROR').upper()
+
+              try:
+                  count = 0
+                  for record in event['Records']:
+                      if record['eventName'] == 'REMOVE':
+                          client = record['dynamodb']['OldImage']['client']['S']
+
+                          response = portflios_table.scan(
+                              FilterExpression=Attr('Client').eq(client)
+                          )
+
+                          for item in response['Items']:
+                              portfolio = item['Portfolio']
+                              events_table.delete_item(
+                                  Key={
+                                      'Client': client,
+                                      'Portfolio': portfolio
+                                  }
+                              )
+                              count += 1
+                              if log_level == 'INFO':
+                                  print(f'SUCCESS: client [{client}], portfolio [{portfolio}] deleted')
+
+                          coount += 1
+                          if log_level == 'INFO':
+                              print(f'SUCCESS: [{client}] deleted')
+
+                  print(f'SUCCESS: {count} records deleted')
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(f'Success: {count} records deleted')
+                  }
+              except Exception as e:
+                  print(f'ERROR: {str(e)}')
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error: {str(e)}')
+                  }
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          CLIENTS_TABLE:
+            Ref: ClientsTableName
+          PORTFOLIOS_TABLE:
+            Ref: PortfoliosTableName
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup: /aws/lambda/core-automation-change-clients-lambda
+      Tags:
+        - Key: Name
+          Value: core-automation-change-clients-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ChangePortfoliosLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaExecutionRole
+      - ChangePortfoliosLogGroup
+    Properties:
+      FunctionName: core-automation-change-portfolios-lambda
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - LambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from boto3.dynamodb.conditions import Attr
+
+          def handler(event, context):
+              dynamodb = boto3.resource('dynamodb')
+
+              # When removing portfolios, we need to remove apps and zones for the portfolio
+
+              apps_table = dynamodb.Table(os.environ['APPS_TABLE'])
+              zones_table = dynamodb.Table(os.environ['ZONES_TABLE'])
+
+              log_level = os.environ.get('LOG_LEBEL', 'ERROR').upper()
+
+              try:
+                  count = 0
+                  for record in event['Records']:
+                      if record['eventName'] == 'REMOVE':
+                          client = record['dynamodb']['OldImage']['Client']['S']
+                          portfolio = record['dynamodb']['OldImage']['Portfolio']['S']
+
+                          portfolio_facts = f'{client}:{portfolio}'
+
+                          response = apps_table.scan(
+                              FilterExpression=Attr('ClientPortfolio').eq(portfolio_facts)
+                          )
+
+                          for item in response['Items']:
+                              app_regex = item['AppRegex']
+                              apps_table.delete_item(
+                                  Key={
+                                      'ClientPortfolio': portfolio_facts,
+                                      'AppRegex': app_regex
+                                  }
+                              )
+                              count += 1
+                              if llog_level == 'INFO':
+                                  print(f'SUCCESS: [{portfolio_facts}], AppRegex [{app_regex}] deleted')
+
+                          response = zones_table.scan(
+                              FilterExpression=Attr('ClientPortfolio').eq(portfolio_facts)
+                          )
+
+                          for item in response['Items']:
+                              zone = item['zone']
+                              zones_table.delete_item(
+                                  Key={
+                                      'ClientPortfolio': portfolio_facts,
+                                      'zone': zone
+                                  }
+                              )
+                              count += 1
+                              if log_level == 'INFO':
+                                  print(f'SUCCESS: [{portfolio_facts}], zone [{zone}] deleted')
+
+                          count += 1
+                          if log_level == 'INFO':
+                              print(f'SUCCESS: [{portfolio_prn}] deleted')
+
+                  print(f'SUCCESS: {count} records deleted')
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(f'Success: {len(event['Records'])} events deleted')
+                  }
+              except Exception as e:
+                  print(f'ERROR: {str(e)}')
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error: {str(e)}')
+                  }
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          PORTFOLIOS_TABLE:
+            Ref: PortfoliosTableName
+          APPS_TABLE:
+            Ref: AppsTableName
+          ZONES_TABLE:
+            Ref: ZonesTableName
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup: /aws/lambda/core-automation-change-portfolios-lambda
+      Tags:
+        - Key: Name
+          Value: core-automation-change-portfolios-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ChangeAppsLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaExecutionRole
+      - ChangeAppsLogGroup
+    Properties:
+      FunctionName: core-automation-change-apps-lambda
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - LambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from boto3.dynamodb.conditions import Attr
+
+          def handler(event, context):
+              dynamodb = boto3.resource('dynamodb')
+
+              # Apps are not referenced in other FACTS, so, nothing to do yet
+
+              log_level = os.environ.get('LOG_LEVEL', 'ERROR').upper()
+
+              try:
+                  count = 0
+                  for record in event['Records']:
+                      if record['eventName'] == 'REMOVE':
+                          portfolio_facts = record['dynamodb']['OldImage']['ClientPortfolio']['S']
+                          app_regex = record['dynamodb']['OldImage']['AppRegex']['S']
+
+                          count += 1
+                          if log_level == 'INFO':
+                              print(f'SUCCESS: [{portfolio_facts}], app: [{app_regex}] deleted')
+
+                  print(f'SUCCESS: {count} records deleted')
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(f'Success: {count} records deleted')
+                  }
+              except Exception as e:
+                  print(f'ERROR: {str(e)}')
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error: {str(e)}')
+                  }
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          APPS_TABLE:
+            Ref: AppsTableName
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup: /aws/lambda/core-automation-change-apps-lambda
+      Tags:
+        - Key: Name
+          Value: core-automation-change-apps-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ChangeZonesLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaExecutionRole
+      - ChangeZonesLogGroup
+    Properties:
+      FunctionName: core-automation-change-zones-lambda
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - LambdaExecutionRole
+          - Arn
+      Runtime: python3.12
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from boto3.dynamodb.conditions import Attr
+
+          def handler(event, context):
+              dynamodb = boto3.resource('dynamodb')
+
+              log_level = os.environ.get('LOG_LEVEL', 'ERROR').upper()
+
+              # Zones are not referenced in other FACTS, so, nothing to do yet
+
+              try:
+                  count = 0
+                  for record in event['Records']:
+                      if record['eventName'] == 'REMOVE':
+                          portfolio_facts = record['dynamodb']['OldImage']['ClientPortfolio']['S']
+                          zone = record['dynamodb']['OldImage']['Zone']['S']
+
+                          count += 1
+                          if log_level == 'INFO':
+                              print(f'SUCCESS: [{portfolio_facts}], zone: [{zone}] deleted')
+
+                  print(f'SUCCESS: {count} records deleted')
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(f'Success: {count} records deleted')
+                  }
+              except Exception as e:
+                  print(f'ERROR: {str(e)}')
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error: {str(e)}')
+                  }
+      Timeout: 30
+      Environment:
+        Variables:
+          ZONES_TABLE:
+            Ref: ZonesTableName
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup: /aws/lambda/core-automation-change-zones-lambda
+      Tags:
+        - Key: Name
+          Value: core-automation-change-zones-lambda
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ClientsTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - ClientsTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeClientsLambda
+          - Arn
+      StartingPosition: LATEST
+
+  PortfoliosTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - PortfoliosTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangePortfoliosLambda
+          - Arn
+      StartingPosition: LATEST
+
+  AppsTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - AppsTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeAppsLambda
+          - Arn
+      StartingPosition: LATEST
+
+  ZonesTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - ZonesTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeZonesLambda
+          - Arn
+      StartingPosition: LATEST
+
+  ClientsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Client
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Client
+          KeyType: HASH
+      TableName:
+        Ref: ClientsTableName
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      GlobalSecondaryIndexes: []
+      Tags:
+        - Key: Name
+          Value:
+            Ref: ClientsTableName
+        - Key: Client
+          Value: eits
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: multi-cloud-deployment-toolkit
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  PortfoliosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Client
+          AttributeType: S
+        - AttributeName: Portfolio
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Client
+          KeyType: HASH
+        - AttributeName: Portfolio
+          KeyType: RANGE
+      TableName:
+        Ref: PortfoliosTableName
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      GlobalSecondaryIndexes: []
+      Tags:
+        - Key: Name
+          Value:
+            Ref: PortfoliosTableName
+        - Key: Client
+          Value: eits
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: multi-cloud-deployment-toolkit
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  ZonesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: ClientPortfolio
+          AttributeType: S
+        - AttributeName: Zone
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: ClientPortfolio
+          KeyType: HASH
+        - AttributeName: Zone
+          KeyType: RANGE
+      TableName:
+        Ref: ZonesTableName
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      GlobalSecondaryIndexes: []
+      Tags:
+        - Key: Name
+          Value:
+            Ref: ZonesTableName
+        - Key: Client
+          Value: eits
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: multi-cloud-deployment-toolkit
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+  AppsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: ClientPortfolio
+          AttributeType: S
+        - AttributeName: AppRegex
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: ClientPortfolio
+          KeyType: HASH
+        - AttributeName: AppRegex
+          KeyType: RANGE
+      TableName:
+        Ref: AppsTableName
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      GlobalSecondaryIndexes: []
+      Tags:
+        - Key: Name
+          Value:
+            Ref: AppsTableName
+        - Key: Client
+          Value: eits
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: multi-cloud-deployment-toolkit
+        - Key: App
+          Value: api
+        - Key: Branch
+          Value: core-app
+        - Key: Build
+          Value:
+            Ref: Build
+
+Outputs:
+  ClientsTableArn:
+    Value:
+      Fn::GetAtt:
+        - ClientsTable
+        - Arn
+    Export:
+      Name: CoreAutomationClientsTableArn
+  ClientsTableName:
+    Value:
+      Ref: ClientsTableName
+    Export:
+      Name: CoreAutomationClientsTableName
+  PortfoliosTableArn:
+    Value:
+      Fn::GetAtt:
+        - PortfoliosTable
+        - Arn
+    Export:
+      Name: CoreAutomationPortfoliosTableArn
+  PortfoliosTableName:
+    Value:
+      Ref: PortfoliosTableName
+    Export:
+      Name: CoreAutomationPortfoliosTableName
+  ZonesTableArn:
+    Value:
+      Fn::GetAtt:
+        - ZonesTable
+        - Arn
+    Export:
+      Name: CoreAutomationZonesTableArn
+  ZonesTableName:
+    Value:
+      Ref: ZonesTableName
+    Export:
+      Name: CoreAutomationZonesTableName
+  AppsTableArn:
+    Value:
+      Fn::GetAtt:
+        - AppsTable
+        - Arn
+    Export:
+      Name: CoreAutomationAppsTableArn
+  AppsTableName:
+    Value:
+      Ref: AppsTableName
+    Export:
+      Name: CoreAutomationAppsTableName

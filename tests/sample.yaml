@@ -1,0 +1,99 @@
+services-dev:
+   AccountFacts:
+      AwsAccountId: '421940619307'  # simple-git-awslz-ss-dev
+      Environment: dev
+      Kms:
+         AwsAccountId: '624172648832' # simple-audit
+         DelegateAwsAccountIds:
+            -  '421940619307'       # simple-shareservices-dev
+      ResourceNamespace: core-network-dev-ss
+      VpcAliases:
+         public: SharedServicesVpc
+         private: SharedServicesVpc
+      SubnetAliases:
+         public: PublicSubnet
+         app: PrivateSubnet
+         private: PrivateSubnet
+      Tags:
+         AppGroup: SharedServices
+         CostCenter: TCSE0344
+   RegionFacts:
+      sin:
+         AwsRegion: ap-southeast-1
+         AzCount: 3
+         ImageAliases:
+        # Amazon Linux
+            amazon-linux-2: ami-0e2e44c03b85f58b3   # Amazon Linux 2 AMI (HVM), SSD Volume Type
+            amazon-linux-2_1: ami-03faaf9cde2b38e9f # Amazon Linux 2 AMI 2.0.20201111.0 x86_64 HVM gp2
+            rhel-7-linux-latest: ami-0a65c2a629181e55e # RHEL-8.3.0_HVM-20201031-arm64-0-Hourly2-GP2
+            amazon-linux-2-CIS-202204_1: ami-086fc4d7bd12bafd7 # simple amzn2 CIS shared image
+            rhel-8-CIS-202204_1: ami-05b4f3b534ef80cbc         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202205_1: ami-071289ad7e6f7757e # simple amzn2 CIS shared image
+            rhel-8-CIS-202205_1: ami-02d16f644ee33d3d3         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202206_1: ami-023c6b5a542728cea # simple amzn2 CIS shared image
+            rhel-8-CIS-202206_1: ami-09cf1909f6ff666f9         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202207_1: ami-016c07184f6cc1f4e # simple amzn2 CIS shared image
+            rhel-8-CIS-202207_1: ami-0af342799dbbafd8e         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202208_1: ami-0d30eb84a8a835bb3 # simple amzn2 CIS shared image
+            rhel-8-CIS-202208_1: ami-0910865a5a306922f         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202209_1: ami-0c2958f12eeecfd81 # simple amzn2 CIS shared image
+            rhel-8-CIS-202209_1: ami-061777dadf7a7496c         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202210_1: ami-07b26ecf2e50ea4f5 # simple amzn2 CIS shared image
+            rhel-8-CIS-202210_1: ami-0a690b1c05fcb98aa         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202211_1: ami-0e93832b5cab7094f # simple amzn2 CIS shared image
+            rhel-8-CIS-202211_1: ami-0c3ffc041af3da87d         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202212_1: ami-08dc4bed91130c8e1 # simple amzn2 CIS shared image
+            rhel-8-CIS-202212_1: ami-0d046b560edb4ba0e         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202301_1: ami-0c3f7295e7ecc3d3c # simple amzn2 CIS shared image
+            rhel-8-CIS-202301_1: ami-0f1afe61382a22881         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202302_1: ami-0a11473dc50b85280 # simple amzn2 CIS shared image
+            rhel-8-CIS-202302_1: ami-0973e43f957605141         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202303_1: ami-02daa8039d9fc9f5c # simple amzn2 CIS shared image
+            rhel-8-CIS-202303_1: ami-0b40f087bb156581c         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202304_1: ami-0759ae797112c4bdb # simple amzn2 CIS shared image
+            rhel-8-CIS-202304_1: ami-0558aa59e48966c9e         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202305_1: ami-077c174be71e28d6b # simple amzn2 CIS shared image
+            rhel-8-CIS-202305_1: ami-008669cea879a99da         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202306_1: ami-08bd93a2a671db67d # simple amzn2 CIS shared image
+            rhel-8-CIS-202306_1: ami-03bac293e8a0f5b41         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202307_1: ami-00596a915a727c727 # simple amzn2 CIS shared image
+            rhel-8-CIS-202307_1: ami-0c84c27516955b327         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202308_1: ami-01300659f42963542 # simple amzn2 CIS shared image
+            rhel-8-CIS-202308_1: ami-08f782fb7d521c346         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202309_1: ami-0ded0528f3e4951c0 # simple amzn2 CIS shared image
+            rhel-8-CIS-202309_1: ami-0ffeb4d6b3c8959db         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202310_1: ami-08acda1ff48332f06 # simple amzn2 CIS shared image
+            rhel-8-CIS-202310_1: ami-0351b23a8677728b8         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202311_1: ami-006801bab82ad06cd # simple amzn2 CIS shared image
+            rhel-8-CIS-202311_1: ami-0d8ab42ba8ac04881         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202312_1: ami-008c9b115d4408c82 # simple amzn2 CIS shared image
+            rhel-8-CIS-202312_1: ami-0af6133200fb81bdf         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202401_1: ami-03a5e895c0627f98e # simple amzn2 CIS shared image
+            rhel-8-CIS-202401_1: ami-0e2ec4317e279add2         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-202402_1: ami-062bdb32f3c1d230f # simple amzn2 CIS shared image
+            rhel-8-CIS-202402_1: ami-064addf2d4f3b66d8         # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-arm64-202402_1: ami-0eabe0feb97ea7c85 # simple amzn2 arm64 CIS shared image
+            rhel-8-CIS-arm64-202402_1: ami-0f9febdea6b21c127         # simple rhel8 arm64 CIS shared image
+            amazon-linux-2-CIS-202403_1: ami-02395f540862aa107       # simple amzn2 CIS shared image
+            rhel-8-CIS-202403_1: ami-0bb5817ebbd15fe11               # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-arm64-202403_1: ami-0c7e2960d2c620d35 # simple amzn2 arm64 CIS shared image
+            rhel-8-CIS-arm64-202403_1: ami-0c89eb8aceab2042d         # simple rhel8 arm64 CIS shared image
+            amazon-linux-2-CIS-202404_1: ami-056ebf649d2061c64       # simple amzn2 CIS shared image
+            rhel-8-CIS-202404_1: ami-04b8f18e7ce07c6be               # simple rhel8 CIS shared image
+            amazon-linux-2-CIS-arm64-202404_1: ami-069f20f8d25952381 # simple amzn2 arm64 CIS shared image
+            rhel-8-CIS-arm64-202404_1: ami-02a7e262dc2149815         # simple rhel8 arm64 CIS shared image
+         MinSuccessfulInstancesPercent: 100
+         SecurityAliases:
+            public-internet:
+               -  {Type: cidr, Value: 0.0.0.0/0, Description: Internet}
+            intranet:
+               -  {Type: cidr, Value: 10.0.0.0/8, Description: Summary route to on-prem}
+         ProxyHost: squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net
+         ProxyPort: '3128'
+         ProxyUrl: http://squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net:3128
+         NoProxy: 127.0.0.1,logs.ap-southeast-1.amazonaws.com,localhost,169.254.169.253,169.254.169.254,s3.ap-southeast-1.amazonaws.com,dynamodb.ap-southeast-1.amazonaws.com,s3-ap-southeast-1.amazonaws.com,cloudformation.ap-southeast-1.amazonaws.com,amazonlinux.ap-southeast-1.amazonaws.com,10.*
+         SecurityGroupAliases: {}
+         NameServers:
+            -  10.175.112.133
+            -  10.175.112.5
+            -  10.175.112.69

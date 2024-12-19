@@ -1,0 +1,17 @@
+[
+    {
+        "ui_bucket": "eits-simple-cloud-kit-ui",
+        "organization_id": "o-t73gu32ai5",
+        "organization_account": "154798051514",
+        "audit_account": "154798051514",
+        "master_region": "ap-southeast-1",
+        "docs_bucket": "core-automation-docs",
+        "client_region": "ap-southeast-1",
+        "automation_bucket": "eits-core-automation-ap-southeast-1",
+        "bucket_region": "ap-southeast-1",
+        "automation_account": "154798051514",
+        "client": "eits",
+        "security_account": "154798051514",
+        "scope_prefix": ""
+    }
+]
