@@ -1,7 +1,8 @@
+from collections import ChainMap
 from core_db.response import Response
 from core_db.item.component.actions import ComponentActions
 
-from ..constants import QUERY_STRING_PARAMETERS, BODY_PARAMETER
+from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
 from ..types import ActionHandlerRoutes
 
 from ..actions import ApiActions
@@ -13,25 +14,38 @@ class ApiComponentActions(ApiActions, ComponentActions):
 
 
 def get_component_list_action(**kwargs) -> Response:
-    return ApiComponentActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiComponentActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_component_action(**kwargs) -> Response:
-    return ApiComponentActions.get(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiComponentActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def create_component_action(**kwargs) -> Response:
-    return ApiComponentActions.create(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiComponentActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def update_component_action(**kwargs) -> Response:
-    return ApiComponentActions.update(
-        **kwargs.get(BODY_PARAMETER, {}), **kwargs.get(QUERY_STRING_PARAMETERS, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiComponentActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_component_action(**kwargs) -> Response:
-    return ApiComponentActions.delete(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiComponentActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 # API Gateway Lambda Proxy Integration routes

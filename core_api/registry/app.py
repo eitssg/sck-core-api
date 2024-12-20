@@ -1,3 +1,5 @@
+from collections import ChainMap
+
 from core_db.response import Response
 from core_db.registry.app.actions import AppActions
 
@@ -18,37 +20,45 @@ class ApiRegAppActions(ApiActions, AppActions):
 
 
 def list_app_action(**kwargs) -> Response:
-    return ApiRegAppActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegAppActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_app_action(**kwargs) -> Response:
-    return ApiRegAppActions.get(
-        **kwargs.get(PATH_PARAMETERS, {}), **kwargs.get(QUERY_STRING_PARAMETERS, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegAppActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def create_app_action(**kwargs) -> Response:
-    return ApiRegAppActions.create(
-        **kwargs.get(PATH_PARAMETERS, {}), **kwargs.get(BODY_PARAMETER, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegAppActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def update_app_action(**kwargs) -> Response:
-    return ApiRegAppActions.update(
-        **kwargs.get(PATH_PARAMETERS, {}), **kwargs.get(BODY_PARAMETER, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegAppActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 def patch_app_action(**kwargs) -> Response:
-    return ApiRegAppActions.patch(
-        **kwargs.get(PATH_PARAMETERS, {}), **kwargs.get("body", {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegAppActions.patch(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_app_action(**kwargs) -> Response:
-    return ApiRegAppActions.delete(
-        **kwargs.get(PATH_PARAMETERS, {}), **kwargs.get(QUERY_STRING_PARAMETERS, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegAppActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 registry_app_actions: ActionHandlerRoutes = {

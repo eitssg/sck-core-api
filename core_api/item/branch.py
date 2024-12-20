@@ -1,9 +1,12 @@
-from ..constants import QUERY_STRING_PARAMETERS, BODY_PARAMETER
+from collections import ChainMap
 
-from ..types import ActionHandlerRoutes
 from core_db.response import Response
 
 from core_db.item.branch.actions import BranchActions
+
+from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
+
+from ..types import ActionHandlerRoutes
 
 from ..actions import ApiActions
 
@@ -14,23 +17,38 @@ class ApiBranchActions(ApiActions, BranchActions):
 
 
 def get_branch_list_action(**kwargs) -> Response:
-    return ApiBranchActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBranchActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_branch_action(**kwargs) -> Response:
-    return ApiBranchActions.get(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBranchActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def post_branch_action(**kwargs) -> Response:
-    return ApiBranchActions.create(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBranchActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def put_branch_action(**kwargs) -> Response:
-    return ApiBranchActions.update(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBranchActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_branch_action(**kwargs) -> Response:
-    return ApiBranchActions.delete(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBranchActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 # API Gateway Lambda Proxy Integration routes

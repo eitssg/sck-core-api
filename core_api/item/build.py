@@ -1,7 +1,11 @@
+from collections import ChainMap
+
 from botocore.exceptions import ClientError
 from pynamodb.exceptions import DoesNotExist
 
 import core_framework as util
+
+import core_logging as log
 
 from core_framework.constants import TR_RESPONSE
 
@@ -13,12 +17,8 @@ from core_invoker.handler import handler as invoker_handler
 
 from ..types import ActionHandlerRoutes
 
-from ..constants import (
-    QUERY_STRING_PARAMETERS,
-    BODY_PARAMETER,
-    PATH_PARAMETERS,
-)
-from core_db.response import Response
+from ..constants import QUERY_STRING_PARAMETERS, BODY_PARAMETER, PATH_PARAMETERS
+from core_db.response import Response, SuccessResponse
 
 from core_db.exceptions import (
     BadRequestException,
@@ -33,6 +33,7 @@ from ..actions import ApiActions
 from core_framework.models import (
     TaskPayload,
     DeploymentDetails as DeploymentDetailsClass,
+    PackageDetails,
 )
 
 
@@ -49,6 +50,7 @@ class ApiBuildActions(ApiActions, BuildActions):
                 f"Build {build.prn}: Branch not found: {build.parent_prn}"
             )
 
+        # The release and teardown actions do not require a "Package" definition.
         payload = TaskPayload(
             Task=action,
             DeploymentDetails=DeploymentDetailsClass(
@@ -58,24 +60,27 @@ class ApiBuildActions(ApiActions, BuildActions):
                 BranchShortName=branch.short_name,
                 Build=build.name,
             ),
+            Package=PackageDetails(
+                BucketName=util.get_bucket_name(), BucketRegion=util.get_bucket_region()
+            ),
         )
 
         if util.is_local_mode():
-            response = invoker_handler(payload.model_dump())
-        else:
-            arn = util.get_invoker_lambda_arn()
-            invoker_result = aws.invoke_lambda(arn, payload.model_dump())
-            response = invoker_result.get(TR_RESPONSE, {})
+            return invoker_handler(payload.model_dump())
 
-        return response
+        arn = util.get_invoker_lambda_arn()
+        response = aws.invoke_lambda(arn, payload.model_dump())
+        if TR_RESPONSE not in response:
+            raise BadRequestException(f"Invalid invoker response: {response}")
+        return response[TR_RESPONSE]
 
     @classmethod
     def release(cls, **kwargs) -> Response:
 
         response = BuildActions.get(**kwargs)
 
-        if not response.data or not isinstance(response.data, dict):
-            raise NotFoundException(f"Build not found: {kwargs}")
+        if not response or not response.data or not isinstance(response.data, dict):
+            raise NotFoundException(f"Cannot find build {kwargs}:")
 
         build = BuildModel(**response.data)
 
@@ -84,28 +89,35 @@ class ApiBuildActions(ApiActions, BuildActions):
                 f"Build {build.prn} is not allowed to be released: {build.status}"
             )
 
+        build.status = RELEASE_REQUESTED
+
+        response = BuildActions.update(**build.to_simple_dict())
+
+        log.info("Build status updated: RELEASE_REQUESTED")
+
         # It can be released, so let's do it
         try:
             # Trigger the release
-            cls.__invoker_action_request("release", build)
+            release_response = cls.__invoker_action_request("release", build)
         except ClientError as e:
             raise BadRequestException(
                 f"AWS Client Error requesting bu8ild releasing: {e}"
             )
 
-        build.status = RELEASE_REQUESTED
+        if not release_response:
+            raise BadRequestException(f"Invalid release response: {release_response}")
 
-        response = BuildActions.update(**build.to_simple_dict())
+        log.info(f"Build {build.prn} release response: ", details=release_response)
 
-        return response
+        return SuccessResponse(f"Build {build.prn} release requested")
 
     @classmethod
     def teardown(cls, **kwargs) -> Response:
 
         response = BuildActions.get(**kwargs)
 
-        if not response.data or not isinstance(response.data, dict):
-            raise NotFoundException(f"Build not found: {kwargs}")
+        if not response or not response.data or not isinstance(response.data, dict):
+            raise NotFoundException(f"Cannot find build {kwargs}:")
 
         build = BuildModel(**response.data)
 
@@ -114,56 +126,84 @@ class ApiBuildActions(ApiActions, BuildActions):
                 f"Build {build.prn} is not allowed to be teared down: {build.status}"
             )
 
+        build.status = TEARDOWN_REQUESTED
+
+        response = BuildActions.update(**build.to_simple_dict())
+
+        log.info("Build status updated: TEARDOWN_REQUESTED")
+
         try:
             # Trigger the teardown
-            cls.__invoker_action_request("teardown", build)
+            teardown_response = cls.__invoker_action_request("teardown", build)
         except ClientError as e:
             raise BadRequestException(
                 f"AWS Client Error requesting build teardown: {e}"
             )
 
-        build.status = TEARDOWN_REQUESTED
+        if not teardown_response:
+            raise BadRequestException(f"Invalid teardown response: {teardown_response}")
 
-        response = BuildModel.update(**build.to_simple_dict())
+        log.info(f"Build {build.prn} teardown response: ", details=teardown_response)
 
-        return response
+        log.trace("Build teardown response", details=response)
+
+        return SuccessResponse(f"Build {build.prn} teardown requested")
 
 
 def get_builds(**kwargs) -> Response:
-    return ApiBuildActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_build(**kwargs) -> Response:
-    return ApiBuildActions.get(**kwargs.get(PATH_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def create_build(**kwargs) -> Response:
-    return ApiBuildActions.create(
-        **kwargs.get(PATH_PARAMETERS, {}),
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def update_build(**kwargs) -> Response:
-    return ApiBuildActions.update(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_build(**kwargs) -> Response:
-    return ApiBuildActions.delete(**kwargs.get(PATH_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 def release_build(**kwargs) -> Response:
-    return ApiBuildActions.release(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.release(**dict(ChainMap(body, pp, qsp)))
 
 
 def teardown_build(**kwargs) -> Response:
-    return ApiBuildActions.teardown(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiBuildActions.teardown(**dict(ChainMap(body, pp, qsp)))
 
 
 # API Gateway Lambda Proxy Integration routes
 item_build_actions: ActionHandlerRoutes = {
     "GET:/api/v1/item/builds": get_builds,
     "GET:/api/v1/item/build": get_build,
-    "PUT:/api/v1//item/build": update_build,
+    "PUT:/api/v1/item/build": update_build,
     "DELETE:/api/vi/item/build": delete_build,
     "POST:/api/v1/item/build": create_build,
     "POST:/api/v1/item/build/teardown": teardown_build,

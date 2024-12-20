@@ -1059,7 +1059,7 @@ reference = "nexus"
 
 [[package]]
 name = "core-component-compiler"
-version = "0.0.6-pre.203+3710bbc5"
+version = "0.0.6-pre.209+a5420e5b"
 description = "Core-Automation Component Compiler"
 optional = false
 python-versions = "^3.12"
@@ -1084,7 +1084,7 @@ url = "../core-component-compiler"
 
 [[package]]
 name = "core-db"
-version = "0.0.1-pre.4+2b25e2b"
+version = "0.0.1-pre.6+7662d35"
 description = ""
 optional = false
 python-versions = "^3.12"
@@ -1104,7 +1104,7 @@ url = "../core-db"
 
 [[package]]
 name = "core-deployspec-compiler"
-version = "0.0.6-pre.203+3710bbc5"
+version = "0.0.6-pre.209+a5420e5b"
 description = "Core Automation Deployspec Actions Compiler lambda function"
 optional = false
 python-versions = "^3.12"
@@ -1123,7 +1123,7 @@ url = "../core-deployspec-compiler"
 
 [[package]]
 name = "core-execute"
-version = "0.0.6-pre.203+3710bbc5"
+version = "0.0.6-pre.209+a5420e5b"
 description = "Core Automation Engine execute Lambda function"
 optional = false
 python-versions = "^3.12"
@@ -1142,7 +1142,7 @@ url = "../core-execute"
 
 [[package]]
 name = "core-framework"
-version = "0.0.1-pre.4+ed9c8a7"
+version = "0.0.1-pre.7+3be50c7"
 description = "Core-Framework for Core-Automation"
 optional = false
 python-versions = "^3.12"
@@ -1167,7 +1167,7 @@ url = "../core-framework"
 
 [[package]]
 name = "core-invoker"
-version = "0.0.6-pre.203+3710bbc5"
+version = "0.0.6-pre.209+a5420e5b"
 description = "Core Automation Invoker Lambda function"
 optional = false
 python-versions = "^3.12"
@@ -1189,7 +1189,7 @@ url = "../core-invoker"
 
 [[package]]
 name = "core-runner"
-version = "0.0.6-pre.203+3710bbc5"
+version = "0.0.6-pre.209+a5420e5b"
 description = "Core Automation Runner Lambda function"
 optional = false
 python-versions = "^3.12"

@@ -4,6 +4,7 @@ This FACTS database should come from DynamoDB.  Not 'accounts.yaml' and 'apps.ya
 
 (In re-rewrite.  We need to use DynamoDB instead of FACTS YAML files)
 """
+from collections import ChainMap
 
 import re
 import core_framework as util
@@ -346,11 +347,10 @@ def get_facts_action(**kwargs) -> Response:
                 "error": "Facts not found for given PRN"
             }
     """
-    return ApiFactsActions.get(
-        **kwargs.get(BODY_PARAMETER, {}),
-        **kwargs.get(QUERY_STRING_PARAMETERS, {}),
-        **kwargs.get(PATH_PARAMETERS, {}),
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiFactsActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 # Define API Gateway routes

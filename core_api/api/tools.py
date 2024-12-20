@@ -76,6 +76,25 @@ def generate_user_agent(module_name, module_version):
     return user_agent
 
 
+_identity: dict | None = None
+
+
+def get_identity():
+    """
+    Get's the identity of the caller.  Your workstation.
+    And uses, of course the AWS_PROFILE environment variable.
+
+    Returns:
+        (dict): A dictionary of the identity of the caller.
+    """
+    global _identity
+
+    if not _identity:
+        _identity = aws.get_identity()
+
+    return _identity
+
+
 def generate_proxy_event(
     request_id: str,
     method: str,
@@ -96,7 +115,7 @@ def generate_proxy_event(
 
     module_name = "core_api"
 
-    identity = aws.get_identity()
+    identity = get_identity()
     if identity:
         if "Account" in identity:
             aws_account = identity["Account"]

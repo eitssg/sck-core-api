@@ -1,12 +1,13 @@
 """
 This module contains the actions for the core API for the Portfolio ITEM Actions
 """
-
+from collections import ChainMap
 from core_db.response import Response
 from core_db.item.portfolio.actions import PortfolioActions
 
 from ..constants import (
     QUERY_STRING_PARAMETERS,
+    PATH_PARAMETERS,
     BODY_PARAMETER,
 )
 from ..types import ActionHandlerRoutes
@@ -19,23 +20,38 @@ class ApiPortfolioActions(ApiActions, PortfolioActions):
 
 
 def get_portfolio_list_action(**kwargs) -> Response:
-    return ApiPortfolioActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiPortfolioActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_portfolio_action(**kwargs) -> Response:
-    return ApiPortfolioActions.get(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiPortfolioActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def update_portfolio_action(**kwargs) -> Response:
-    return ApiPortfolioActions.update(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiPortfolioActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 def create_portfolio_action(**kwargs) -> Response:
-    return ApiPortfolioActions.create(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiPortfolioActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_portfolio_action(**kwargs) -> Response:
-    return ApiPortfolioActions.delete(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiPortfolioActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 # API Gateway Lambda Proxy Integration routes

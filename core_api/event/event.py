@@ -1,5 +1,7 @@
+from collections import ChainMap
+
 from ..types import ActionHandlerRoutes
-from ..constants import BODY_PARAMETER, QUERY_STRING_PARAMETERS
+from ..constants import BODY_PARAMETER, PATH_PARAMETERS, QUERY_STRING_PARAMETERS
 
 
 from core_db.event.actions import EventActions
@@ -38,7 +40,10 @@ def action_get_event_list(**kwargs) -> Response:
     Returns:
         SeccessResponse: a list of all the respones in the SuccessRepsonse body.
     """
-    return ApiEventActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiEventActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def action_create_event(**kwargs) -> Response:
@@ -59,7 +64,10 @@ def action_create_event(**kwargs) -> Response:
     Args:
         event (dict): The event to create from REST API
     """
-    return ApiEventActions.create(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiEventActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def action_delete_event(**kwargs) -> Response:
@@ -76,7 +84,10 @@ def action_delete_event(**kwargs) -> Response:
     Args:
         eveng (dict): The lambda event
     """
-    return ApiEventActions.delete(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiEventActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 event_actions: ActionHandlerRoutes = {

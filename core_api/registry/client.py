@@ -1,3 +1,5 @@
+from collections import ChainMap
+
 from core_db.response import Response
 from core_db.registry.client.actions import ClientActions
 
@@ -24,7 +26,10 @@ def get_client_list_action(**kwargs) -> Response:
     Returns:
         Response: list of client names
     """
-    return ApiRegClientActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegClientActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_client_action(**kwargs) -> Response:
@@ -38,7 +43,10 @@ def get_client_action(**kwargs) -> Response:
     Returns:
         Response: Client details or 404 if not found
     """
-    return ApiRegClientActions.get(**kwargs.get(PATH_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegClientActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def create_client_action(**kwargs) -> Response:
@@ -52,7 +60,10 @@ def create_client_action(**kwargs) -> Response:
     Returns:
         Response: Created client details or error if client exists
     """
-    return ApiRegClientActions.create(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegClientActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def update_client_action(**kwargs) -> Response:
@@ -66,9 +77,10 @@ def update_client_action(**kwargs) -> Response:
     Returns:
         Response: Updated client details
     """
-    return ApiRegClientActions.update(
-        **kwargs.get("pathParameters", {}), **kwargs.get(BODY_PARAMETER, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegClientActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 def patch_client_action(**kwargs) -> Response:
@@ -82,9 +94,10 @@ def patch_client_action(**kwargs) -> Response:
     Returns:
         Response: Updated client details or 404 if not found
     """
-    return ApiRegClientActions.patch(
-        **kwargs.get("pathParameters", {}), **kwargs.get(BODY_PARAMETER, {})
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegClientActions.patch(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_client_action(**kwargs) -> Response:
@@ -98,7 +111,10 @@ def delete_client_action(**kwargs) -> Response:
     Returns:
         Response: 204 No Content on success
     """
-    return ApiRegClientActions.delete(**kwargs.get(PATH_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiRegClientActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 registry_client_actions: ActionHandlerRoutes = {

@@ -1,0 +1,21 @@
+
+Client: eits
+Portfolio: singtel-cloud-kit
+App: api
+BranchShortName: main
+Branch: main
+Build: 1
+Componnent: resurcename
+PortfolioPrn: "prn:singtel-cloud-kit"
+AppPrn: "prn:singtel-cloud-kit:api"
+BranchPrn: "prn:singtel-cloud-kit:api:main"
+ComponentPrn: "prn:singtel-cloud-kit:api:main:1:resurcename"
+BuildPrn: "prn:singtel-cloud-kit:api:main:1"
+Scope: build
+Consumable:
+  resurcename:
+    Type: unknown
+Environment: prod
+AwsAccountId: "123456789012"
+AwsRegion: "ap-southeast-1"
+ComponentUrlPrefix: "artefacts/singtel-cloud-kit/api/main/1"

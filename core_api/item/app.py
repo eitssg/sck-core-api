@@ -1,5 +1,8 @@
+from collections import ChainMap
+
 from ..constants import (
     QUERY_STRING_PARAMETERS,
+    PATH_PARAMETERS,
     BODY_PARAMETER,
 )
 
@@ -17,26 +20,38 @@ class ApiAppActions(ApiActions, AppActions):
 
 
 def get_app_list_action(**kwargs) -> Response:
-    return ApiAppActions.list(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiAppActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
 def get_app_action(**kwargs) -> Response:
-    return ApiAppActions.get(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiAppActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 def create_app_action(**kwargs) -> Response:
-    return ApiAppActions.create(**kwargs.get(BODY_PARAMETER, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiAppActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
 def delete_app_action(**kwargs) -> Response:
-    return ApiAppActions.delete(**kwargs.get(QUERY_STRING_PARAMETERS, {}))
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiAppActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 def update_app_action(**kwargs) -> Response:
-    return ApiAppActions.update(
-        **kwargs.get(BODY_PARAMETER, {}),
-        **kwargs.get(QUERY_STRING_PARAMETERS, {}),
-    )
+    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
+    pp = kwargs.get(PATH_PARAMETERS, None) or {}
+    body = kwargs.get(BODY_PARAMETER, None) or {}
+    return ApiAppActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
 # API Gateway Lambda Proxy Integration routes
