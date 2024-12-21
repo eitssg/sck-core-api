@@ -162,6 +162,16 @@ def test_app(  # noqa E302
 
         elif isinstance(expected_data, list):
             assert len(response_data) > 0
+            for i in range(len(response_data)):
+                if isinstance(expected_data[i], dict):
+                    for k, v in expected_data[i].items():
+                        assert k in response_data[i]
+                        assert response_data[i][k] == v
+                elif isinstance(expected_data[i], str):
+                    assert response_data[i] == expected_data[i]
+
+        elif isinstance(expected_data, str):
+            assert response_data == expected_data
 
     except Exception as e:
         assert False, f"Error: {e}"

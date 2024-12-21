@@ -1,20 +1,9 @@
-import os
-import io
 import pytest
 
 from fastapi.testclient import TestClient
 
-from ruamel.yaml import YAML
 
 import core_framework as util
-from core_framework.magic import MagicS3Client
-
-from core_framework.models import (
-    ActionDefinition,
-    ActionParams,
-    DeploymentDetails as DeploymentDetailsClass,
-    TaskPayload,
-)
 
 from core_db.event.models import EventModel
 from core_db.item.models import ItemModel
@@ -25,7 +14,7 @@ from core_db.registry.zone.models import ZoneFacts
 
 from core_api.api.fast_api import get_app
 
-from .test_api_data import api_paths
+from .test_facts_data import api_paths
 
 # Create a FastAPI test client the same that unvicorn will use
 client = TestClient(get_app())
@@ -58,13 +47,13 @@ def bootstrap_dynamo():
             PortfolioFacts.delete_table()
         PortfolioFacts.create_table(wait=True)
 
-        if AppFacts.exists():
-            AppFacts.delete_table()
-        AppFacts.create_table(wait=True)
-
         if ZoneFacts.exists():
             ZoneFacts.delete_table()
         ZoneFacts.create_table(wait=True)
+
+        if AppFacts.exists():
+            AppFacts.delete_table()
+        AppFacts.create_table(wait=True)
 
     except Exception as e:
         print(e)
@@ -73,59 +62,51 @@ def bootstrap_dynamo():
     return True
 
 
-@pytest.fixture(scope="module")
-def teardown_action():
+def compare_list(item1: list, item2: list):
+    """ Compare two lists
 
-    action = ActionDefinition(
-        Label="my-teardown-action",
-        Type="SYSTEM::NoOp",
-        Params=ActionParams(  # These parameters are not even used by NoOp
-            Account="123456789012", Region="us-west-1", StackName="no-stack-exists"
-        ),
-        Scope="build",
-    )
+    Asserts that the two lists are the same length and that each element is the same
 
-    task_payload = TaskPayload(
-        Task="teardown",
-        DeploymentDetails=DeploymentDetailsClass(
-            Portfolio="simple-cloud-kit", App="api", Branch="main", Build="1"
-        ),
-    )
+    Args:
+        item1 (list): The first list (Expected Data)
+        item2 (list): The second list (Actual Data)
 
-    action_details = task_payload.Actions
-    state_details = task_payload.State
+    """
+    assert len(item1) == len(item2), f"Length: {len(item1)}"
+    for i in range(len(item1)):
+        if isinstance(item1[i], dict):
+            compare_dict(item1[i], item2[i])
+        elif isinstance(item1[i], list):
+            compare_list(item1[i], item2[i])
+        else:
+            assert item1[i] == item2[i], f"Key: {i}, {item1}"
 
-    y = YAML(typ="safe")
-    y.allow_unicode = True
-    y.default_flow_style = False
 
-    magicS3 = MagicS3Client(
-        region=action_details.BucketRegion, app_path=action_details.AppPath
-    )
+def compare_dict(item1: dict, item2: dict):
+    """ Compare two dictionaries
 
-    # Create a sample action file for the test cases (teardown)
-    action_list = [action.model_dump()]
-    data = io.BytesIO()
-    y.dump(action_list, data)
-    magicS3.put_object(Key=action_details.Key, Body=data.getvalue())
+    Asserts that the two dictionaries have the same keys and values.
 
-    # Create a sample state file (context file) for the test cases
-    magicS3 = MagicS3Client(
-        region=action_details.BucketRegion, app_path=state_details.AppPath
-    )
+    This only looks at item1 keys.  So, if item2 has more keys, they are ignored.
+    This allows "actual data" to have more data than "expected data" so you
+    can inspect specific elements only.
 
-    fn = os.path.join(os.path.dirname(__file__), "test_context_state.yaml")
-    with open(fn, "r") as f:
-        data = f.read()
-    magicS3.put_object(Key=state_details.Key, Body=data)
+    Args:
+        item1 (dict): The first dictionary (Expected Data)
+        item2 (dict): The second dictionary (Actual Data)
+    """
 
-    return action
+    for k, v in item1.items():
+        if isinstance(v, dict):
+            compare_dict(v, item2[k])
+        elif isinstance(v, list):
+            compare_list(v, item2[k])
+        else:
+            assert v == item2[k], f"Key: {k}, {item1}"
 
 
 @pytest.mark.parametrize("http_path,expected_result", api_paths)
-def test_app(  # noqa E302
-    http_path, expected_result, bootstrap_dynamo, teardown_action
-):
+def test_the_facts(http_path, expected_result, bootstrap_dynamo):  # noqa E302
 
     try:
         method, path, body = http_path
@@ -155,13 +136,15 @@ def test_app(  # noqa E302
         response_data = response_envelope.get("data", None)
         expected_data = expected_response.get("data", None)
 
+        # Jeeze... replace this with recursive function!
         if isinstance(expected_data, dict):
-            for k, v in expected_data.items():
-                assert k in response_data
-                assert response_data[k] == v
+            compare_dict(expected_data, response_data)
 
         elif isinstance(expected_data, list):
-            assert len(response_data) > 0
+            compare_list(expected_data, response_data)
+
+        elif isinstance(expected_data, str):
+            assert expected_data == response_data
 
     except Exception as e:
         assert False, f"Error: {e}"
