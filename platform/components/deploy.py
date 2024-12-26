@@ -21,7 +21,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 def get_client():
-    return os.getenv("CLIENT_NAME", os.getenv("CLIENT", None))
+    return os.getenv("CLIENT", None)
 
 
 def generate_parameters():
@@ -377,7 +377,7 @@ def main():
 
         if client is None:
             raise Exception(
-                "CLIENT_NAME or CLIENT environment variable is not set.  You MUST tell me the base org zone at the moment before we can continue."
+                "CLIENT environment variable is not set.  You MUST tell me the base org zone at the moment before we can continue."
             )
 
         # raise an exception if the yaml file doesn't exist
