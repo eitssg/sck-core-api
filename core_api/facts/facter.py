@@ -4,6 +4,7 @@ This FACTS database should come from DynamoDB.  Not 'accounts.yaml' and 'apps.ya
 
 (In re-rewrite.  We need to use DynamoDB instead of FACTS YAML files)
 """
+
 from collections import ChainMap
 
 import re

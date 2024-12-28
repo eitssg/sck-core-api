@@ -9,6 +9,7 @@ typically the user will always perform action_get_list() to retrieve all the dep
 The user will then perform action_get_item() to retrieve the deployment definition for a specific app.
 
 """
+
 from collections import ChainMap
 
 from core_db.response import Response

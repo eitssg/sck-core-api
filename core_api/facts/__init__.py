@@ -1,4 +1,5 @@
 """ Module to provide functions to interact with FACTS data """
+
 from .facter import (
     get_facts,
     get_facts_by_identity,

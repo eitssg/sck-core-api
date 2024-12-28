@@ -63,7 +63,7 @@ def bootstrap_dynamo():
 
 
 def compare_list(item1: list, item2: list):
-    """ Compare two lists
+    """Compare two lists
 
     Asserts that the two lists are the same length and that each element is the same
 
@@ -83,7 +83,7 @@ def compare_list(item1: list, item2: list):
 
 
 def compare_dict(item1: dict, item2: dict):
-    """ Compare two dictionaries
+    """Compare two dictionaries
 
     Asserts that the two dictionaries have the same keys and values.
 
