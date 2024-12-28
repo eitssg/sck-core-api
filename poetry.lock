@@ -2616,13 +2616,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-component"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core-Automation Component Compiler"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_component-0.0.1-py3-none-any.whl", hash = "sha256:81e3b5407f747bcf433422252f69e3591e0e47d5d5a00e6ce694dd3ac4e5536e"},
-    {file = "sck_core_component-0.0.1.tar.gz", hash = "sha256:b32da18167fa491ff4b785a25b28237b2741f4910555152fbf04eb35fdc429ee"},
+    {file = "sck_core_component-0.0.2-py3-none-any.whl", hash = "sha256:a3d569eda44f6e2068b7e37b7f9786772267616786942d127cdd4687b2da3ca5"},
+    {file = "sck_core_component-0.0.2.tar.gz", hash = "sha256:1c952a814f031d79fd1f54e0a47d3235451ed15fb035d4647a6e760a05845622"},
 ]
 
 [package.dependencies]
@@ -2635,8 +2635,8 @@ jmespath = ">=1.0.1,<2.0.0"
 netaddr = ">=1.3.0,<2.0.0"
 pyyaml = ">=6.0.2,<7.0.0"
 pyyaml-include = ">=2.1,<3.0"
-sck-core-db = ">=0.0.1,<0.0.2"
-sck-core-framework = ">=0.0.1,<0.0.2"
+sck-core-db = ">=0.0.2,<0.0.3"
+sck-core-framework = ">=0.0.2,<0.0.3"
 
 [package.source]
 type = "legacy"
@@ -2645,13 +2645,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-db"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core Database Library to access DynamoDB for Core-Automation"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_db-0.0.1-py3-none-any.whl", hash = "sha256:f36116d936bbcde5d9a219ecf4c8cca9f91f29bc7188db80bf350ae568b796bb"},
-    {file = "sck_core_db-0.0.1.tar.gz", hash = "sha256:2483de843fa624280f4238b57465827d1960b2e7e4ee1e80bb4fc15cb85949e4"},
+    {file = "sck_core_db-0.0.2-py3-none-any.whl", hash = "sha256:c247f6c0aed5c817ff7e5b795584c5834b0d16735df0d4b8f11a0db9c9032b25"},
+    {file = "sck_core_db-0.0.2.tar.gz", hash = "sha256:7f865cc6eeae386ed9c3a97faa30ca2f4c5189e7ebc1d96e081785606360cb43"},
 ]
 
 [package.dependencies]
@@ -2659,7 +2659,7 @@ boto3 = ">=1.35.87"
 botocore = ">=1.35.87"
 pydantic = ">=2.10.3,<3.0.0"
 pynamodb = ">=6.0.1,<7.0.0"
-sck-core-framework = ">=0.0.1,<0.0.2"
+sck-core-framework = ">=0.0.2,<0.0.3"
 
 [package.source]
 type = "legacy"
@@ -2668,13 +2668,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-deployspec"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core Automation Deployspec Actions Compiler lambda function"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_deployspec-0.0.1-py3-none-any.whl", hash = "sha256:605daafcdb991246c4ded3b274e5022e7c6febdea0fc48c4a455ee81490f47b1"},
-    {file = "sck_core_deployspec-0.0.1.tar.gz", hash = "sha256:ff95894e2f886cc6fb3caf1a4b638a46a785f6623f3e815320b16a84cb443f87"},
+    {file = "sck_core_deployspec-0.0.2-py3-none-any.whl", hash = "sha256:ca5415a3b773a3bc08ec01a9ac5cb46bca9601e0641f780df4bb8040c1d9e854"},
+    {file = "sck_core_deployspec-0.0.2.tar.gz", hash = "sha256:d3cb3fc1ecf2e4b13e1f0c296fe0cc7415972924b9ff3514c65ead64c60e7163"},
 ]
 
 [package.dependencies]
@@ -2682,8 +2682,8 @@ boto3 = ">=1.35.87"
 botocore = ">=1.35.87"
 PyYAML = ">=6.0.2,<7.0.0"
 pyyaml-include = ">=2.1,<3.0"
-sck-core-db = ">=0.0.1,<0.0.2"
-sck-core-framework = ">=0.0.1,<0.0.2"
+sck-core-db = ">=0.0.2,<0.0.3"
+sck-core-framework = ">=0.0.2,<0.0.3"
 
 [package.source]
 type = "legacy"
@@ -2692,13 +2692,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-execute"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core Automation Engine execute Lambda function"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_execute-0.0.1-py3-none-any.whl", hash = "sha256:4837d28ff91e1951eb7f564583fd7439b386da67b312c1c5ee4a9e08c69a5935"},
-    {file = "sck_core_execute-0.0.1.tar.gz", hash = "sha256:a0d73aad7a460160a4eb26afdc7a965bb431f010ed4a73f6a1043c05ff88f457"},
+    {file = "sck_core_execute-0.0.2-py3-none-any.whl", hash = "sha256:1268c3dbdb19078b4ebf12c94e3cc690e0b78dde8e34fe9d9d6459a7b565380a"},
+    {file = "sck_core_execute-0.0.2.tar.gz", hash = "sha256:6ca60c97e9e85a91a0f83ea85475adb95dba742f2835d5f843e71e33c3c40a20"},
 ]
 
 [package.dependencies]
@@ -2706,8 +2706,8 @@ boto3 = ">=1.35.87"
 botocore = ">=1.35.87"
 PyYAML = ">=6.0.2,<7.0.0"
 pyyaml-include = ">=2.1,<3.0"
-sck-core-db = ">=0.0.1,<0.0.2"
-sck-core-framework = ">=0.0.1,<0.0.2"
+sck-core-db = ">=0.0.2,<0.0.3"
+sck-core-framework = ">=0.0.2,<0.0.3"
 
 [package.source]
 type = "legacy"
@@ -2716,13 +2716,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-framework"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core-Framework for Core-Automation"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_framework-0.0.1-py3-none-any.whl", hash = "sha256:4e7344ade0a24591f4ddffb17e69d66c8bb9bff35bcd8af094fd1d1467fc98b7"},
-    {file = "sck_core_framework-0.0.1.tar.gz", hash = "sha256:475e69e6c640277994789e1f351ad63b29d7f1f489e124ccab9f0d2cd0099b18"},
+    {file = "sck_core_framework-0.0.2-py3-none-any.whl", hash = "sha256:e33c7651d0b4e9f539d0fe1b860fddb70f8554d061fc66827b7ca10b7f2404e0"},
+    {file = "sck_core_framework-0.0.2.tar.gz", hash = "sha256:72078ca6f0b47e808c35e4ffce71c8ea35dab457021f96ffa86ecbc5f0e25b08"},
 ]
 
 [package.dependencies]
@@ -2745,13 +2745,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-invoker"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core Automation Invoker Lambda function"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_invoker-0.0.1-py3-none-any.whl", hash = "sha256:daf213281d7740c11f4f2a721a26115e7d1bf18e59fb254ece6b25ef02e1d464"},
-    {file = "sck_core_invoker-0.0.1.tar.gz", hash = "sha256:d7d0b83199f3c6530e11d62398a765e43c70f4151bd0648b433a9981913903e1"},
+    {file = "sck_core_invoker-0.0.2-py3-none-any.whl", hash = "sha256:4da45599d45a6af671fc7cc6eed8c89d6ccbde268e9e290fd0ec36362c98b3ea"},
+    {file = "sck_core_invoker-0.0.2.tar.gz", hash = "sha256:b1bc9d6e4d1d73a7044660b12ca8f93177aba9ba3b2ed6f5659adfa7aabb498a"},
 ]
 
 [package.dependencies]
@@ -2760,12 +2760,12 @@ botocore = ">=1.35.87"
 python-dotenv = ">=1.0.1,<2.0.0"
 PyYAML = ">=6.0.2,<7.0.0"
 pyyaml-include = ">=2.1,<3.0"
-sck-core-component = ">=0.0.1,<0.0.2"
-sck-core-db = ">=0.0.1,<0.0.2"
-sck-core-deployspec = ">=0.0.1,<0.0.2"
-sck-core-execute = ">=0.0.1,<0.0.2"
-sck-core-framework = ">=0.0.1,<0.0.2"
-sck-core-runner = ">=0.0.1,<0.0.2"
+sck-core-component = ">=0.0.2,<0.0.3"
+sck-core-db = ">=0.0.2,<0.0.3"
+sck-core-deployspec = ">=0.0.2,<0.0.3"
+sck-core-execute = ">=0.0.2,<0.0.3"
+sck-core-framework = ">=0.0.2,<0.0.3"
+sck-core-runner = ">=0.0.2,<0.0.3"
 
 [package.source]
 type = "legacy"
@@ -2774,21 +2774,21 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-organization"
-version = "0.0.1"
+version = "0.0.2"
 description = "Manage organization resources and service control policy"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_organization-0.0.1-py3-none-any.whl", hash = "sha256:26a09c5748b5f1a9172225daada13c3ec39db799de1e54c075dd1347776bffe1"},
-    {file = "sck_core_organization-0.0.1.tar.gz", hash = "sha256:76cb732e595761b9ee93a4521fce4464f1d882a1f5cc71efe9e31be265cad79f"},
+    {file = "sck_core_organization-0.0.2-py3-none-any.whl", hash = "sha256:170e7c66eb6d6cdbe8869fe840acea07e9b20d0ee957faf2da376d655b28b1d4"},
+    {file = "sck_core_organization-0.0.2.tar.gz", hash = "sha256:7f6a43bae8a47d58e25eab803c35335667c73e1a9bb63e0ec064a3a107e65454"},
 ]
 
 [package.dependencies]
 boto3 = ">=1.35.87"
-botocore = ">=1.35.87,<2.0.0"
+botocore = ">=1.35.87"
 requests = ">=2.32.3,<3.0.0"
-sck-core-db = ">=0.0.1,<0.0.2"
-sck-core-framework = ">=0.0.1,<0.0.2"
+sck-core-db = ">=0.0.2,<0.0.3"
+sck-core-framework = ">=0.0.2,<0.0.3"
 urllib3 = ">=2.2.3,<3.0.0"
 
 [package.source]
@@ -2798,13 +2798,13 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-runner"
-version = "0.0.1"
+version = "0.0.2"
 description = "Core Automation Runner Lambda function"
 optional = false
 python-versions = ">=3.12,<4.0"
 files = [
-    {file = "sck_core_runner-0.0.1-py3-none-any.whl", hash = "sha256:86eabb422c3a592f02910a91476d5439eb7d0767d83cd2fbc7574fef6ec321a0"},
-    {file = "sck_core_runner-0.0.1.tar.gz", hash = "sha256:eaee050b2b4be5f5971f83f0e660c78c6fe6c35b36da3bdfed3f5c7ac10cfb83"},
+    {file = "sck_core_runner-0.0.2-py3-none-any.whl", hash = "sha256:832b1f52086d76ebb57fd0019db2d47cba1a26f177cb8c2a3ee3b5ad489f4815"},
+    {file = "sck_core_runner-0.0.2.tar.gz", hash = "sha256:11142cafe622221639785d9681e9d7b268771fe907e11286cccae2405c398a20"},
 ]
 
 [package.dependencies]
@@ -2812,9 +2812,9 @@ boto3 = ">=1.35.87"
 botocore = ">=1.35.87"
 pyyaml = ">=6.0.2,<7.0.0"
 pyyaml-include = ">=2.1,<3.0"
-sck-core-db = {path = "D:/Development/simple-cloud-kit-oss/simple-cloud-kit/sck-core-db"}
-sck-core-execute = ">=0.0.1,<0.0.2"
-sck-core-framework = ">=0.0.1,<0.0.2"
+sck-core-db = ">=0.0.2,<0.0.3"
+sck-core-execute = ">=0.0.2,<0.0.3"
+sck-core-framework = ">=0.0.2,<0.0.3"
 
 [package.source]
 type = "legacy"
@@ -3080,4 +3080,4 @@ reference = "nexus"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "ed08817f1bb702d32f6f85101f1a9953c394034c2e5ec68857b942c648567fb6"
+content-hash = "af3173751f39e39ea5af7156ed1892f5a2a409d471e675bbf294fffb5a4fd854"

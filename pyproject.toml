@@ -4,7 +4,7 @@ build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry]
 name = "sck-core-api"
-version = "0.0.2"
+version = "0.0.3"
 description = "Core-API for Core-Automation lambda function"
 authors = [ "James Barwick <jbrwick@me.com>",]
 license = "GPL-3.0-only"
@@ -40,11 +40,22 @@ jinja2 = "^3.1.4"
 jmespath = "^1.0.1"
 pydantic = "^2.10.3"
 
-sck-core-framework = "^0.0.2"
-sck-core-db = "^0.0.2"
-sck-core-invoker = "^0.0.2"
-sck-core-organization = "^0.0.2"
 
+[tool.poetry.dependencies.sck-core-organization]
+path = "../sck-core-organization"
+depend = true
+
+[tool.poetry.dependencies.sck-core-invoker]
+path = "../sck-core-invoker"
+depend = true
+
+[tool.poetry.dependencies.sck-core-db]
+path = "../sck-core-db"
+depend = true
+
+[tool.poetry.dependencies.sck-core-framework]
+path = "../sck-core-framework"
+depend = true
 [tool.poetry-dynamic-versioning.files."core_api/_version.py"]
 persistent-substitution = true
 initial-content = "  \"\"\"\n  This is the version information for this template\n  \"\"\"\n  __version__ = \"0.0.0\"\n  __version_tuple__ = (0, 0, 0)\n"
