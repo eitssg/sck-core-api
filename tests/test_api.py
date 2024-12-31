@@ -100,7 +100,7 @@ def teardown_action():
     y.default_flow_style = False
 
     magicS3 = MagicS3Client(
-        region=action_details.BucketRegion, app_path=action_details.AppPath
+        Region=action_details.BucketRegion, AppPath=action_details.AppPath
     )
 
     # Create a sample action file for the test cases (teardown)
@@ -111,7 +111,7 @@ def teardown_action():
 
     # Create a sample state file (context file) for the test cases
     magicS3 = MagicS3Client(
-        region=action_details.BucketRegion, app_path=state_details.AppPath
+        Region=action_details.BucketRegion, AppPath=state_details.AppPath
     )
 
     fn = os.path.join(os.path.dirname(__file__), "test_context_state.yaml")
