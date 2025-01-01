@@ -1,7 +1,6 @@
 import os
 import io
 import pytest
-
 from fastapi.testclient import TestClient
 
 from ruamel.yaml import YAML
@@ -145,7 +144,8 @@ def test_app(  # noqa E302
         response_envelope = response.json()
         expected_response = expected_result[1]
 
-        assert response.status_code == expected_result[0]
+        if response.status_code != expected_result[0]:
+            assert False, response_envelope["data"]["message"]
 
         assert "status" in response_envelope
         assert response_envelope["status"] == expected_response["status"]
@@ -174,4 +174,4 @@ def test_app(  # noqa E302
             assert response_data == expected_data
 
     except Exception as e:
-        assert False, f"Error: {e}"
+        assert False, f"Error: {str(e)}"

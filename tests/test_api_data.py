@@ -690,7 +690,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     # Case 31
     (
         ("POST", "/api/v1/registry/clients", {"client": "eits"}),
-        (200, {"status": "ok", "code": 200, "data": {"client": "eits"}}),
+        (200, {"status": "ok", "code": 200, "data": {"Client": "eits"}}),
     ),
     # Case 32
     (
@@ -700,7 +700,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     # Case 33
     (
         ("GET", "/api/v1/registry/client/eits", {}),
-        (200, {"status": "ok", "code": 200, "data": {"client": "eits"}}),
+        (200, {"status": "ok", "code": 200, "data": {"Client": "eits"}}),
     ),
     # Case 34
     (
@@ -714,7 +714,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {
                 "status": "ok",
                 "code": 200,
-                "data": {"client": "eits", "scope_prefix": "alternate"},
+                "data": {"Client": "eits", "ScopePrefix": "alternate"},
             },
         ),
     ),
@@ -723,7 +723,10 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
         (
             "PATCH",
             "/api/v1/registry/client/eits",
-            {"bucket_region": "ap-southeast-2", "master_region": "us-east-1"},
+            {
+                "automation_bucket_region": "ap-southeast-2",
+                "master_region": "us-east-1",
+            },
         ),
         (
             200,
@@ -731,10 +734,10 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "bucket_region": "ap-southeast-2",
-                    "client": "eits",
-                    "master_region": "us-east-1",
-                    "scope_prefix": "alternate",
+                    "AutomationBucketRegion": "ap-southeast-2",
+                    "Client": "eits",
+                    "MasterRegion": "us-east-1",
+                    "ScopePrefix": "alternate",
                 },
             },
         ),
@@ -753,7 +756,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {
                 "status": "ok",
                 "code": 200,
-                "data": {"client": "eits", "portfolio": "simple-cloud-kit"},
+                "data": {"Client": "eits", "Portfolio": "simple-cloud-kit"},
             },
         ),
     ),
@@ -770,7 +773,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {
                 "status": "ok",
                 "code": 200,
-                "data": {"client": "eits", "portfolio": "simple-cloud-kit"},
+                "data": {"Client": "eits", "Portfolio": "simple-cloud-kit"},
             },
         ),
     ),
@@ -787,9 +790,9 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "client": "eits",
-                    "owner": {"email": "boss@gmail.com", "name": "the_big_boss"},
-                    "portfolio": "simple-cloud-kit",
+                    "Client": "eits",
+                    "Owner": {"Email": "boss@gmail.com", "Name": "the_big_boss"},
+                    "Portfolio": "simple-cloud-kit",
                 },
             },
         ),
@@ -799,7 +802,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
         (
             "PATCH",
             "/api/v1/registry/eits/portfolio/simple-cloud-kit",
-            {"bizapp_name": "the awesome cloud kit"},
+            {"bizapp": {"Name": "the awesome cloud kit", "Code": "awesome"}},
         ),
         (
             200,
@@ -807,10 +810,10 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "bizapp_name": "the awesome cloud kit",
-                    "client": "eits",
-                    "owner": {"email": "boss@gmail.com", "name": "the_big_boss"},
-                    "portfolio": "simple-cloud-kit",
+                    "Bizapp": {"Code": "awesome", "Name": "the awesome cloud kit"},
+                    "Client": "eits",
+                    "Owner": {"Email": "boss@gmail.com", "Name": "the_big_boss"},
+                    "Portfolio": "simple-cloud-kit",
                 },
             },
         ),
@@ -926,12 +929,15 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "POST",
-            "/api/v1/registry/eits/simple-cloud-kit/zone",
+            "/api/v1/registry/eits/zone",
             {
                 "Zone": "simple-cloud-kit-api-production",
                 "AccountFacts": {
                     "AwsAccountId": "123456789012",
-                    "Kms": {"DelegateAwsAccountIds": ["123456789012"]},
+                    "Kms": {
+                        "AwsAccountId": "123456789012",
+                        "DelegateAwsAccountIds": ["123456789012"],
+                    },
                 },
                 "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
             },
@@ -944,9 +950,12 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "data": {
                     "AccountFacts": {
                         "AwsAccountId": "123456789012",
-                        "Kms": {"DelegateAwsAccountIds": ["123456789012"]},
+                        "Kms": {
+                            "AwsAccountId": "123456789012",
+                            "DelegateAwsAccountIds": ["123456789012"],
+                        },
                     },
-                    "ClientPortfolio": "eits:simple-cloud-kit",
+                    "Client": "eits",
                     "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
                     "Zone": "simple-cloud-kit-api-production",
                 },
@@ -955,7 +964,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     ),
     # Case 49
     (
-        ("GET", "/api/v1/registry/eits/simple-cloud-kit/zones", {}),
+        ("GET", "/api/v1/registry/eits/zones", {}),
         (
             200,
             {"status": "ok", "code": 200, "data": ["simple-cloud-kit-api-production"]},
@@ -965,12 +974,15 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PUT",
-            "/api/v1/registry/eits/simple-cloud-kit/zone/simple-cloud-kit-api-production",
+            "/api/v1/registry/eits/zone/simple-cloud-kit-api-production",
             {
                 "Zone": "simple-cloud-kit-api-production",
                 "AccountFacts": {
                     "AwsAccountId": "123456789012",
-                    "Kms": {"DelegateAwsAccountIds": ["123456789012"]},
+                    "Kms": {
+                        "AwsAccountId": "123456789012",
+                        "DelegateAwsAccountIds": ["123456789012"],
+                    },
                 },
                 "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
             },
@@ -983,9 +995,12 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "data": {
                     "AccountFacts": {
                         "AwsAccountId": "123456789012",
-                        "Kms": {"DelegateAwsAccountIds": ["123456789012"]},
+                        "Kms": {
+                            "AwsAccountId": "123456789012",
+                            "DelegateAwsAccountIds": ["123456789012"],
+                        },
                     },
-                    "ClientPortfolio": "eits:simple-cloud-kit",
+                    "Client": "eits",
                     "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
                     "Zone": "simple-cloud-kit-api-production",
                 },
@@ -996,7 +1011,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PATCH",
-            "/api/v1/registry/eits/simple-cloud-kit/zone/simple-cloud-kit-api-production",
+            "/api/v1/registry/eits/zone/simple-cloud-kit-api-production",
             {
                 "AccountFacts": {"Kms": {"KmsKeyArn": "arn:kms:key"}},
                 "RegionFacts": {"sin": {"AzCount": 3}},
@@ -1011,13 +1026,12 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                     "AccountFacts": {
                         "AwsAccountId": "123456789012",
                         "Kms": {
-                            "Kms": {
-                                "KmsKeyArn": "arn:kms:key",
-                                "DelegateAwsAccountIds": ["123456789012"],
-                            }
+                            "AwsAccountId": "123456789012",
+                            "KmsKeyArn": "arn:kms:key",
+                            "DelegateAwsAccountIds": ["123456789012"],
                         },
                     },
-                    "ClientPortfolio": "eits:simple-cloud-kit",
+                    "Client": "eits",
                     "RegionFacts": {
                         "sin": {"AwsRegion": "ap-southeast-1", "AzCount": 3}
                     },
@@ -1030,7 +1044,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "DELETE",
-            "/api/v1/registry/eits/simple-cloud-kit/zone/simple-cloud-kit-api-production",
+            "/api/v1/registry/eits/zone/simple-cloud-kit-api-production",
             {},
         ),
         (

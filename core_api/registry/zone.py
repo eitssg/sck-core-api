@@ -58,10 +58,10 @@ def delete_zones_action(**kwargs) -> Response:
 
 
 registry_zone_actions: ActionHandlerRoutes = {
-    "GET:/api/v1/registry/{client}/{portfolio}/zones": list_zones_action,
-    "POST:/api/v1/registry/{client}/{portfolio}/zone": create_zones_action,
-    "GET:/api/v1/registry/{client}/{portfolio}/zone/{zone}": get_zone_action,
-    "PUT:/api/v1/registry/{client}/{portfolio}/zone/{zone}": update_zones_action,
-    "DELETE:/api/v1/registry/{client}/{portfolio}/zone/{zone}": delete_zones_action,
-    "PATCH:/api/v1/registry/{client}/{portfolio}/zone/{zone}": patch_zones_action,
+    "GET:/api/v1/registry/{client}/zones": list_zones_action,
+    "POST:/api/v1/registry/{client}/zone": create_zones_action,
+    "GET:/api/v1/registry/{client}/zone/{zone}": get_zone_action,
+    "PUT:/api/v1/registry/{client}/zone/{zone}": update_zones_action,
+    "DELETE:/api/v1/registry/{client}/zone/{zone}": delete_zones_action,
+    "PATCH:/api/v1/registry/{client}/zone/{zone}": patch_zones_action,
 }
