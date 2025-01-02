@@ -38,15 +38,11 @@ def get_facts_action(**kwargs) -> Response:
         Response:
             200 OK
             {
-                "AccountFacts": {
-                    "AwsAccountId": "123456789012",
-                    "AwsAccountName": "example-account"
-                },
-                "RegionFacts": {
-                    "AwsRegion": "ap-southeast-1",
-                    "RegionAlias": "sin"
-                },
-                "DD_TAGS": {
+                "AwsAccountId": "123456789012",
+                "AwsAccountName": "example-account"
+                "AwsRegion": "ap-southeast-1",
+                "RegionAlias": "sin"
+                "Tags": {
                     "client": "example-client",
                     "portfolio": "example-portfolio",
                     "app": "example-app",

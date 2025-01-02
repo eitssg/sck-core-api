@@ -66,12 +66,14 @@ class ApiBuildActions(ApiActions, BuildActions):
         )
 
         if util.is_local_mode():
-            return invoker_handler(payload.model_dump())
+            response = invoker_handler(payload.model_dump())
+        else:
+            arn = util.get_invoker_lambda_arn()
+            response = aws.invoke_lambda(arn, payload.model_dump())
 
-        arn = util.get_invoker_lambda_arn()
-        response = aws.invoke_lambda(arn, payload.model_dump())
         if TR_RESPONSE not in response:
             raise BadRequestException(f"Invalid invoker response: {response}")
+
         return response[TR_RESPONSE]
 
     @classmethod

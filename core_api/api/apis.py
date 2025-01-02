@@ -83,7 +83,7 @@ async def proxy_forward(request: Request) -> Response:
     if util.is_local_mode():
         result = core_api_handler(event, context)
     else:
-        arn = util.common.get_api_lambda_arn()
+        arn = util.get_api_lambda_arn()
         result = aws.invoke_lambda(arn, event, role="CoreAutmationApiRole")
 
     return await generate_response_from_lamnba(result)

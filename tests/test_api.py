@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from ruamel.yaml import YAML
 
 import core_framework as util
-from core_framework.magic import MagicS3Client
+from core_helper.magic import MagicS3Client
 
 from core_framework.models import (
     ActionDefinition,
@@ -91,6 +91,8 @@ def teardown_action():
         ),
     )
 
+    bucket_name = task_payload.Actions.BucketName
+
     action_details = task_payload.Actions
     state_details = task_payload.State
 
@@ -98,25 +100,21 @@ def teardown_action():
     y.allow_unicode = True
     y.default_flow_style = False
 
-    magicS3 = MagicS3Client(
-        Region=action_details.BucketRegion, AppPath=action_details.AppPath
-    )
+    magicS3 = MagicS3Client(Region=action_details.BucketRegion)
 
     # Create a sample action file for the test cases (teardown)
     action_list = [action.model_dump()]
     data = io.BytesIO()
     y.dump(action_list, data)
-    magicS3.put_object(Key=action_details.Key, Body=data.getvalue())
+    magicS3.put_object(Bucket=bucket_name, Key=action_details.Key, Body=data.getvalue())
 
     # Create a sample state file (context file) for the test cases
-    magicS3 = MagicS3Client(
-        Region=action_details.BucketRegion, AppPath=state_details.AppPath
-    )
+    magicS3 = MagicS3Client(Region=action_details.BucketRegion)
 
     fn = os.path.join(os.path.dirname(__file__), "test_context_state.yaml")
     with open(fn, "r") as f:
         data = f.read()
-    magicS3.put_object(Key=state_details.Key, Body=data)
+    magicS3.put_object(Bucket=bucket_name, Key=state_details.Key, Body=data)
 
     return action
 

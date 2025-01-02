@@ -67,7 +67,7 @@ def delete_change_set_if_exists(stack_name):
     print(f"Checking if change set {stack_name}-change-set exists...")
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     # Check if the change set exists
     try:
@@ -108,7 +108,7 @@ def create_stack_change_set(stack_name):
     print("This may take a while...")
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     # Create a change set for the stack
     response = cloudformation.create_change_set(
@@ -158,7 +158,7 @@ def create_stack_change_set(stack_name):
 def display_stack_change_set(stack_name):
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     # Get the change set
     response = cloudformation.describe_change_set(
@@ -219,7 +219,7 @@ def deploy_stack_change(stack_name):
     print("This may take a while...")
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     # Execute the change set.  Ensure capabilities are et to allow IAM changes
     response = cloudformation.execute_change_set(
@@ -243,7 +243,7 @@ def deploy_stack_change(stack_name):
 def check_stack_exists(stack_name):
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
     stack_exists = False
     try:
         stacks = cloudformation.describe_stacks()
@@ -265,7 +265,7 @@ def delete_stack_if_in_bad_status(stack_name):
 
     # if the current stack status is ROLLBACK_COMPLETE, DELETE it
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
     stack = cloudformation.describe_stacks(StackName=stack_name)
     stack_status = stack["Stacks"][0]["StackStatus"]
 
@@ -293,7 +293,7 @@ def deploy_stack(stack_name):
     print("This may take a while...")
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     # Deploy the CloudFormation stack.  Make sure the stack appears on the AWS "Appications" console page.
     response = cloudformation.create_stack(
@@ -317,7 +317,7 @@ def delete_stack(stack_name):
     print("This may take a while...")
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     response = cloudformation.delete_stack(StackName=stack_name)
 
@@ -335,7 +335,7 @@ def verify_stack_template(stack_name):
     print("This may take a while...")
 
     region = util.get_region()
-    cloudformation = aws.cfn_client(region)
+    cloudformation = aws.cfn_client(region=region)
 
     response = cloudformation.validate_template(
         TemplateBody=open(f"{stack_name}.yaml").read()

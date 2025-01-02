@@ -2,7 +2,6 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-
 import core_framework as util
 
 from core_db.event.models import EventModel
@@ -126,7 +125,11 @@ def test_the_facts(http_path, expected_result, bootstrap_dynamo):  # noqa E302
         response_envelope = response.json()
         expected_response = expected_result[1]
 
-        assert response.status_code == expected_result[0]
+        if response.status_code == 404:
+            assert False, "Data not found - error 404"
+
+        if response.status_code != expected_result[0]:
+            assert False, response_envelope["data"]["message"]
 
         assert "status" in response_envelope
         assert response_envelope["status"] == expected_response["status"]
@@ -134,6 +137,7 @@ def test_the_facts(http_path, expected_result, bootstrap_dynamo):  # noqa E302
         assert response_envelope["code"] == expected_response["code"]
 
         response_data = response_envelope.get("data", None)
+
         expected_data = expected_response.get("data", None)
 
         # Jeeze... replace this with recursive function!
