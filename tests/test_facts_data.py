@@ -339,7 +339,13 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                         "Name": "CMDB Record Name",
                     },
                     "Client": "eits",
-                    "Contacts": [{'Email': 'contact1@gmail.com', 'Enabled': True, 'Name': 'Contact 1'}],
+                    "Contacts": [
+                        {
+                            "Email": "contact1@gmail.com",
+                            "Enabled": True,
+                            "Name": "Contact 1",
+                        }
+                    ],
                     "Owner": {"Email": "boss@gmail.com", "Name": "The Boss"},
                     "Portfolio": "simple-cloud-kit",
                     "Project": {
