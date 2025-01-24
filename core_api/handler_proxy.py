@@ -6,8 +6,6 @@ import core_logging as log
 from core_db.response import ErrorResponse, Response
 from core_db.exceptions import NotFoundException
 
-from .types import ActionHandlerRoutes
-
 # Registry actions and routes for API Gateway
 from .event.event import event_actions
 
@@ -22,7 +20,7 @@ from .registry.portfolio import registry_portfolio_actions
 from .registry.app import registry_app_actions
 from .registry.zone import registry_zone_actions
 
-from .request import ProxyEvent, EventRequestContext
+from .request import ProxyEvent, EventRequestContext, ActionHandlerRoutes
 
 from .facts.facter import facts_actions
 

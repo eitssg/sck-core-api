@@ -5,7 +5,7 @@ from core_db.registry.zone.actions import ZoneActions
 
 from ..constants import PATH_PARAMETERS, BODY_PARAMETER, QUERY_STRING_PARAMETERS
 
-from ..types import ActionHandlerRoutes
+from ..request import ActionHandlerRoutes
 
 from ..actions import ApiActions
 

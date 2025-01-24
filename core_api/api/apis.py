@@ -1,3 +1,4 @@
+import os
 import core_framework as util
 
 import core_helper.aws as aws

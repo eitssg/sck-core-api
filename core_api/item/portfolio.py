@@ -11,7 +11,7 @@ from ..constants import (
     PATH_PARAMETERS,
     BODY_PARAMETER,
 )
-from ..types import ActionHandlerRoutes
+from ..request import ActionHandlerRoutes
 
 from ..actions import ApiActions
 

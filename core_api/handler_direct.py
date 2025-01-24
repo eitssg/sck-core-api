@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable
 
 import core_logging as log
 
@@ -28,26 +28,28 @@ from .registry.zone import ApiRegZoneActions
 # Facter actions - Get the facts.  Nothing but the facts.
 from .facts.facter import ApiFactsActions
 
-from .request import Request
+from .request import (
+    Request,
+    RequestType,
+    RequestRoutesType,
+)
 
-from .types import ActionHandler, ApiActionsRoutes
-
-actions_routes: ApiActionsRoutes = {
-    "portfolio": ApiPortfolioActions,
-    "app": ApiAppActions,
-    "branch": ApiBranchActions,
-    "build": ApiBuildActions,
-    "component": ApiComponentActions,
-    "event": ApiEventActions,
-    "facts": ApiFactsActions,
-    "registry:client": ApiRegClientActions,
-    "registry:portfolio": ApiRegPortfolioActions,
-    "registry:app": ApiRegAppActions,
-    "registry:zone": ApiRegZoneActions,
+actions_routes: RequestRoutesType = {
+    RequestType.PORTFOLIO: ApiPortfolioActions,
+    RequestType.APP: ApiAppActions,
+    RequestType.BRANCH: ApiBranchActions,
+    RequestType.BUILD: ApiBuildActions,
+    RequestType.COMPONENT: ApiComponentActions,
+    RequestType.EVENT: ApiEventActions,
+    RequestType.FACTS: ApiFactsActions,
+    RequestType.REG_CLIENT: ApiRegClientActions,
+    RequestType.REG_PORTFOLIO: ApiRegPortfolioActions,
+    RequestType.REG_APP: ApiRegAppActions,
+    RequestType.REG_ZONE: ApiRegZoneActions,
 }
 
 
-def _get_action_handler(action: str) -> ActionHandler:
+def __get_action_handler(action: str) -> Callable:
 
     # if action is "module:class:method" then we only want the module and cleass for the key.
     # but if in the form of "class:mothod" then we only want the class for the key.
@@ -55,11 +57,48 @@ def _get_action_handler(action: str) -> ActionHandler:
     action_key = parts[0] if len(parts) <= 2 else ":".join(parts[:-1])
     method = parts[-1]
 
-    result = getattr(actions_routes.get(action_key, None), method, None)
+    # Convert action_key to RequestType enum if possible
+    try:
+        action_key_enum = RequestType(action_key)
+    except ValueError:
+        raise BadRequestException(f"Unsupported action '{action}'")
+
+    result = getattr(actions_routes.get(action_key_enum, None), method, None)
     if result:
         return result
 
     raise BadRequestException(f"Unsupported action '{action}'")
+
+
+def process_request(request: Request) -> Response:
+    """
+    Process a request and return a response
+
+    Args:
+        request (Request): The request object
+
+    Returns:
+        Response: The response object
+    """
+    data = request.data
+    auth = request.auth
+    action = request.action
+
+    log.info(
+        "Executing action",
+        details={"action": action, "data": data, "auth": auth},
+    )
+
+    if not aws.check_if_user_authorised(auth, CORE_AUTOMATION_API_WRITE_ROLE):
+        raise UnauthorizedException("User is not authorised to perform this action")
+
+    # Get the action handler or raise an exception
+    action_handler = __get_action_handler(action)
+
+    # Call the handler
+    response = action_handler(**data)
+
+    return response
 
 
 # This is the geneeric lamda handler that will be used to route all requests to the appropriate action
@@ -86,25 +125,9 @@ def handler_direct(event: dict, context: Any | None = None) -> dict:
         log.set_identity("core_api_handler_direct")
 
         # At the moment this really doesn't do anything except validate the event
-        action_event = Request(**event)
+        request = Request(**event)
+        response = process_request(request)
 
-        data = action_event.data
-        auth = action_event.auth
-        action = action_event.action
-
-        log.info(
-            "Executing action",
-            details={"action": action, "data": data, "auth": auth},
-        )
-
-        if not aws.check_if_user_authorised(auth, CORE_AUTOMATION_API_WRITE_ROLE):
-            raise UnauthorizedException("User is not authorised to perform this action")
-
-        # Get the action handler or raise an exception
-        action_handler: ActionHandler = _get_action_handler(action)
-
-        # Call the handler
-        response = action_handler(**data)
         if not isinstance(response, Response):
             raise TypeError(
                 f"Handler returned type {type(response)}, expected Response object"
@@ -116,9 +139,9 @@ def handler_direct(event: dict, context: Any | None = None) -> dict:
         log.info(
             "Action complete",
             details={
-                "action": action,
-                "data": data,
-                "auth": auth,
+                "action": request.action,
+                "data": request.data,
+                "auth": request.auth,
                 "result": lambda_response,
             },
         )

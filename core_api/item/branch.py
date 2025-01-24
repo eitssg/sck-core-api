@@ -6,8 +6,7 @@ from core_db.item.branch.actions import BranchActions
 
 from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
 
-from ..types import ActionHandlerRoutes
-
+from ..request import ActionHandlerRoutes
 from ..actions import ApiActions
 
 

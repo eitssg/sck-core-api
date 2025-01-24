@@ -7,12 +7,12 @@ This FACTS database should come from DynamoDB.  Not 'accounts.yaml' and 'apps.ya
 
 from collections import ChainMap
 
-
-from ..types import ActionHandlerRoutes
-from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
-
 from core_db.facter.actions import FactsActions
 from core_db.response import Response
+
+from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
+
+from ..request import ActionHandlerRoutes
 
 from ..actions import ApiActions
 

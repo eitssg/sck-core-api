@@ -5,7 +5,7 @@ from core_db.registry.client.actions import ClientActions
 
 from ..constants import BODY_PARAMETER, PATH_PARAMETERS, QUERY_STRING_PARAMETERS
 
-from ..types import ActionHandlerRoutes
+from ..request import ActionHandlerRoutes
 
 from ..actions import ApiActions
 

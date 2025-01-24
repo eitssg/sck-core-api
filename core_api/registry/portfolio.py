@@ -17,7 +17,7 @@ from core_db.registry.portfolio.actions import PortfolioActions
 
 from ..constants import PATH_PARAMETERS, QUERY_STRING_PARAMETERS, BODY_PARAMETER
 
-from ..types import ActionHandlerRoutes
+from ..request import ActionHandlerRoutes
 
 from ..actions import ApiActions
 

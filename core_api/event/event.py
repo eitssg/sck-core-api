@@ -1,6 +1,5 @@
 from collections import ChainMap
 
-from ..types import ActionHandlerRoutes
 from ..constants import BODY_PARAMETER, PATH_PARAMETERS, QUERY_STRING_PARAMETERS
 
 
@@ -8,6 +7,7 @@ from core_db.event.actions import EventActions
 from core_db.response import Response
 
 from ..actions import ApiActions
+from ..request import ActionHandlerRoutes
 
 
 class ApiEventActions(ApiActions, EventActions):

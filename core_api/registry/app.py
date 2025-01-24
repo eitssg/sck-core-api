@@ -9,7 +9,7 @@ from ..constants import (
     BODY_PARAMETER,
 )
 
-from ..types import ActionHandlerRoutes
+from ..request import ActionHandlerRoutes
 
 from ..actions import ApiActions
 

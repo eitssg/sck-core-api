@@ -4,6 +4,8 @@ from core_api.api.apis import get_fast_api_router
 
 static_content_models = {}
 
+__app = None
+
 
 def is_running():
     return "running" in static_content_models
@@ -17,9 +19,11 @@ async def lifespan(app: FastAPI):
 
 
 def get_app() -> FastAPI:
-    app = FastAPI(lifespan=lifespan)
-    app.include_router(get_fast_api_router())
-    return app
+    global __app
+    if __app is None:
+        __app = FastAPI(lifespan=lifespan)
+        __app.include_router(get_fast_api_router())
+    return __app
 
 
 # Example usage: Create the app instance only when needed

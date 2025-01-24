@@ -1,9 +1,61 @@
-from typing import Any
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from typing import Any, Callable
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+    PrivateAttr,
+)
+from enum import Enum
 
 import json
 
 import core_framework as util
+from core_db.response import Response
+
+from .actions import ApiActionsClass
+
+
+class RequestMethod(Enum):
+    LIST = "list"
+    GET = "get"
+    POST = "create"
+    CREATE = "create"
+    PUT = "update"
+    UPDATE = "update"
+    DELETE = "delete"
+    PATCH = "patch"
+
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}.{self.name}"
+
+
+class RequestType(Enum):
+    PORTFOLIO = "portfolio"
+    APP = "app"
+    BRANCH = "branch"
+    BUILD = "build"
+    COMPONENT = "component"
+    EVENT = "event"
+    FACTS = "facts"
+    REG_CLIENT = "registry:client"
+    REG_PORTFOLIO = "registry:portfolio"
+    REG_APP = "registry:app"
+    REG_ZONE = "registry:zone"
+
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}.{self.name}"
+
+
+RequestRoutesType = dict[RequestType, ApiActionsClass]
 
 
 class Request(BaseModel):
@@ -14,17 +66,70 @@ class Request(BaseModel):
     The difference is the ProxyEvent.body is expected to be a JSON string, while the
     Request.data is expected to be a dictionary.
 
+    Args:
+        BaseModel ([type]): [description]
+        typ: RequestType | None = None: Type of request model
+        action: RequestMethod | None = None: Action to perform of the model
+
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
     action: str = Field(description="The action to perform such as 'portfolio:create'")
     data: dict[str, Any] = Field(
-        description="The data to use in the action.  This is the primary payload"
+        description="The data to use in the action.  This is the primary payload",
+        default={},
     )
     auth: dict[str, Any] | None = Field(
         None, description="The authentication information"
     )
+
+    _type: RequestType | None = PrivateAttr(None)
+    _method: RequestMethod | None = PrivateAttr(None)
+
+    @property
+    def typ(self) -> RequestType | None:
+        return self._type
+
+    @typ.setter
+    def typ(self, value: RequestType) -> None:
+        self._type = value
+        if self._method:
+            self.action = f"{self._type}:{self._method}"
+
+    @property
+    def method(self) -> RequestMethod | None:
+        return self._method
+
+    @method.setter
+    def method(self, value: RequestMethod) -> None:
+        self._method = value
+        if self._type:
+            self.action = f"{self._type}:{self._method}"
+
+    @field_validator("action", mode="before")
+    def validate_action(cls, value: str) -> str:
+        parts = value.split(":")
+        if len(parts) == 2:
+            typ = RequestType(parts[0])
+            method = RequestMethod(parts[1])
+            return f"{typ}:{method}"
+        if len(parts) == 3:
+            section = f"{parts[0]}:{parts[1]}"
+            typ = RequestType(section)
+            method = RequestMethod(parts[2])
+            return f"{typ}:{method}"
+        raise ValueError("Invalid action format. Expected 'type:method'.")
+
+    @model_validator(mode="before")
+    def validate_model(cls, values):
+        if not values.get("action"):
+            typ = values.pop("typ", None)
+            method = values.pop("method", None)
+            if not typ or not method:
+                raise ValueError("The action field or typ:method fields is required")
+            values["action"] = f"{typ}:{method}"
+        return values
 
     # Override the model_dump method to exclude None values
     def model_dump(self, **kwargs) -> dict:
@@ -145,3 +250,8 @@ class ProxyEvent(BaseModel):
         it's formatted.
         """
         return f"{self.httpMethod}:{self.resource}"
+
+
+ActionHandler = Callable[..., Response]
+
+ActionHandlerRoutes = dict[str, ActionHandler]
