@@ -3,8 +3,10 @@ from typing import Any
 import uuid
 import core_logging as log
 
+import core_framework as util
+
 from core_db.response import ErrorResponse, Response
-from core_db.exceptions import NotFoundException
+from core_db.exceptions import NotFoundException, UnauthorizedException
 
 # Registry actions and routes for API Gateway
 from .event.event import event_actions
@@ -20,9 +22,17 @@ from .registry.portfolio import registry_portfolio_actions
 from .registry.app import registry_app_actions
 from .registry.zone import registry_zone_actions
 
-from .request import ProxyEvent, EventRequestContext, ActionHandlerRoutes
+from .request import ProxyEvent, ActionHandlerRoutes
 
 from .facts.facter import facts_actions
+
+from .api.tools import (
+    get_header,
+    HDR_AUTHORIZATION,
+    HDR_CONTENT_TYPE,
+    HDR_X_CORRELATION_ID,
+    get_user_information,
+)
 
 
 # Build the router for the API Gateway REST interface
@@ -47,51 +57,71 @@ class ProxyResponse(dict):
     def __init__(self, response: Response, correlation_id: str | None = None):
 
         self["statusCode"] = response.code
-        self["headers"] = {"Content-Type": "application/json"}
+        self["headers"] = {HDR_CONTENT_TYPE: "application/json"}
         if correlation_id:
-            self["headers"]["X-Correlation-ID"] = correlation_id
+            self["headers"][HDR_X_CORRELATION_ID] = correlation_id
         self["body"] = response.model_dump_json()
         self["isBase64Encoded"] = False
 
 
 def get_correlation_id(request: ProxyEvent) -> str:
     """
-    Get the correlation ID from the request headers
+    Get the correlation ID from the request headers or create a new one
     """
-    # if there are no headers, then create a new header
-    if request.headers is None:
-        request.headers = {}
-
     # If there are haeders, the correlation ID is in the headers, use it
-    correlation_id = request.headers.get("X-Correlation-ID", None)
+    _, correlation_id = get_header(request.headers, HDR_X_CORRELATION_ID)
     if not correlation_id:
-        if request.requestContext and request.requestContext.requestId:
+        if request.requestContext.requestId:
             correlation_id = request.requestContext.requestId
         else:
             correlation_id = str(uuid.uuid4())
-        request.headers["X-Correlation-ID"] = correlation_id
+        request.headers[HDR_X_CORRELATION_ID] = correlation_id
 
     return correlation_id
 
 
-def check_if_user_authorised(context: EventRequestContext | None) -> bool:
+def check_if_user_authorised(event: ProxyEvent) -> dict:
+    """Sets up the session credentials for this thread for the user as
+    the user must have API read/write credentials to use the API"""
 
-    return True
+    headers = event.headers
+    if not headers:
+        raise UnauthorizedException("No headers in request context")
 
-    # FIXME - Later, we will add the logic to check if the user is authorised
+    _, bearer = get_header(headers, HDR_AUTHORIZATION)
+    if bearer:
+        if not bearer.startswith("Bearer"):
+            raise ValueError("Authorization header is not in the correct format")
+        parts = bearer.split(" ")
+        if len(parts) != 2:
+            raise ValueError("Authorization header is not in the correct format")
+        token = parts[1]
+    else:
+        token = None
 
-    # if not context:
-    #     raise UnauthorizedException("No request context")
+    if not token:
+        raise ValueError("No Authorization token provided")
 
-    # identity = context.identity
-    # if not identity:
-    #     raise UnauthorizedException("No identity in request context")
+    method = event.httpMethod
 
-    # AccountId = identity.accountId
-    # UserId = identity.user
-    # AccessKey = identity.accessKey
+    # Lambda functions are in the automation account
+    account = util.get_automation_account()
 
-    # return True
+    if not account:
+        raise ValueError("No Automation Account secified in the environment")
+
+    # Read role for "get", Write role for "post", "put", "delete", "patch"
+    role = util.get_automation_api_role_arn(account, method.lower() != "get")
+
+    # Get the ideantity will be from "Assume Role".  So, we're good with the thread's session store.
+    # This will return a CognitoIdentity pydantic BaseModel.
+    identity = get_user_information(token, role)
+
+    if not identity:
+        raise ValueError("User is not authorized")
+
+    # we only are interested in populated values.
+    return identity.model_dump(exclude_none=True)
 
 
 # The following function is the lambda handler to receive requests from AWS API Gateway
@@ -107,6 +137,10 @@ def handler_proxy(event: Any, context: Any | None = None) -> dict:
     event = {
         "httpMethod": "GET",
         "resource": "/api/v1/client/{client}",
+        "heaaers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer <aws STS session token>",
+        },
         "pathParameters": {
             "client": "example"
         },
@@ -144,15 +178,16 @@ def handler_proxy(event: Any, context: Any | None = None) -> dict:
 
         # Validate incoming request
         request = ProxyEvent(**event)
-        route_key = request.route_key
 
         # We STRONGLY recommend that you output correlation Id in
         # all LOG files and messges and that you send this value
         # to downstream services.  This will help you trace the request
         correlation_id = get_correlation_id(request)
 
-        check_if_user_authorised(request.requestContext)
+        # Check if the user is authorized to use the API.  Throws an exception if not.
+        check_if_user_authorised(request)
 
+        route_key = request.route_key
         action_handler = api_paths.get(route_key, None)
         if not action_handler:
             raise NotFoundException(f"Unsupported resource API: {route_key}")

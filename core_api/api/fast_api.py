@@ -1,29 +1,43 @@
+"""FastAPI application configuration and lifecycle management."""
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from core_api.api.apis import get_fast_api_router
 
-static_content_models = {}
 
-__app = None
+class AppSingtletone:
+    __app: FastAPI | None = None
+    running: bool = False
+
+    @classmethod
+    def get_app(cls) -> FastAPI:
+        """Get or create FastAPI application instance."""
+        if cls.__app is None:
+            cls.__app = FastAPI(lifespan=lifespan)
+            cls.__app.include_router(get_fast_api_router())
+        return cls.__app
 
 
-def is_running():
-    return "running" in static_content_models
+def is_running() -> bool:
+    """Check if the application is currently running."""
+    return AppSingtletone.running
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    static_content_models["running"] = True
+    """Manage application lifecycle.
+
+    Args:
+        app: FastAPI application instance
+    """
+    AppSingtletone.running = True
     yield
-    static_content_models.clear()
+    AppSingtletone.running = False
 
 
 def get_app() -> FastAPI:
-    global __app
-    if __app is None:
-        __app = FastAPI(lifespan=lifespan)
-        __app.include_router(get_fast_api_router())
-    return __app
+    """Get FastAPI application instance."""
+    return AppSingtletone.get_app()
 
 
 # Example usage: Create the app instance only when needed

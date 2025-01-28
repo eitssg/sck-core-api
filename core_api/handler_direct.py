@@ -1,13 +1,19 @@
+"""Direct request handler for core API actions.
+
+Processes API requests by routing them to appropriate action handlers based on request type.
+Handles authentication, authorization, and request/response processing.
+"""
+
 from typing import Any, Callable
 
 import core_logging as log
 
-import core_helper.aws as aws
-
-from core_framework.constants import CORE_AUTOMATION_API_WRITE_ROLE
+import core_framework.common as util
 
 from core_db.response import ErrorResponse, Response
 from core_db.exceptions import BadRequestException, UnauthorizedException
+
+from .api.tools import get_user_information
 
 # Actions to track all deployments and PRN data
 from .item.portfolio import ApiPortfolioActions
@@ -50,7 +56,17 @@ actions_routes: RequestRoutesType = {
 
 
 def __get_action_handler(action: str) -> Callable:
+    """Get the appropriate handler function for the requested action.
 
+    Args:
+        action: Action string in format "type:method" or "type:subtype:method"
+
+    Returns:
+        Callable: Handler function for the action
+
+    Raises:
+        BadRequestException: If action is not supported
+    """
     # if action is "module:class:method" then we only want the module and cleass for the key.
     # but if in the form of "class:mothod" then we only want the class for the key.
     parts = action.split(":")
@@ -60,8 +76,8 @@ def __get_action_handler(action: str) -> Callable:
     # Convert action_key to RequestType enum if possible
     try:
         action_key_enum = RequestType(action_key)
-    except ValueError:
-        raise BadRequestException(f"Unsupported action '{action}'")
+    except ValueError as e:
+        raise BadRequestException(f"Unsupported action '{action}'") from e
 
     result = getattr(actions_routes.get(action_key_enum, None), method, None)
     if result:
@@ -70,15 +86,54 @@ def __get_action_handler(action: str) -> Callable:
     raise BadRequestException(f"Unsupported action '{action}'")
 
 
-def process_request(request: Request) -> Response:
-    """
-    Process a request and return a response
+def check_if_user_authorized(auth: dict | None, action: str):
+    """Check if user is authorized to perform the requested action.
 
     Args:
-        request (Request): The request object
+        auth: Authentication information containing session token, or None
+        action: Action being requested
+
+    Returns:
+        CognitoIdentity: Identity information if authorized
+
+    Raises:
+        UnauthorizedException: If auth is None, missing token, or user not authorized
+    """
+    if not auth:
+        raise UnauthorizedException("No authorizatoin information provided")
+
+    token = auth.get("sessionToken", auth.get("session_token", None))
+    if not token:
+        raise UnauthorizedException("No session token specified")
+
+    account = util.get_automation_account()
+
+    if not account:
+        raise UnauthorizedException("Automation Account is not specified in the environment")
+
+    role = util.get_automation_api_role_arn(account, not action.endswith("get"))
+
+    # Assume the role
+    identity = get_user_information(token, role)
+
+    if not identity:
+        raise UnauthorizedException("User is not authorized")
+
+    return identity
+
+
+def process_request(request: Request) -> Response:
+    """Process a request and return a response.
+
+    Args:
+        request: The validated request object
 
     Returns:
         Response: The response object
+
+    Raises:
+        UnauthorizedException: If user is not authorized
+        BadRequestException: If action is not supported
     """
     data = request.data
     auth = request.auth
@@ -89,7 +144,7 @@ def process_request(request: Request) -> Response:
         details={"action": action, "data": data, "auth": auth},
     )
 
-    if not aws.check_if_user_authorised(auth, CORE_AUTOMATION_API_WRITE_ROLE):
+    if not check_if_user_authorized(auth, action):
         raise UnauthorizedException("User is not authorised to perform this action")
 
     # Get the action handler or raise an exception
@@ -126,6 +181,7 @@ def handler_direct(event: dict, context: Any | None = None) -> dict:
 
         # At the moment this really doesn't do anything except validate the event
         request = Request(**event)
+
         response = process_request(request)
 
         if not isinstance(response, Response):

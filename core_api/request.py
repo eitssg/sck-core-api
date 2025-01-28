@@ -1,4 +1,11 @@
+"""Module for handling API request structures and validation in the core API."""
+
 from typing import Any, Callable
+from enum import Enum
+from datetime import datetime, timezone
+
+import json
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -8,17 +15,18 @@ from pydantic import (
     model_validator,
     PrivateAttr,
 )
-from enum import Enum
-
-import json
 
 import core_framework as util
 from core_db.response import Response
 
 from .actions import ApiActionsClass
 
+API_ID = "coreApiv1"
+DOMAIN_PREFIX = "core"  # e.g. core.execute-api.us-east-1.amazonaws.com
+
 
 class RequestMethod(Enum):
+    """HTTP request methods supported by the API."""
     LIST = "list"
     GET = "get"
     POST = "create"
@@ -29,13 +37,16 @@ class RequestMethod(Enum):
     PATCH = "patch"
 
     def __str__(self):
+        """Return string representation of the enum value."""
         return self.value
 
     def __repr__(self):
+        """Return detailed string representation of the enum."""
         return f"{self.__class__.__name__}.{self.name}"
 
 
 class RequestType(Enum):
+    """Types of resources that can be requested through the API."""
     PORTFOLIO = "portfolio"
     APP = "app"
     BRANCH = "branch"
@@ -49,9 +60,11 @@ class RequestType(Enum):
     REG_ZONE = "registry:zone"
 
     def __str__(self):
+        """Return string representation of the enum value."""
         return self.value
 
     def __repr__(self):
+        """Return detailed string representation of the enum."""
         return f"{self.__class__.__name__}.{self.name}"
 
 
@@ -107,8 +120,10 @@ class Request(BaseModel):
         if self._type:
             self.action = f"{self._type}:{self._method}"
 
+    @classmethod
     @field_validator("action", mode="before")
     def validate_action(cls, value: str) -> str:
+        """Pre validate the 'action' fields to help with field defaults"""
         parts = value.split(":")
         if len(parts) == 2:
             typ = RequestType(parts[0])
@@ -121,8 +136,10 @@ class Request(BaseModel):
             return f"{typ}:{method}"
         raise ValueError("Invalid action format. Expected 'type:method'.")
 
+    @classmethod
     @model_validator(mode="before")
     def validate_model(cls, values):
+        """Pre validate the model to help with defaults"""
         if not values.get("action"):
             typ = values.pop("typ", None)
             method = values.pop("method", None)
@@ -138,7 +155,8 @@ class Request(BaseModel):
         return super().model_dump(**kwargs)
 
 
-class RequestContextIdentity(BaseModel):
+class CognitoIdentity(BaseModel):
+    """AWS Cognito identity information for API requests."""
     model_config = ConfigDict(populate_by_name=True)
 
     cognitoIdentityPoolId: str | None = None
@@ -155,23 +173,36 @@ class RequestContextIdentity(BaseModel):
     user: str | None = None
 
 
-class EventRequestContext(BaseModel):
+class RequestContext(BaseModel):
+    """API Gateway request context information."""
     model_config = ConfigDict(populate_by_name=True)
 
-    resourceId: str | None = None
-    resourcePath: str | None = None
-    httpMethod: str | None = None
+    resourceId: str
+    resourcePath: str
+    httpMethod: str
     extendedRequestId: str | None = None
-    requestTime: str | None = None
-    path: str | None = None
+    requestTime: str = Field(
+        description="The request time",
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+    )
+    path: str
     accountId: str | None = None
-    protocol: str | None = None
-    stage: str | None = None
-    domainPrefix: str | None = None
-    requestTimeEpoch: int | None = None
-    requestId: str | None = None
-    domainName: str | None = None
-    identity: RequestContextIdentity | None = None
+    protocol: str = Field(description="The protocol", default="HTTP/1.1")
+    stage: str = Field(
+        description="The stage", default_factory=util.get_environment
+    )
+    domainPrefix: str = Field(description="The domain prefix", default=DOMAIN_PREFIX)
+    requestTimeEpoch: int = Field(
+        description="The request time epoch",
+        default_factory=lambda: int(datetime.now(timezone.utc).timestamp()),
+    )
+    requestId: str
+    domainName: str = Field(
+        description="The domain name",
+        default=f"{DOMAIN_PREFIX}.execute-api.us-east-1.amazonaws.com",
+    )
+    identity: CognitoIdentity
+    apiId: str = Field(description="The API ID", default=API_ID)
 
 
 class ProxyEvent(BaseModel):
@@ -194,24 +225,24 @@ class ProxyEvent(BaseModel):
     path: str | None = Field(
         None, description="The user supplied path such as /api/v1/client/my_name"
     )
-    queryStringParameters: dict | None = Field(
-        None, description="The query string parameters dictonary"
+    queryStringParameters: dict = Field(
+        description="The query string parameters dictonary", default={}
     )
-    pathParameters: dict | None = Field(
-        None, description="The path parameters dictionary"
+    pathParameters: dict = Field(
+        description="The path parameters dictionary", default={}
     )
-    requestContext: EventRequestContext | None = Field(
-        None, description="The request context suuplied by API interface"
+    requestContext: RequestContext = Field(
+        ..., description="The request context suuplied by API interface"
     )
     headers: dict = Field(
-        {}, description="this should be content-type: applcation/json"
+        description="this should be content-type: applcation/json", default={}
     )
-    isBase64Encoded: bool | None = Field(
-        False, description="This should be false as the body is JSON"
+    isBase64Encoded: bool = Field(
+        description="This should be false as the body is JSON", default=False
     )
-    body: dict[str, Any] | None = Field(
+    body: dict[str, Any] | str = Field(
         description="RESTful API Request (a.k.a DynamoDB Object)",
-        default_factory=lambda: {},
+        default={},
     )
 
     @field_validator("body", mode="before")
@@ -223,16 +254,16 @@ class ProxyEvent(BaseModel):
         to None.  Otherwise, we will convert the string to a dictionary.
         """
         if body is None:
-            return None
+            return {}
+        if isinstance(body, dict):
+            return body
         if isinstance(body, str):
             try:
                 if len(body) == 0:
-                    return None
+                    return {}
                 return util.from_json(body)
-            except json.JSONDecodeError:
-                raise ValueError("Invalid JSON string for body")
-        if isinstance(body, dict):
-            return body
+            except json.JSONDecodeError as e:
+                raise ValueError("Invalid JSON string for body") from e
         raise ValueError("Invalid body type")
 
     @field_validator("httpMethod", mode="before")
