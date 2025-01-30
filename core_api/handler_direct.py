@@ -109,7 +109,9 @@ def check_if_user_authorized(auth: dict | None, action: str):
     account = util.get_automation_account()
 
     if not account:
-        raise UnauthorizedException("Automation Account is not specified in the environment")
+        raise UnauthorizedException(
+            "Automation Account is not specified in the environment"
+        )
 
     role = util.get_automation_api_role_arn(account, not action.endswith("get"))
 

@@ -27,6 +27,7 @@ DOMAIN_PREFIX = "core"  # e.g. core.execute-api.us-east-1.amazonaws.com
 
 class RequestMethod(Enum):
     """HTTP request methods supported by the API."""
+
     LIST = "list"
     GET = "get"
     POST = "create"
@@ -47,6 +48,7 @@ class RequestMethod(Enum):
 
 class RequestType(Enum):
     """Types of resources that can be requested through the API."""
+
     PORTFOLIO = "portfolio"
     APP = "app"
     BRANCH = "branch"
@@ -157,6 +159,7 @@ class Request(BaseModel):
 
 class CognitoIdentity(BaseModel):
     """AWS Cognito identity information for API requests."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     cognitoIdentityPoolId: str | None = None
@@ -175,6 +178,7 @@ class CognitoIdentity(BaseModel):
 
 class RequestContext(BaseModel):
     """API Gateway request context information."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     resourceId: str
@@ -188,9 +192,7 @@ class RequestContext(BaseModel):
     path: str
     accountId: str | None = None
     protocol: str = Field(description="The protocol", default="HTTP/1.1")
-    stage: str = Field(
-        description="The stage", default_factory=util.get_environment
-    )
+    stage: str = Field(description="The stage", default_factory=util.get_environment)
     domainPrefix: str = Field(description="The domain prefix", default=DOMAIN_PREFIX)
     requestTimeEpoch: int = Field(
         description="The request time epoch",

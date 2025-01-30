@@ -139,7 +139,7 @@ def generate_proxy_event(
     path_params: dict,
     query_params: dict,
     body: str,
-    headers: dict
+    headers: dict,
 ) -> ProxyEvent:
     """Generate API Gateway proxy event.
 
@@ -211,7 +211,7 @@ def get_user_information(token: str, role: str | None = None) -> CognitoIdentity
         userArn=identity.get("Arn"),
         caller=identity.get("caller", __name__),
         sourceIp=get_ip_address(),
-        accessKey=identity.get("AccessKeyId")
+        accessKey=identity.get("AccessKeyId"),
     )
 
     return cognito_identity
@@ -224,12 +224,14 @@ def get_locale():
 
 class ClientContext(BaseModel):
     """Client context information for Lambda execution."""
+
     client: dict[str, Any]
     environment: dict[str, Any]
 
 
 class ProxyContext(BaseModel):
     """Proxy context for AWS Lambda execution environment."""
+
     function_name: str = Field(default_factory=util.get_api_lambda_name)
     function_version: str = "$LATEST"
     invoked_function_arn: str = Field(default_factory=util.get_api_lambda_arn)

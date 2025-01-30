@@ -33,6 +33,7 @@ class RouterSingtleton:
 
     Ensures only one router is created and reused across the application.
     """
+
     _router: APIRouter | None = None
 
     @classmethod
