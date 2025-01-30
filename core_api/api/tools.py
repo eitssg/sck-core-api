@@ -13,8 +13,8 @@ import core_framework as util
 
 import core_helper.aws as aws
 
-from .._version import __version__
-from ..request import ProxyEvent, RequestContext, CognitoIdentity
+from core_api import __version__
+from core_api.request import ProxyEvent, RequestContext, CognitoIdentity
 
 
 API_LAMBDA_NAME = "core-automation-api-master"
