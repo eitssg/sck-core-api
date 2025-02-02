@@ -125,7 +125,7 @@ def check_if_user_authorised(event: ProxyEvent) -> dict:
 
 
 # The following function is the lambda handler to receive requests from AWS API Gateway
-def handler_proxy(event: Any, context: Any | None = None) -> dict:
+def handler(event: Any, context: Any | None = None) -> dict:
     """
     This is a router for registered API reource paths.  It examines the lambda event
     data looking for "resource".  This is what you would get from AWS API Gatewqy.

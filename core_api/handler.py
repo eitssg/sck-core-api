@@ -2,8 +2,8 @@ from typing import Any
 
 import json
 
-from .handler_direct import handler_direct
-from .handler_proxy import handler_proxy
+from .direct import handler as direct_handler
+from .proxy import handler as proxy_handler
 
 
 def handler(event: Any, context: Any | None = None) -> dict:
@@ -84,9 +84,9 @@ def handler(event: Any, context: Any | None = None) -> dict:
         }
 
     if "action" in event:
-        return handler_direct(event, context)
+        return direct_handler(event, context)
     elif "resource" in event and "httpMethod" in event:
-        return handler_proxy(event, context)
+        return proxy_handler(event, context)
     else:
         return {
             "statusCode": 400,

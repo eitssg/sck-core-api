@@ -159,7 +159,7 @@ def process_request(request: Request) -> Response:
 
 
 # This is the geneeric lamda handler that will be used to route all requests to the appropriate action
-def handler_direct(event: dict, context: Any | None = None) -> dict:
+def handler(event: dict, context: Any | None = None) -> dict:
     """
     This is the legacy action handler.  It's a custom core-automation API
 

@@ -12,7 +12,7 @@ from fastapi import Request, APIRouter
 from fastapi.responses import Response
 from fastapi.routing import APIRoute
 
-from ..handler_proxy import api_paths, handler_proxy
+from ..proxy import api_paths, handler
 from ..request import ProxyEvent
 from .tools import (
     ProxyContext,
@@ -193,7 +193,7 @@ async def proxy_forward(request: Request) -> Response:
     # We will authorize the user in the lambda function with the Authorization header Bearer token.
     # To invoke the lambda function, we don't need to be a specific 'role'.
     if util.is_local_mode():
-        result = handler_proxy(event, context)
+        result = handler(event, context)
     else:
         arn = util.get_api_lambda_arn()
         # This should use the role credentials as already received in "authorize_request" above.  So, it shouldn't assume_role again.
