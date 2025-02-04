@@ -1,4 +1,4 @@
-""" Module to provide functions to interact with FACTS data """
+"""Module to provide functions to interact with FACTS data"""
 
 from .facter import get_facts_action
 
