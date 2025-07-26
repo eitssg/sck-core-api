@@ -1,7 +1,7 @@
 from collections import OrderedDict
-from typing import Any
 import boto3
-import ruamel.yaml
+
+import core_framework as util
 
 
 def get_table_name(name):
@@ -121,19 +121,10 @@ def transform_string(input_string):
     return transformed_string
 
 
-def od_representer(dumper: Any, data):
-    return dumper.represent_dict(data)
-
-
 def save_yaml(data, filename):
-    yaml = ruamel.yaml.YAML(typ="rt")
-    yaml.default_flow_style = False
-    yaml.indent(mapping=2, sequence=4, offset=2)
-    yaml.allow_unicode = True
-    yaml.representer.add_representer(OrderedDict, od_representer)
 
     with open(filename, "w") as f:
-        yaml.dump(data, f)
+        util.write_yaml(data, f)
 
 
 def get_param(default_value: str):

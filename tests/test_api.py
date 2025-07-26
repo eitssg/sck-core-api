@@ -1,19 +1,11 @@
+import pytest
 import os
 import io
-import pytest
 from fastapi.testclient import TestClient
 
-from ruamel.yaml import YAML
-
 import core_framework as util
-from core_helper.magic import MagicS3Client
 
-from core_framework.models import (
-    ActionDefinition,
-    ActionParams,
-    DeploymentDetails as DeploymentDetailsClass,
-    TaskPayload,
-)
+from core_execute.actionlib.actions.system.no_op import NoOpActionSpec
 
 from core_db.event.models import EventModel
 from core_db.item.models import ItemModel
@@ -24,21 +16,23 @@ from core_db.registry.zone.models import ZoneFacts
 
 from core_api.api.fast_api import get_app
 
+# Fixed: Add missing imports
+from core_framework.models import TaskPayload, DeploymentDetails
+from core_helper.magic import MagicS3Client
+
 from .test_api_data import api_paths
 
-# Create a FastAPI test client the same that unvicorn will use
+# Create a FastAPI test client the same that uvicorn will use
 client = TestClient(get_app())
 
 
 @pytest.fixture(scope="module")
 def bootstrap_dynamo():
-
+    """Bootstrap DynamoDB tables for testing."""
     # see environment variables in .env
     host = util.get_dynamodb_host()
 
-    assert (
-        host == "http://localhost:8000"
-    ), "DYNAMODB_HOST must be set to http://localhost:8000"
+    assert host == "http://localhost:8000", "DYNAMODB_HOST must be set to http://localhost:8000"
 
     try:
         if EventModel.exists():
@@ -66,63 +60,64 @@ def bootstrap_dynamo():
         ZoneFacts.create_table(wait=True)
 
     except Exception as e:
-        print(e)
-        assert False
+        print(f"Error bootstrapping DynamoDB: {e}")  # Fixed: use f-string
+        assert False, f"Failed to bootstrap DynamoDB: {e}"  # Fixed: provide context
 
     return True
 
 
 @pytest.fixture(scope="module")
-def teardown_action():
+def teardown_action(bootstrap_dynamo):
+    """Create test action and upload to S3."""
+    assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
 
-    action = ActionDefinition(
-        Label="my-teardown-action",
-        Type="SYSTEM::NoOp",
-        Params=ActionParams(  # These parameters are not even used by NoOp
-            Account="123456789012", Region="us-west-1", StackName="no-stack-exists"
-        ),
-        Scope="build",
+    action = NoOpActionSpec(
+        **{
+            "params": {
+                "account": "123456789012",
+                "region": "us-west-1",
+                "stack_name": "no-stack-exists",
+            }
+        }
     )
 
     task_payload = TaskPayload(
-        Task="teardown",
-        DeploymentDetails=DeploymentDetailsClass(
-            Portfolio="simple-cloud-kit", App="api", Branch="main", Build="1"
-        ),
+        task="teardown",  # Pydantic models use snake_case
+        deployment_details=DeploymentDetails(portfolio="simple-cloud-kit", app="api", branch="main", build="1"),
     )
 
-    bucket_name = task_payload.Actions.BucketName
+    # Pydantic models use snake_case attributes
+    bucket_name = task_payload.actions.bucket_name
+    action_details = task_payload.actions
+    state_details = task_payload.state
 
-    action_details = task_payload.Actions
-    state_details = task_payload.State
-
-    y = YAML(typ="safe")
-    y.allow_unicode = True
-    y.default_flow_style = False
-
-    magicS3 = MagicS3Client(Region=action_details.BucketRegion)
+    # MagicS3Client constructor uses PascalCase parameters - CORRECTED
+    magicS3 = MagicS3Client(Region=action_details.bucket_region)
 
     # Create a sample action file for the test cases (teardown)
     action_list = [action.model_dump()]
     data = io.BytesIO()
-    y.dump(action_list, data)
-    magicS3.put_object(Bucket=bucket_name, Key=action_details.Key, Body=data.getvalue())
+    util.write_yaml(action_list, data)
+
+    # MagicS3Client put_object uses PascalCase parameters - CORRECTED
+    magicS3.put_object(Bucket=bucket_name, Key=action_details.key, Body=data.getvalue())
 
     # Create a sample state file (context file) for the test cases
-    magicS3 = MagicS3Client(Region=action_details.BucketRegion)
-
     fn = os.path.join(os.path.dirname(__file__), "test_context_state.yaml")
     with open(fn, "r") as f:
-        data = f.read()
-    magicS3.put_object(Bucket=bucket_name, Key=state_details.Key, Body=data)
+        data_content = f.read()
+
+    # MagicS3Client put_object uses PascalCase parameters - CORRECTED
+    magicS3.put_object(Bucket=bucket_name, Key=state_details.key, Body=data_content)
 
     return action
 
 
 @pytest.mark.parametrize("http_path,expected_result", api_paths)
-def test_app(  # noqa E302
-    http_path, expected_result, bootstrap_dynamo, teardown_action
-):
+def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action):
+    """Test API endpoints with various HTTP methods."""
+    assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
+    assert teardown_action  # Fixed: ensure teardown action is available
 
     try:
         method, path, body = http_path
