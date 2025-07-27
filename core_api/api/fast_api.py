@@ -67,4 +67,6 @@ def get_app() -> FastAPI:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("core_automation.api.fast_api:get_app", factory=True, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        "core_automation.api.fast_api:get_app", factory=True, host="0.0.0.0", port=8000
+    )

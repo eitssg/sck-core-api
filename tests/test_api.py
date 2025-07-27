@@ -32,7 +32,9 @@ def bootstrap_dynamo():
     # see environment variables in .env
     host = util.get_dynamodb_host()
 
-    assert host == "http://localhost:8000", "DYNAMODB_HOST must be set to http://localhost:8000"
+    assert (
+        host == "http://localhost:8000"
+    ), "DYNAMODB_HOST must be set to http://localhost:8000"
 
     try:
         if EventModel.exists():
@@ -83,7 +85,9 @@ def teardown_action(bootstrap_dynamo):
 
     task_payload = TaskPayload(
         task="teardown",  # Pydantic models use snake_case
-        deployment_details=DeploymentDetails(portfolio="simple-cloud-kit", app="api", branch="main", build="1"),
+        deployment_details=DeploymentDetails(
+            portfolio="simple-cloud-kit", app="api", branch="main", build="1"
+        ),
     )
 
     # Pydantic models use snake_case attributes
