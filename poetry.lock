@@ -2793,7 +2793,7 @@ reference = "nexus"
 
 [[package]]
 name = "sck-core-component"
-version = "0.0.7-pre.1+ff4f47f"
+version = "0.0.7-pre.2+49a99ed"
 description = "Core-Automation Component Compiler"
 optional = false
 python-versions = "^3.12"
@@ -2818,7 +2818,7 @@ url = "../sck-core-component"
 
 [[package]]
 name = "sck-core-db"
-version = "0.0.7-pre.2+b5bdbe9"
+version = "0.0.7-pre.3+65a67a5"
 description = "Core Database Library to access DynamoDB for Core-Automation"
 optional = false
 python-versions = "^3.12"
@@ -2839,7 +2839,7 @@ url = "../sck-core-db"
 
 [[package]]
 name = "sck-core-deployspec"
-version = "0.0.7-pre.1+bb850ad"
+version = "0.0.7-pre.2+997eebb"
 description = "Core Automation Deployspec Actions Compiler lambda function"
 optional = false
 python-versions = "^3.12"
@@ -2860,7 +2860,7 @@ url = "../sck-core-deployspec"
 
 [[package]]
 name = "sck-core-execute"
-version = "0.0.7-pre.7+271b4d5"
+version = "0.0.7-pre.8+74399a5"
 description = "Core Automation Engine execute Lambda function"
 optional = false
 python-versions = "^3.12"
@@ -2881,7 +2881,7 @@ url = "../sck-core-execute"
 
 [[package]]
 name = "sck-core-framework"
-version = "0.0.7-pre.13+3cd61b8"
+version = "0.0.7-pre.14+80bca2d"
 description = "Core-Framework for Core-Automation"
 optional = false
 python-versions = "^3.12"
@@ -2906,7 +2906,7 @@ url = "../sck-core-framework"
 
 [[package]]
 name = "sck-core-invoker"
-version = "0.0.7-pre.1+d90977e"
+version = "0.0.7-pre.2+4eb9998"
 description = "Core Automation Invoker Lambda function"
 optional = false
 python-versions = "^3.12"
@@ -2931,7 +2931,7 @@ url = "../sck-core-invoker"
 
 [[package]]
 name = "sck-core-organization"
-version = "0.0.7-pre.1+1450cbd"
+version = "0.0.7-pre.2+229f667"
 description = "Manage organization resources and service control policy"
 optional = false
 python-versions = "^3.12"
@@ -2953,7 +2953,7 @@ url = "../sck-core-organization"
 
 [[package]]
 name = "sck-core-report"
-version = "0.0.7-pre.1+fe19b8f"
+version = "0.0.7-pre.2+3bb8a65"
 description = "Tool to inspect flow control of stepfunction"
 optional = false
 python-versions = "^3.12"
@@ -2972,7 +2972,7 @@ url = "../sck-core-report"
 
 [[package]]
 name = "sck-core-runner"
-version = "0.0.7-pre.1+6ec02cc"
+version = "0.0.7-pre.3+5d52886"
 description = "Core Automation Runner Lambda function"
 optional = false
 python-versions = "^3.12"
