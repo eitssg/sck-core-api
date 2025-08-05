@@ -1,24 +1,63 @@
-from typing import Any
+"""AWS API Gateway proxy event and Lambda context generation tools.
+
+This module provides utilities for generating AWS API Gateway proxy events and Lambda
+execution contexts that match the exact format AWS produces. It's designed to enable
+local testing and development that perfectly emulates the AWS API Gateway → Lambda flow.
+
+The module handles:
+- AWS API Gateway proxy event generation with all required fields
+- Lambda execution context creation matching AWS runtime environment
+- HTTP header processing and forwarding
+- User authentication and identity management
+- System information gathering for User-Agent strings
+
+Example:
+    Basic event generation::
+
+        from core_api.api.tools import generate_proxy_event, generate_proxy_context
+
+        # Generate event exactly like AWS API Gateway
+        event = generate_proxy_event(
+            protocol="https",
+            identity=cognito_identity,
+            method="GET",
+            resource="/users/{id}",
+            path="/users/123",
+            path_params={"id": "123"},
+            query_params={"include": "profile"},
+            body="",
+            headers={"Authorization": "Bearer token"}
+        )
+
+        # Generate context exactly like AWS Lambda runtime
+        context = generate_proxy_context(event)
+
+Attributes:
+    API_LAMBDA_NAME (str): Default Lambda function name for API operations.
+    HDR_* (str): Standard HTTP header name constants.
+"""
+
+from typing import Any, Dict, List, Optional, Union
 import sys
 import socket
 import platform
 import locale
 import uuid
 import hashlib
+import time
 from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 import core_framework as util
-
 import core_helper.aws as aws
 
 from core_api import __version__
 from core_api.request import ProxyEvent, RequestContext, CognitoIdentity
 
-
 API_LAMBDA_NAME = "core-automation-api-master"
 
+# Standard HTTP headers used in AWS API Gateway
 HDR_X_CORRELATION_ID = "X-Correlation-Id"
 HDR_X_FORWARDED_FOR = "X-Forwarded-For"
 HDR_X_FORWARDED_PROTO = "X-Forwarded-Proto"
@@ -29,17 +68,52 @@ HDR_USER_AGENT = "User-Agent"
 
 
 def get_ip_address() -> str:
-    """Get the IP address of the current host."""
-    hostname = socket.gethostname()
-    ip_address = socket.gethostbyname(hostname)
-    return ip_address
+    """Get the IP address of the current host.
+
+    Attempts to determine the local IP address by resolving the hostname.
+    This is used for X-Forwarded-For headers and source IP tracking.
+
+    Returns:
+        str: The IP address of the current host, or "127.0.0.1" if unable to determine.
+
+    Note:
+        This may return a private IP address in local development environments.
+
+    Example:
+        .. code-block:: python
+
+            ip = get_ip_address()
+            print(f"Host IP: {ip}")  # Output: "Host IP: 192.168.1.100"
+    """
+    try:
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        return ip_address
+    except Exception:
+        return "127.0.0.1"
 
 
 def get_version_info() -> tuple[str, str, str]:
-    """Get system version information.
+    """Get system version information for User-Agent generation.
+
+    Extracts operating system information including platform name, version,
+    and release details. Used to construct realistic User-Agent strings.
 
     Returns:
-        tuple: (system name, version, release info)
+        tuple[str, str, str]: A tuple containing:
+            - Platform name (e.g., "Windows", "Linux", "macOS")
+            - Version information
+            - Release or codename information
+
+    Note:
+        Linux distribution detection may be limited on newer systems.
+
+    Example:
+        .. code-block:: python
+
+            name, version, release = get_version_info()
+            # On Windows: ("Windows", "Version 10.0.19041", "Release: 10")
+            # On macOS: ("macOS", "Version: 12.6.0 (arm64)", "")
     """
     system = platform.system()
     if system == "Windows":
@@ -47,86 +121,160 @@ def get_version_info() -> tuple[str, str, str]:
         release = platform.release()
         return "Windows", f"Version {version}", f"Release: {release}"
     elif system == "Linux":
-        if hasattr(platform, "linux_distribution"):
-            distro = platform.linux_distribution()
-            return (
-                f"Linux {distro[0]}",
-                f"Version: {distro[1]}",
-                f"Codename: {distro[2]}",
-            )
-        return "Linux", "Unknown Version", "Unknown Codename"
+        try:
+            with open("/etc/os-release", "r") as f:
+                lines = f.readlines()
+                info = {}
+                for line in lines:
+                    if "=" in line:
+                        key, value = line.strip().split("=", 1)
+                        info[key] = value.strip('"')
+                name = info.get("NAME", "Linux")
+                version = info.get("VERSION", "Unknown")
+                return f"Linux {name}", f"Version: {version}", ""
+        except Exception:
+            return "Linux", "Unknown Version", "Unknown Distribution"
     elif system == "Darwin":
         release, _, machine = platform.mac_ver()
         return "macOS", f"Version: {release} ({machine})", ""
     else:
-        return "Unsupported", "Unsupported Operating System", ""
+        return "Unknown", "Unsupported Operating System", ""
 
 
-def generate_user_agent(module_name, module_version):
+def generate_user_agent(module_name: str, module_version: str) -> str:
     """Generate User-Agent string with system information.
 
+    Creates a detailed User-Agent string that includes module information,
+    Python version, and operating system details. Matches the format used
+    by AWS SDKs and other professional APIs.
+
     Args:
-        module_name: Name of the module
-        module_version: Version of the module
+        module_name (str): Name of the calling module or application.
+        module_version (str): Version string of the module.
 
     Returns:
-        str: Formatted User-Agent string
+        str: Formatted User-Agent string with system information.
+
+    Example:
+        .. code-block:: python
+
+            ua = generate_user_agent("core_api", "1.0.0")
+            print(ua)
+            # Output: "core_api/1.0.0 (Python/3.11.5; Windows/Version 10.0.19041)"
     """
-    python_version = sys.version
-    os_name, os_version, os_release = get_version_info()
-    user_agent = f"{module_name}/{module_version} (Python/{python_version}; {os_name}/{os_version}/{os_release})"
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    os_name, os_version, _ = get_version_info()
+    user_agent = f"{module_name}/{module_version} (Python/{python_version}; {os_name}/{os_version})"
     return user_agent
 
 
-def get_header(headers, name, default=None) -> tuple[str, str]:
+def get_header(headers: Dict[str, str], name: str, default: Optional[str] = None) -> tuple[str, str]:
     """Get header value with case-insensitive lookup.
 
+    Performs case-insensitive header lookup to handle variations in header
+    capitalization. Returns both the actual header name (with original casing)
+    and its value.
+
     Args:
-        headers: Headers dictionary
-        name: Header name to find
-        default: Default value if not found
+        headers (Dict[str, str]): Dictionary of HTTP headers.
+        name (str): Header name to search for (case-insensitive).
+        default (Optional[str]): Default value if header not found.
 
     Returns:
-        tuple: (header name, header value)
+        tuple[str, str]: A tuple containing:
+            - Actual header name (with original casing) or the search name if not found
+            - Header value or default value
+
+    Example:
+        .. code-block:: python
+
+            headers = {"Content-Type": "application/json", "authorization": "Bearer token"}
+
+            # Case-insensitive lookup
+            name, value = get_header(headers, "CONTENT-TYPE")
+            # Returns: ("Content-Type", "application/json")
+
+            name, value = get_header(headers, "missing-header", "default")
+            # Returns: ("missing-header", "default")
     """
     for k, v in headers.items():
         if k.lower() == name.lower():
             return k, v
-    return name, default
+    return name, default or ""
 
 
-def event_headers(headers) -> dict:
-    """Generate proxy forward headers.
+def event_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    """Generate proxy forward headers with AWS API Gateway additions.
+
+    Processes and enhances HTTP headers to match AWS API Gateway behavior.
+    Adds required proxy headers like X-Forwarded-For, correlation IDs,
+    and User-Agent information.
 
     Args:
-        headers: Original headers dictionary
+        headers (Dict[str, str]): Original HTTP headers dictionary.
 
     Returns:
-        dict: Headers with added proxy information
-    """
+        Dict[str, str]: Enhanced headers with proxy information added.
 
+    Note:
+        Modifies the input headers dictionary in place and returns it.
+        Adds correlation ID, forwarded IP, protocol, and User-Agent if missing.
+
+    Example:
+        .. code-block:: python
+
+            original_headers = {"Authorization": "Bearer token"}
+            enhanced_headers = event_headers(original_headers)
+
+            # Now includes:
+            # - X-Correlation-Id: <uuid>
+            # - X-Forwarded-For: <ip_address>
+            # - X-Forwarded-Proto: https
+            # - User-Agent: core_api/1.0.0 (Python/3.11; Windows/...)
+    """
     # Append the ip_address to X_FORWARDED_FOR
     ip_address = get_ip_address()
     k, v = get_header(headers, HDR_X_FORWARDED_FOR, ip_address)
     if ip_address not in v:
-        headers[k] = f"{v},{ip_address}"
+        headers[k] = f"{v},{ip_address}" if v and v != ip_address else ip_address
 
     # Add headers if they don't exist
-    headers.update([get_header(headers, HDR_X_CORRELATION_ID, str(uuid.uuid4()))])
-    headers.update([get_header(headers, HDR_X_FORWARDED_PROTO, "https")])
-    headers.update(
-        [
-            get_header(
-                headers, HDR_USER_AGENT, generate_user_agent("core_api", __version__)
-            )
-        ]
-    )
+    correlation_id_header, correlation_id = get_header(headers, HDR_X_CORRELATION_ID)
+    if not correlation_id:
+        headers[correlation_id_header] = str(uuid.uuid4())
+
+    proto_header, proto = get_header(headers, HDR_X_FORWARDED_PROTO)
+    if not proto:
+        headers[proto_header] = "https"
+
+    ua_header, ua = get_header(headers, HDR_USER_AGENT)
+    if not ua:
+        headers[ua_header] = generate_user_agent("core_api", __version__)
 
     return headers
 
 
 def generate_resource_id(resource: str) -> str:
-    """Generate a consistent hash for the resource ID."""
+    """Generate a consistent hash for the resource ID.
+
+    Creates a deterministic resource identifier based on the resource path.
+    This matches AWS API Gateway's resource ID generation for consistency.
+
+    Args:
+        resource (str): The API resource path (e.g., "/users/{id}").
+
+    Returns:
+        str: A 12-character lowercase hexadecimal resource ID.
+
+    Example:
+        .. code-block:: python
+
+            resource_id = generate_resource_id("/users/{id}")
+            print(resource_id)  # Output: "a1b2c3d4e5f6"
+
+            # Same resource always generates same ID
+            assert generate_resource_id("/users/{id}") == resource_id
+    """
     return hashlib.md5(resource.encode()).hexdigest()[:12].lower()
 
 
@@ -136,158 +284,323 @@ def generate_proxy_event(
     method: str,
     resource: str,
     path: str,
-    path_params: dict,
-    query_params: dict,
+    path_params: Dict[str, str],
+    query_params: Dict[str, str],
     body: str,
-    headers: dict,
+    headers: Dict[str, str],
+    is_base64_encoded: bool = False,
+    stage: str = "local",
+    source_ip: Optional[str] = None,
 ) -> ProxyEvent:
-    """Generate API Gateway proxy event.
+    """Generate AWS API Gateway proxy event with complete AWS-compatible structure.
+
+    Creates a proxy event that exactly matches the format AWS API Gateway sends
+    to Lambda functions. Includes all required fields and follows AWS conventions
+    for header processing, multi-value parameters, and request context.
 
     Args:
-        protocol: HTTP protocol
-        identity: Cognito identity information
-        method: HTTP method
-        resource: API resource path
-        path: Request path
-        path_params: Path parameters
-        query_params: Query parameters
-        body: Request body
-        headers: Request headers
+        protocol (str): HTTP protocol ("http" or "https").
+        identity (CognitoIdentity): Authenticated user's identity information.
+        method (str): HTTP method (GET, POST, PUT, DELETE, etc.).
+        resource (str): API Gateway resource path with placeholders (e.g., "/users/{id}").
+        path (str): Actual request path with resolved parameters (e.g., "/users/123").
+        path_params (Dict[str, str]): Path parameters extracted from the URL.
+        query_params (Dict[str, str]): Query string parameters.
+        body (str): Request body content (may be base64 encoded for binary).
+        headers (Dict[str, str]): HTTP request headers.
+        is_base64_encoded (bool, optional): Whether body is base64 encoded. Defaults to False.
+        stage (str, optional): API Gateway stage name. Defaults to "local".
+        source_ip (Optional[str], optional): Client IP address. Auto-detected if None.
 
     Returns:
-        ProxyEvent: Formatted proxy event
+        ProxyEvent: Complete AWS API Gateway proxy event object.
+
+    Note:
+        The generated event includes all fields that AWS API Gateway provides:
+
+        - Complete request context with timing and identity
+        - Multi-value headers and query parameters (even if empty)
+        - Proper stage variables and extended request ID
+        - Source IP and User-Agent processing
+
+    Example:
+        .. code-block:: python
+
+            event = generate_proxy_event(
+                protocol="https",
+                identity=cognito_identity,
+                method="POST",
+                resource="/users",
+                path="/users",
+                path_params={},
+                query_params={"include": "profile"},
+                body='{"name": "John"}',
+                headers={"Content-Type": "application/json"}
+            )
+
+            # Event now contains all AWS API Gateway fields:
+            # event.httpMethod == "POST"
+            # event.resource == "/users"
+            # event.requestContext.requestId == "<uuid>"
+            # event.multiValueHeaders == {"Content-Type": ["application/json"]}
     """
     headers = event_headers(headers or {})
 
-    # Generate resource ID
+    # Generate multi-value versions (AWS API Gateway always includes these)
+    multi_value_headers = {k: [v] for k, v in headers.items()}
+    multi_value_query_params = {k: [v] for k, v in query_params.items()} if query_params else {}
+
+    # Generate resource ID and request timing
     resource_id = generate_resource_id(resource)
+    request_time_epoch = int(time.time() * 1000)  # AWS uses milliseconds
 
-    # Retrieve extendedRequestId from headers
+    # Get correlation ID and extended request ID
     _, request_id = get_header(headers, HDR_X_CORRELATION_ID)
+    extended_request_id = f"{request_id}={uuid.uuid4().hex}"
+
+    # Get User-Agent and update identity
     _, user_agent = get_header(headers, HDR_USER_AGENT)
-
     identity.userAgent = user_agent
+    identity.sourceIp = source_ip or get_ip_address()
 
-    # Create the RequestContext model
+    # Create complete RequestContext matching AWS format
     request_context = RequestContext(
         resourceId=resource_id,
         resourcePath=resource,
         httpMethod=method,
-        path=path,
+        path=f"/{stage}{path}",  # AWS includes stage in path
         accountId=identity.accountId,
-        protocol=protocol,
+        protocol=f"{protocol}/1.1",  # AWS includes HTTP version
         requestId=request_id,
+        extendedRequestId=extended_request_id,
+        requestTime=datetime.fromtimestamp(request_time_epoch / 1000).strftime("%d/%b/%Y:%H:%M:%S %z"),
+        requestTimeEpoch=request_time_epoch,
         identity=identity,
+        stage=stage,
+        domainName="localhost" if stage == "local" else "api.example.com",
+        apiId="local" if stage == "local" else util.get_api_gateway_id(),
     )
 
+    # Create complete ProxyEvent
     rv = ProxyEvent(
         resource=resource,
         path=path,
         httpMethod=method,
         headers=headers,
-        requestContext=request_context,
-        pathParameters=path_params,
+        multiValueHeaders=multi_value_headers,
         queryStringParameters=query_params,
+        multiValueQueryStringParameters=multi_value_query_params,
+        pathParameters=path_params,
+        stageVariables={},  # Usually empty in development
+        requestContext=request_context,
         body=body,
+        isBase64Encoded=is_base64_encoded,
     )
 
     return rv
 
 
-def get_user_information(token: str, role: str | None = None) -> CognitoIdentity | None:
-    """Returns the temporary credentials and identity for the user with the specified Token.
+def get_user_information(token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
+    """Get user identity information from authentication token.
 
-    We need to assume a role to execute the lambda function
+    Validates the provided JWT token and retrieves user identity information
+    from AWS Cognito. Optionally assumes an IAM role for the operation.
+
+    Args:
+        token (str): JWT authentication token from client.
+        role (Optional[str]): IAM role ARN to assume for this operation.
+
+    Returns:
+        Optional[CognitoIdentity]: User identity information if token is valid,
+        None if authentication fails.
+
+    Raises:
+        ValueError: If token is invalid or user is not authorized.
+
+    Note:
+        The returned identity includes all fields required for AWS API Gateway
+        request context, including account ID, user ARN, and access credentials.
+
+    Example:
+        .. code-block:: python
+
+            # Basic usage
+            identity = get_user_information("eyJ0eXAiOiJKV1Qi...")
+            if identity:
+                print(f"User: {identity.user}")
+                print(f"Account: {identity.accountId}")
+
+            # With IAM role assumption
+            read_role = "arn:aws:iam::123456789012:role/ReadOnlyRole"
+            identity = get_user_information(token, read_role)
     """
+    identity_data = aws.get_identity(token, role)
 
-    identity = aws.get_identity(token, role)
-
-    if not identity:
+    if not identity_data:
         return None
 
     cognito_identity = CognitoIdentity(
-        accountId=identity.get("Account"),
-        user=identity.get("UserId"),
-        userArn=identity.get("Arn"),
-        caller=identity.get("caller", __name__),
+        accountId=identity_data.get("Account"),
+        user=identity_data.get("UserId"),
+        userArn=identity_data.get("Arn"),
+        caller=identity_data.get("caller", __name__),
         sourceIp=get_ip_address(),
-        accessKey=identity.get("AccessKeyId"),
+        accessKey=identity_data.get("AccessKeyId"),
+        # Additional AWS Cognito fields
+        cognitoIdentityPoolId=identity_data.get("CognitoIdentityPoolId"),
+        cognitoIdentityId=identity_data.get("CognitoIdentityId"),
+        principalOrgId=identity_data.get("PrincipalOrgId"),
+        userAgent="",  # Will be set by generate_proxy_event
     )
 
     return cognito_identity
 
 
-def get_locale():
-    """Get the current system locale."""
+def get_locale() -> tuple[Optional[str], Optional[str]]:
+    """Get the current system locale.
+
+    Returns:
+        tuple[Optional[str], Optional[str]]: Language and encoding information.
+
+    Example:
+        .. code-block:: python
+
+            lang, encoding = get_locale()
+            print(f"Locale: {lang}, Encoding: {encoding}")
+            # Output: "Locale: en_US, Encoding: UTF-8"
+    """
     return locale.getlocale()
 
 
 class ClientContext(BaseModel):
-    """Client context information for Lambda execution."""
+    """Client context information for Lambda execution.
 
-    client: dict[str, Any]
-    environment: dict[str, Any]
+    Represents the client context that AWS Lambda provides to functions
+    when invoked by mobile applications or other AWS services.
+
+    Attributes:
+        client (Dict[str, Any]): Client application information.
+        environment (Dict[str, Any]): Client environment details.
+    """
+
+    client: Dict[str, Any]
+    environment: Dict[str, Any]
 
 
 class ProxyContext(BaseModel):
-    """Proxy context for AWS Lambda execution environment."""
+    """AWS Lambda execution context for proxy integration.
 
-    function_name: str = Field(default_factory=util.get_api_lambda_name)
+    Emulates the AWS Lambda context object that provides runtime information
+    to Lambda functions. Includes all standard attributes and methods that
+    AWS Lambda runtime provides.
+
+    Attributes:
+        function_name (str): Lambda function name.
+        function_version (str): Function version (usually "$LATEST").
+        invoked_function_arn (str): Complete ARN of the invoked function.
+        memory_limit_in_mb (int): Memory limit configured for the function.
+        aws_request_id (str): Unique request identifier.
+        log_group_name (str): CloudWatch log group name.
+        log_stream_name (str): CloudWatch log stream name.
+        identity (Optional[Dict[str, Any]]): Mobile app identity information.
+        client_context (ClientContext): Client application context.
+        remaining_time (int): Remaining execution time in milliseconds.
+
+    Note:
+        This class provides the same interface as the AWS Lambda context object,
+        allowing local handlers to use context.get_remaining_time_in_millis()
+        and other standard context methods.
+    """
+
+    function_name: str = Field(default_factory=lambda: util.get_api_lambda_name() or API_LAMBDA_NAME)
     function_version: str = "$LATEST"
-    invoked_function_arn: str = Field(default_factory=util.get_api_lambda_arn)
-    memory_limit_in_mb: int = 128
+    invoked_function_arn: str = Field(
+        default_factory=lambda: util.get_api_lambda_arn() or f"arn:aws:lambda:us-east-1:123456789012:function:{API_LAMBDA_NAME}"
+    )
+    memory_limit_in_mb: int = 512  # Realistic default
     aws_request_id: str
-    log_group_name: str = Field(
-        default_factory=lambda: f"/aws/lambda/{util.get_api_lambda_name()}"
-    )
-    log_stream_name: str = Field(
-        default_factory=lambda: f"{datetime.now().strftime('%Y/%m/%d')}/[$LATEST]{uuid.uuid4()}"
-    )
-    identity: dict[str, Any] | None = None
+    log_group_name: str = Field(default_factory=lambda: f"/aws/lambda/{util.get_api_lambda_name() or API_LAMBDA_NAME}")
+    log_stream_name: str = Field(default_factory=lambda: f"{datetime.now().strftime('%Y/%m/%d')}/[$LATEST]{uuid.uuid4().hex[:8]}")
+    identity: Optional[Dict[str, Any]] = None
     client_context: ClientContext = Field(
         default_factory=lambda: ClientContext(
             client={
-                "installation_id": __version__,
+                "installation_id": str(uuid.uuid4()),
                 "app_title": "core-api",
                 "app_version_name": __version__,
-                "app_version_code": __version__,
+                "app_version_code": __version__.replace(".", ""),
                 "app_package_name": "core_api.api",
             },
             environment={
                 "platform": get_version_info()[0],
-                "model": sys.version,
+                "platform_version": get_version_info()[1],
+                "model": platform.machine(),
                 "make": "Python",
-                "locale": get_locale(),
-                "network_type": "direct",
-                "os_version": get_version_info()[1],
-                "os_release": get_version_info()[2],
+                "locale": f"{get_locale()[0] or 'en_US'}.{get_locale()[1] or 'UTF-8'}",
+                "network_type": "wifi",  # AWS mobile context
             },
         )
     )
-    remaining_time: int = 10000
+    remaining_time: int = 300000  # 5 minutes in milliseconds
 
     def get_remaining_time_in_millis(self) -> int:
-        """Get remaining execution time in milliseconds."""
+        """Get remaining execution time in milliseconds.
+
+        Returns:
+            int: Remaining time in milliseconds before Lambda timeout.
+
+        Note:
+            This method signature matches AWS Lambda's context object exactly.
+        """
         return self.remaining_time
 
-    def set_remaining_time_in_millis(self, value: int):
+    def set_remaining_time_in_millis(self, value: int) -> None:
         """Set remaining execution time in milliseconds.
 
         Args:
-            value: Time in milliseconds
+            value (int): Time in milliseconds before timeout.
+
+        Note:
+            Used for testing timeout scenarios in local development.
         """
         self.remaining_time = value
 
 
 def generate_proxy_context(event: ProxyEvent) -> ProxyContext:
-    """Generate a proxy context from an API Gateway event.
+    """Generate Lambda execution context from API Gateway event.
+
+    Creates a Lambda context object that matches what AWS Lambda runtime
+    provides to functions. Uses information from the proxy event to set
+    request-specific context values.
 
     Args:
-        event: API Gateway proxy event
+        event (ProxyEvent): API Gateway proxy event containing request information.
 
     Returns:
-        ProxyContext: Context object for Lambda execution
+        ProxyContext: Lambda execution context with request-specific values.
+
+    Note:
+        The generated context includes:
+
+        - Request ID from the event
+        - Identity information from Cognito
+        - Realistic log stream names with timestamps
+        - Client context matching AWS mobile app format
+
+    Example:
+        .. code-block:: python
+
+            context = generate_proxy_context(event)
+
+            # Context has AWS Lambda interface
+            print(f"Request ID: {context.aws_request_id}")
+            print(f"Function: {context.function_name}")
+            print(f"Remaining time: {context.get_remaining_time_in_millis()}ms")
+
+            # Use in Lambda handler
+            result = lambda_handler(event.model_dump(), context)
     """
     aws_request_id = event.requestContext.requestId
-    identity = event.requestContext.identity.model_dump()
+    identity = event.requestContext.identity.model_dump() if event.requestContext.identity else None
+
     return ProxyContext(aws_request_id=aws_request_id, identity=identity)

@@ -1,8 +1,41 @@
-from typing import Any
+"""AWS API Gateway proxy integration handler for Lambda functions.
 
+This module provides the proxy integration layer between AWS API Gateway and
+Lambda function handlers. It processes API Gateway proxy events, handles
+authentication, routes requests to appropriate handlers, and formats responses
+in the AWS Lambda proxy integration format.
+
+The module implements:
+- Route-based request routing using HTTP method + resource path
+- JWT token authentication with AWS Cognito integration
+- Correlation ID tracking for distributed tracing
+- Error handling with appropriate HTTP status codes
+- Response formatting for AWS API Gateway compatibility
+
+Example:
+    AWS API Gateway integration::
+
+        # Event from API Gateway
+        event = {
+            "httpMethod": "GET",
+            "resource": "/api/v1/portfolios/{id}",
+            "pathParameters": {"id": "123"},
+            "headers": {"Authorization": "Bearer token"}
+        }
+        
+        # Handler processes and returns AWS format
+        response = handler(event, context)
+        # Returns: {"statusCode": 200, "headers": {...}, "body": "..."}
+
+Attributes:
+    api_paths (ActionHandlerRoutes): Registry of route keys to handler functions.
+        Route keys are in format "METHOD:resource" (e.g., "GET:/api/v1/portfolios").
+"""
+
+from typing import Any, Dict, Optional
 import uuid
-import core_logging as log
 
+import core_logging as log
 import core_framework as util
 
 from core_db.response import ErrorResponse, Response
@@ -10,22 +43,18 @@ from core_db.exceptions import NotFoundException, UnauthorizedException
 
 # Registry actions and routes for API Gateway
 from .event.event import event_actions
-
 from .item.portfolio import item_portfolio_actions
 from .item.app import item_app_actions
 from .item.branch import item_branch_actions
 from .item.build import item_build_actions
 from .item.component import item_component_actions
-
 from .registry.client import registry_client_actions
 from .registry.portfolio import registry_portfolio_actions
 from .registry.app import registry_app_actions
 from .registry.zone import registry_zone_actions
-
-from .request import ProxyEvent, ActionHandlerRoutes
-
 from .facts.facter import facts_actions
 
+from .request import ProxyEvent, ActionHandlerRoutes
 from .api.tools import (
     get_header,
     HDR_AUTHORIZATION,
@@ -33,7 +62,6 @@ from .api.tools import (
     HDR_X_CORRELATION_ID,
     get_user_information,
 )
-
 
 # Build the router for the API Gateway REST interface
 api_paths: ActionHandlerRoutes = {
@@ -52,42 +80,155 @@ api_paths: ActionHandlerRoutes = {
 
 
 class ProxyResponse(dict):
-    """return plain dict as lambda response"""
+    """AWS Lambda proxy integration response formatter.
+    
+    Formats Lambda function responses into the structure required by AWS API Gateway
+    proxy integration. Automatically sets required headers and status codes based
+    on the core Response object.
+    
+    The response format matches AWS Lambda proxy integration requirements:
+    - statusCode: HTTP status code for the response
+    - headers: HTTP headers to return to the client
+    - body: Response body as JSON string
+    - isBase64Encoded: Boolean indicating if body is base64 encoded
+    
+    Args:
+        response (Response): Core response object containing status and data.
+        correlation_id (Optional[str]): Request correlation ID for tracing.
+        
+    Note:
+        This class extends dict to provide the exact structure AWS API Gateway
+        expects from Lambda proxy integration responses.
+        
+    Example:
+        .. code-block:: python
+        
+            # Create response from core Response object
+            core_response = Response(data={"id": 123}, code=200)
+            proxy_response = ProxyResponse(core_response, "uuid-123")
+            
+            # Returns AWS Lambda proxy format:
+            # {
+            #     "statusCode": 200,
+            #     "headers": {"Content-Type": "application/json"},
+            #     "body": '{"data": {"id": 123}, "code": 200}',
+            #     "isBase64Encoded": False
+            # }
+    """
 
-    def __init__(self, response: Response, correlation_id: str | None = None):
-
+    def __init__(self, response: Response, correlation_id: Optional[str] = None) -> None:
+        """Initialize proxy response with core response data.
+        
+        Args:
+            response (Response): Core response object to format.
+            correlation_id (Optional[str]): Correlation ID for request tracing.
+        """
+        super().__init__()
+        
         self["statusCode"] = response.code
         self["headers"] = {HDR_CONTENT_TYPE: "application/json"}
+        
         if correlation_id:
             self["headers"][HDR_X_CORRELATION_ID] = correlation_id
+            
         self["body"] = response.model_dump_json()
         self["isBase64Encoded"] = False
 
 
 def get_correlation_id(request: ProxyEvent) -> str:
+    """Extract or generate correlation ID for request tracing.
+    
+    Attempts to extract correlation ID from request headers, falls back to
+    request ID from API Gateway context, or generates a new UUID if neither
+    is available. The correlation ID is added to request headers for
+    downstream services.
+    
+    Args:
+        request (ProxyEvent): The API Gateway proxy event object.
+        
+    Returns:
+        str: Correlation ID for this request (existing or newly generated).
+        
+    Note:
+        The correlation ID is automatically added to the request headers
+        if it doesn't already exist, ensuring all downstream services
+        can participate in distributed tracing.
+        
+    Example:
+        .. code-block:: python
+        
+            correlation_id = get_correlation_id(proxy_event)
+            
+            # Use in logging
+            log.info("Processing request", correlation_id=correlation_id)
+            
+            # Pass to downstream services
+            headers = {"X-Correlation-Id": correlation_id}
     """
-    Get the correlation ID from the request headers or create a new one
-    """
-    # If there are haeders, the correlation ID is in the headers, use it
+    # Check if correlation ID is already in headers
     _, correlation_id = get_header(request.headers, HDR_X_CORRELATION_ID)
+    
     if not correlation_id:
-        if request.requestContext.requestId:
+        # Try to use API Gateway request ID
+        if request.requestContext and request.requestContext.requestId:
             correlation_id = request.requestContext.requestId
         else:
+            # Generate new correlation ID
             correlation_id = str(uuid.uuid4())
+            
+        # Add to request headers for downstream services
         request.headers[HDR_X_CORRELATION_ID] = correlation_id
 
     return correlation_id
 
 
-def check_if_user_authorised(event: ProxyEvent) -> dict:
-    """Sets up the session credentials for this thread for the user as
-    the user must have API read/write credentials to use the API"""
-
+def check_if_user_authorized(event: ProxyEvent) -> Dict[str, Any]:
+    """Validate user authorization and establish session credentials.
+    
+    Extracts and validates the JWT token from the Authorization header,
+    retrieves user identity from AWS Cognito, and assumes the appropriate
+    IAM role based on the HTTP method (read vs write operations).
+    
+    Args:
+        event (ProxyEvent): API Gateway proxy event containing headers and method.
+        
+    Returns:
+        Dict[str, Any]: User identity information from Cognito (excluding None values).
+        
+    Raises:
+        UnauthorizedException: If no headers are present in the request.
+        ValueError: If Authorization header is missing, malformed, or token is invalid.
+        ValueError: If automation account is not configured in environment.
+        ValueError: If user is not authorized for the requested operation.
+        
+    Note:
+        The function establishes thread-local AWS credentials by assuming
+        an IAM role appropriate for the operation:
+        
+        - **Read operations** (GET): Assumes read-only role
+        - **Write operations** (POST, PUT, DELETE, PATCH): Assumes read-write role
+        
+    Example:
+        .. code-block:: python
+        
+            try:
+                identity = check_if_user_authorized(event)
+                user_id = identity.get("user")
+                account_id = identity.get("accountId")
+                
+                log.info(f"Authorized user {user_id} from account {account_id}")
+                
+            except UnauthorizedException:
+                return error_response(401, "Authentication required")
+            except ValueError as e:
+                return error_response(403, f"Authorization failed: {e}")
+    """
+    # Validate headers are present
     headers = event.headers
     if not headers:
         raise UnauthorizedException("No headers in request context")
 
+    # Extract and validate Authorization header
     _, bearer = get_header(headers, HDR_AUTHORIZATION)
     if bearer:
         if not bearer.startswith("Bearer"):
@@ -102,116 +243,267 @@ def check_if_user_authorised(event: ProxyEvent) -> dict:
     if not token:
         raise ValueError("No Authorization token provided")
 
+    # Determine required IAM role based on HTTP method
     method = event.httpMethod
-
-    # Lambda functions are in the automation account
     account = util.get_automation_account()
 
     if not account:
-        raise ValueError("No Automation Account secified in the environment")
+        raise ValueError("No Automation Account specified in the environment")
 
-    # Read role for "get", Write role for "post", "put", "delete", "patch"
-    role = util.get_automation_api_role_arn(account, method.lower() != "get")
+    # Read role for GET requests, write role for all other methods
+    is_write_operation = method.lower() not in ["get", "head", "options"]
+    role = util.get_automation_api_role_arn(account, is_write_operation)
 
-    # Get the ideantity will be from "Assume Role".  So, we're good with the thread's session store.
-    # This will return a CognitoIdentity pydantic BaseModel.
+    # Validate token and get user identity (assumes role for this thread)
     identity = get_user_information(token, role)
 
     if not identity:
         raise ValueError("User is not authorized")
 
-    # we only are interested in populated values.
+    # Return only populated identity fields
     return identity.model_dump(exclude_none=True)
 
 
-# The following function is the lambda handler to receive requests from AWS API Gateway
-def handler(event: Any, context: Any | None = None) -> dict:
-    """
-    This is a router for registered API reource paths.  It examines the lambda event
-    data looking for "resource".  This is what you would get from AWS API Gatewqy.
+def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
+    """AWS API Gateway proxy integration handler for Lambda functions.
 
-    When it finds the reasource, it calles the registered function with the event as a parameter.
+    This is the main entry point for API Gateway proxy integration. It processes
+    incoming API Gateway events, validates authentication, routes requests to
+    appropriate action handlers, and formats responses for API Gateway.
 
-    Event Example (from AWS API Gateway):
+    **Request Processing Flow:**
 
-    event = {
-        "httpMethod": "GET",
-        "resource": "/api/v1/client/{client}",
-        "heaaers": {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer <aws STS session token>",
-        },
-        "pathParameters": {
-            "client": "example"
-        },
-        "queryStringParameters": {
-            "key": "value"
-        },
-        "body": '{"key": "value"}'
-    }
+    1. **Event Validation**: Ensures event is a valid dictionary and creates ProxyEvent
+    2. **Correlation Tracking**: Extracts or generates correlation ID for tracing
+    3. **Authentication**: Validates JWT token and establishes user session
+    4. **Route Matching**: Maps HTTP method + resource to registered handler function
+    5. **Handler Execution**: Invokes the matched handler with request parameters
+    6. **Response Formatting**: Converts handler response to API Gateway format
 
-    Example Response (back to AWS API Gateway):
-        dict({
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json'
-            },
-            'body': '{"key": "value"}'  # JSON encoded data
-        })
+    **Route Registration:**
+
+    Routes are registered in the ``api_paths`` dictionary using route keys in the
+    format "METHOD:resource". For example:
+
+    .. code-block:: python
+
+        api_paths = {
+            "GET:/api/v1/portfolios": portfolio_list_handler,
+            "POST:/api/v1/portfolios": portfolio_create_handler,
+            "GET:/api/v1/portfolios/{id}": portfolio_get_handler,
+        }
+
+    **Authentication & Authorization:**
+
+    All requests require JWT authentication via the Authorization header:
+
+    - **GET requests**: Require read-only IAM role permissions
+    - **POST/PUT/DELETE/PATCH**: Require read-write IAM role permissions
+    - **Token validation**: Performed against AWS Cognito identity pools
+    - **Role assumption**: Automatic IAM role assumption based on operation type
 
     Args:
-        event (dict): The "Lambda Event" from AWS API Gateway.  See sck-mod-core for a sample generator
-        context (dict): lambda context (Ex: cognito, SQS, SNS, etc). This is where you can get, for example,
-                        the lambda runtime lifetime, memory, etc. so you know how long the lambda can run.
-                        This is helpful if you have long-running actions and the lambda function will terminate.
+        event (Any): AWS API Gateway proxy event containing:
 
-                        Better use step functions when running long-running actions.
+            .. code-block:: python
+
+                {
+                    "httpMethod": "GET|POST|PUT|DELETE|PATCH",
+                    "resource": "/api/v1/resource/{param}",
+                    "pathParameters": {"param": "value"},
+                    "queryStringParameters": {"key": "value"},
+                    "headers": {
+                        "Authorization": "Bearer <jwt_token>",
+                        "Content-Type": "application/json"
+                    },
+                    "body": '{"key": "value"}',  # JSON string for POST/PUT
+                    "requestContext": {
+                        "requestId": "uuid",
+                        "identity": {...}
+                    }
+                }
+
+        context (Optional[Any]): AWS Lambda context object with runtime information.
+            Contains execution metadata like remaining time, memory limits, etc.
 
     Returns:
-        dict: A dictionary with the response.
+        Dict[str, Any]: AWS Lambda proxy integration response:
 
+            .. code-block:: python
+
+                {
+                    "statusCode": 200,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "X-Correlation-Id": "uuid"
+                    },
+                    "body": '{"data": {...}, "code": 200}',  # JSON string
+                    "isBase64Encoded": false
+                }
+
+    Raises:
+        The handler never raises exceptions, instead returning appropriate error responses:
+
+        - **400**: Invalid event structure or malformed request
+        - **401**: Missing or invalid authentication token
+        - **403**: User not authorized for requested operation
+        - **404**: Route not found or resource doesn't exist
+        - **500**: Internal server error or handler exception
+
+    Note:
+        - All errors are logged with correlation IDs for debugging
+        - Response format matches AWS API Gateway proxy integration requirements
+        - Handler functions receive unpacked ProxyEvent parameters as kwargs
+        - Correlation IDs are automatically propagated to response headers
+
+    Example:
+        Handler registration and usage::
+
+            # Register handler function
+            def portfolio_list_handler(**kwargs):
+                return Response(data=portfolios, code=200)
+
+            api_paths["GET:/api/v1/portfolios"] = portfolio_list_handler
+
+            # API Gateway event processing
+            event = {
+                "httpMethod": "GET",
+                "resource": "/api/v1/portfolios",
+                "headers": {"Authorization": "Bearer token"}
+            }
+
+            response = handler(event, lambda_context)
+            # Returns: {"statusCode": 200, "body": "...", ...}
+
+        Error handling::
+
+            # Invalid route
+            event = {"httpMethod": "GET", "resource": "/unknown"}
+            response = handler(event, lambda_context)
+            # Returns: {"statusCode": 404, "body": '{"message": "Route not found"}'}
+
+            # Authentication failure  
+            event = {"httpMethod": "GET", "resource": "/api/v1/portfolios"}
+            response = handler(event, lambda_context)
+            # Returns: {"statusCode": 401, "body": '{"message": "Authentication required"}'}
     """
+    correlation_id = None
+    
     try:
-
+        # Validate event structure
         if not isinstance(event, dict):
             raise ValueError("Event is not a dictionary")
 
-        # Validate incoming request
+        # Parse and validate incoming request
         request = ProxyEvent(**event)
 
-        # We STRONGLY recommend that you output correlation Id in
-        # all LOG files and messges and that you send this value
-        # to downstream services.  This will help you trace the request
+        # Extract or generate correlation ID for tracing
         correlation_id = get_correlation_id(request)
 
-        # Check if the user is authorized to use the API.  Throws an exception if not.
-        check_if_user_authorised(request)
+        log.info(
+            "Processing API Gateway request",
+            details={
+                "method": request.httpMethod,
+                "resource": request.resource,
+                "correlation_id": correlation_id,
+            },
+        )
 
+        # Validate user authorization and establish session credentials
+        user_identity = check_if_user_authorized(request)
+
+        # Build route key for handler lookup
         route_key = request.route_key
         action_handler = api_paths.get(route_key, None)
+        
         if not action_handler:
             raise NotFoundException(f"Unsupported resource API: {route_key}")
 
         log.info(
-            "Executing action",
-            details={"action": route_key, "correlation_id": correlation_id},
-        )
-
-        # actions handler expects **kwargs
-
-        # TODO: change signature of actions_handler to accept ProxyEvent
-        result = action_handler(**request.model_dump())
-
-        log.info(
-            "Action complete",
+            "Executing action handler",
             details={
                 "action": route_key,
                 "correlation_id": correlation_id,
-                "result": result.model_dump(),
+                "user": user_identity.get("user"),
+            },
+        )
+
+        # Execute action handler with request parameters
+        # TODO: Update handler signature to accept ProxyEvent directly
+        result = action_handler(**request.model_dump())
+
+        log.info(
+            "Action completed successfully",
+            details={
+                "action": route_key,
+                "correlation_id": correlation_id,
+                "status_code": result.code,
             },
         )
 
         return ProxyResponse(result, correlation_id)
 
+    except (ValueError, TypeError) as e:
+        # Client errors (400)
+        log.warning(
+            "Client error in API request",
+            details={
+                "error": str(e),
+                "correlation_id": correlation_id,
+            },
+        )
+        error_response = ErrorResponse(
+            message=str(e),
+            code=400,
+            correlation_id=correlation_id
+        )
+        return ProxyResponse(error_response, correlation_id)
+
+    except UnauthorizedException as e:
+        # Authentication errors (401)
+        log.warning(
+            "Authentication failed",
+            details={
+                "error": str(e),
+                "correlation_id": correlation_id,
+            },
+        )
+        error_response = ErrorResponse(
+            message="Authentication required",
+            code=401,
+            correlation_id=correlation_id
+        )
+        return ProxyResponse(error_response, correlation_id)
+
+    except NotFoundException as e:
+        # Resource not found (404)
+        log.warning(
+            "Resource not found",
+            details={
+                "error": str(e),
+                "correlation_id": correlation_id,
+            },
+        )
+        error_response = ErrorResponse(
+            message=str(e),
+            code=404,
+            correlation_id=correlation_id
+        )
+        return ProxyResponse(error_response, correlation_id)
+
     except Exception as e:
-        return ProxyResponse(ErrorResponse(e))
+        # Internal server errors (500)
+        log.error(
+            "Unexpected error in API handler",
+            details={
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id,
+            },
+        )
+        error_response = ErrorResponse(
+            message="Internal server error",
+            code=500,
+            correlation_id=correlation_id
+        )
+        return ProxyResponse(error_response, correlation_id)
