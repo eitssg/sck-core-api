@@ -71,3 +71,7 @@ pytest-asyncio = "^0.25.0"
 uvicorn = "^0.34.0"
 fastapi = "^0.115.6"
 httpx = "^0.28.1"
+
+[tool.poetry.group.prod.dependencies]
+gunicorn = "^23.0.0"
+

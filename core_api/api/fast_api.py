@@ -10,7 +10,7 @@ from core_api.api.apis import get_fast_api_router
 # Assume your React build output is in a 'build' folder inside a 'frontend' directory
 # at the same level as your 'core_api' directory.
 # Adjust this path if your project structure is different.
-FRONTEND_BUILD_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "build")
+FRONTEND_BUILD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 class AppSingleton:
@@ -67,6 +67,4 @@ def get_app() -> FastAPI:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "core_automation.api.fast_api:get_app", factory=True, host="0.0.0.0", port=8000
-    )
+    uvicorn.run("core_automation.api.fast_api:get_app", factory=True, host="0.0.0.0", port=8000)

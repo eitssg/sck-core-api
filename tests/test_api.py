@@ -25,47 +25,7 @@ from .test_api_data import api_paths
 # Create a FastAPI test client the same that uvicorn will use
 client = TestClient(get_app())
 
-
-@pytest.fixture(scope="module")
-def bootstrap_dynamo():
-    """Bootstrap DynamoDB tables for testing."""
-    # see environment variables in .env
-    host = util.get_dynamodb_host()
-
-    assert (
-        host == "http://localhost:8000"
-    ), "DYNAMODB_HOST must be set to http://localhost:8000"
-
-    try:
-        if EventModel.exists():
-            EventModel.delete_table()
-        EventModel.create_table(wait=True)
-
-        if ItemModel.exists():
-            ItemModel.delete_table()
-        ItemModel.create_table(wait=True)
-
-        if ClientFacts.exists():
-            ClientFacts.delete_table()
-        ClientFacts.create_table(wait=True)
-
-        if PortfolioFacts.exists():
-            PortfolioFacts.delete_table()
-        PortfolioFacts.create_table(wait=True)
-
-        if AppFacts.exists():
-            AppFacts.delete_table()
-        AppFacts.create_table(wait=True)
-
-        if ZoneFacts.exists():
-            ZoneFacts.delete_table()
-        ZoneFacts.create_table(wait=True)
-
-    except Exception as e:
-        print(f"Error bootstrapping DynamoDB: {e}")  # Fixed: use f-string
-        assert False, f"Failed to bootstrap DynamoDB: {e}"  # Fixed: provide context
-
-    return True
+from .bootstrap import *
 
 
 @pytest.fixture(scope="module")
@@ -85,9 +45,7 @@ def teardown_action(bootstrap_dynamo):
 
     task_payload = TaskPayload(
         task="teardown",  # Pydantic models use snake_case
-        deployment_details=DeploymentDetails(
-            portfolio="simple-cloud-kit", app="api", branch="main", build="1"
-        ),
+        deployment_details=DeploymentDetails(portfolio="simple-cloud-kit", app="api", branch="main", build="1"),
     )
 
     # Pydantic models use snake_case attributes
@@ -100,11 +58,14 @@ def teardown_action(bootstrap_dynamo):
 
     # Create a sample action file for the test cases (teardown)
     action_list = [action.model_dump()]
-    data = io.BytesIO()
+
+    data = io.StringIO()
     util.write_yaml(action_list, data)
 
+    data.seek(0)  # Reset the stream position to the beginning
+
     # MagicS3Client put_object uses PascalCase parameters - CORRECTED
-    magicS3.put_object(Bucket=bucket_name, Key=action_details.key, Body=data.getvalue())
+    magicS3.put_object(Bucket=bucket_name, Key=action_details.key, Body=data)
 
     # Create a sample state file (context file) for the test cases
     fn = os.path.join(os.path.dirname(__file__), "test_context_state.yaml")
