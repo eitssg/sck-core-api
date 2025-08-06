@@ -1,5 +1,5 @@
-from core_db.response import Response
+from core_db.response import Response, ErrorResponse
 
 # TODO: move Response to a common framekwork model
 
-__all__ = ["Response"]
+__all__ = ["Response", "ErrorResponse"]

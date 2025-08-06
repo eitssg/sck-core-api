@@ -89,6 +89,9 @@ class RouterSingleton:
             cls._router = APIRouter()
             for method_resource in api_paths.keys():
                 method, resource = method_resource.split(":")
+                # strip "/api" prefix if present
+                if resource.startswith("/api"):
+                    resource = resource[4:]
                 cls._router.add_api_route(
                     resource,
                     endpoint=proxy_forward,

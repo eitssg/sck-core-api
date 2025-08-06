@@ -15,50 +15,10 @@ from core_api.api.fast_api import get_app
 
 from .test_facts_data import api_paths
 
+from .bootstrap import *
+
 # Create a FastAPI test client the same that unvicorn will use
 client = TestClient(get_app())
-
-
-@pytest.fixture(scope="module")
-def bootstrap_dynamo():
-
-    # see environment variables in .env
-    host = util.get_dynamodb_host()
-
-    assert (
-        host == "http://localhost:8000"
-    ), "DYNAMODB_HOST must be set to http://localhost:8000"
-
-    try:
-        if EventModel.exists():
-            EventModel.delete_table()
-        EventModel.create_table(wait=True)
-
-        if ItemModel.exists():
-            ItemModel.delete_table()
-        ItemModel.create_table(wait=True)
-
-        if ClientFacts.exists():
-            ClientFacts.delete_table()
-        ClientFacts.create_table(wait=True)
-
-        if PortfolioFacts.exists():
-            PortfolioFacts.delete_table()
-        PortfolioFacts.create_table(wait=True)
-
-        if ZoneFacts.exists():
-            ZoneFacts.delete_table()
-        ZoneFacts.create_table(wait=True)
-
-        if AppFacts.exists():
-            AppFacts.delete_table()
-        AppFacts.create_table(wait=True)
-
-    except Exception as e:
-        print(e)
-        assert False
-
-    return True
 
 
 def compare_list(item1: list, item2: list):
