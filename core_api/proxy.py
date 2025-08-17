@@ -39,7 +39,7 @@ import core_logging as log
 import core_framework as util
 
 from core_db.response import ErrorResponse, Response
-from core_db.exceptions import NotFoundException, UnauthorizedException
+from core_db.exceptions import BadRequestException, NotFoundException, UnauthorizedException, UnknownException
 
 # Registry actions and routes for API Gateway
 from .event.event import event_actions
@@ -443,6 +443,23 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
     except NotFoundException as e:
         error_response = ErrorResponse(message=str(e), code=404, metadata={"correlation_id": correlation_id})
         log.warning("Returning 404 response", details=error_response.model_dump())
+        return ProxyResponse(error_response, correlation_id)
+
+    except PermissionError as e:
+        error_response = ErrorResponse(
+            message="User not authorized for this operation", code=403, metadata={"correlation_id": correlation_id}
+        )
+        log.warning("Authorization error in API request", details=error_response.model_dump())
+        return ProxyResponse(error_response, correlation_id)
+
+    except BadRequestException as e:
+        error_response = ErrorResponse(message="Bad request", code=400, metadata={"correlation_id": correlation_id})
+        log.warning("Bad request in API handler", details=error_response.model_dump())
+        return ProxyResponse(error_response, correlation_id)
+
+    except UnknownException as e:
+        error_response = ErrorResponse(message="Internal server error", code=500, metadata={"correlation_id": correlation_id})
+        log.error("Unknown error in API handler", details=error_response.model_dump())
         return ProxyResponse(error_response, correlation_id)
 
     except Exception as e:

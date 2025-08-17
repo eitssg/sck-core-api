@@ -9,10 +9,10 @@ from core_execute.actionlib.actions.system.no_op import NoOpActionSpec
 
 from core_db.event.models import EventModel
 from core_db.item.models import ItemModel
-from core_db.registry.client.models import ClientFacts
-from core_db.registry.portfolio.models import PortfolioFacts
-from core_db.registry.app.models import AppFacts
-from core_db.registry.zone.models import ZoneFacts
+from core_db.registry.client.models import ClientFactsModel
+from core_db.registry.portfolio.models import PortfolioFactsModel
+from core_db.registry.app.models import AppFactsModel
+from core_db.registry.zone.models import ZoneFactsModel
 
 from core_api.api.fast_api import get_app
 

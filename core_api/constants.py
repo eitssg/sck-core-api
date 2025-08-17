@@ -7,16 +7,6 @@ QUERY_STRING_PARAMETERS = "queryStringParameters"
 PATH_PARAMETERS = "pathParameters"
 BODY_PARAMETER = "body"
 
-# Facts Fields / And Table Types for the Registry
-CLIENT_FACTS = "ClientFacts"
-PORTFOLIO_FACTS = "PortfolioFacts"
-ZONE_FACTS = "ZoneFacts"
-APP_FACTS = "AppFacts"
-
-# Type Types for the Events and Deployments
-EVENTS = "Events"
-ITEMS = "Items"
-
 PRN = "prn"
 ITEM_TYPE = "item_type"
 EVENT_TYPE = "event_type"

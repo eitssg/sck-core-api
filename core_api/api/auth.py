@@ -263,7 +263,7 @@ def validate_token(token: str) -> bool:
 
 # Route configuration for authentication endpoints
 auth_actions: ActionHandlerRoutes = {
-    "POST:/v1/login": authenticate_action,  # Note: removed /api prefix for router
+    "POST:/api/v1/login": authenticate_action,  # Note: removed /api prefix for router
 }
 
 
