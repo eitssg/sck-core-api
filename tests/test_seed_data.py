@@ -1,3 +1,5 @@
+import os
+
 from core_db.registry.client import ClientFact, ClientActions
 from core_db.registry.zone import ZoneFact, ZoneActions
 from core_db.registry.portfolio import PortfolioFact, PortfolioActions
@@ -5,8 +7,11 @@ from core_db.registry.app import AppFact, AppActions
 
 from .bootstrap import *
 
-client = util.get_client()
-
+client = os.getenv("CLIENT")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+client_redirect_uri = os.getenv("CLIENT_CALLBACK")
+client_secret_hash = "31617f564fcc8688b8914655b72437dc31e93a7c498d0ebe94eef55af1b9f986"
 
 ###############################
 # Infrastructure definitions
@@ -15,7 +20,10 @@ client = util.get_client()
 client_facts = [
     {
         "client": client,  # slug
-        "name": "Core Automation Team",
+        "client_id": client_id,
+        "client_secret": client_secret_hash,
+        "client_name": "Core Automation Team",
+        "client_redirect_urls": [client_redirect_uri],
     }
 ]
 

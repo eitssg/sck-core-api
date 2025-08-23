@@ -32,12 +32,13 @@ from botocore.exceptions import ClientError, BotoCoreError
 
 import core_framework as util  # CORRECTED: Import util for to_json()
 
-from core_api.oauth.auth import (
-    validate_token,
+from core_api.oauth.constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     JWT_EXPIRATION_HOURS,
 )
+from core_api.oauth.tools import validate_token
+
 from core_api.response import Response, ErrorResponse
 from core_api.constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
 
@@ -50,7 +51,10 @@ from core_api.constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PA
 @pytest.fixture
 def valid_aws_credentials():
     """Fixture providing valid AWS credentials for testing."""
-    return {"access_key": "AKIAIOSFODNN7EXAMPLE", "access_secret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
+    return {
+        "access_key": "AKIAIOSFODNN7EXAMPLE",
+        "access_secret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    }
 
 
 @pytest.fixture
@@ -147,7 +151,10 @@ def api_gateway_event_base():
 )
 def test_authenticate_invalid_access_key_format(invalid_access_key):
     """Test authentication with invalid access key formats."""
-    invalid_creds = {"access_key": invalid_access_key, "access_secret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
+    invalid_creds = {
+        "access_key": invalid_access_key,
+        "access_secret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    }
 
     result = _authenticate(**invalid_creds)
 
@@ -166,7 +173,10 @@ def test_authenticate_invalid_access_key_format(invalid_access_key):
 )
 def test_authenticate_invalid_secret_format(invalid_secret):
     """Test authentication with invalid secret key formats."""
-    invalid_creds = {"access_key": "AKIAIOSFODNN7EXAMPLE", "access_secret": invalid_secret}
+    invalid_creds = {
+        "access_key": "AKIAIOSFODNN7EXAMPLE",
+        "access_secret": invalid_secret,
+    }
 
     result = _authenticate(**invalid_creds)
 
@@ -206,13 +216,22 @@ def test_authenticate_aws_errors():
             ("SignatureDoesNotMatch", 401, "Invalid AWS credentials"),
             ("TokenRefreshRequired", 401, "AWS credentials require MFA token"),
             ("ServiceUnavailable", 503, "AWS authentication service error"),
-            ("ThrottlingException", 503, "AWS authentication service error"),  # Add throttling
-            ("UnknownErrorCode", 503, "AWS authentication service error"),  # Add unknown error
+            (
+                "ThrottlingException",
+                503,
+                "AWS authentication service error",
+            ),  # Add throttling
+            (
+                "UnknownErrorCode",
+                503,
+                "AWS authentication service error",
+            ),  # Add unknown error
         ]
 
         for error_code, expected_status, expected_message in test_cases:
             mock_sts.get_session_token.side_effect = ClientError(
-                error_response={"Error": {"Code": error_code}}, operation_name="GetSessionToken"
+                error_response={"Error": {"Code": error_code}},
+                operation_name="GetSessionToken",
             )
 
             result = _authenticate(**valid_format_creds)
@@ -450,7 +469,8 @@ def test_authenticate_invalid_aws_credentials():
 
         # Mock AWS error
         mock_sts.get_session_token.side_effect = ClientError(
-            error_response={"Error": {"Code": "InvalidUserID.NotFound"}}, operation_name="GetSessionToken"
+            error_response={"Error": {"Code": "InvalidUserID.NotFound"}},
+            operation_name="GetSessionToken",
         )
 
         result = _authenticate(**invalid_creds)
@@ -548,7 +568,12 @@ def test_authenticate_with_moto_sts(valid_aws_credentials):
 
 def test_get_credentials_success_with_authorization_header(valid_jwt_token):
     """Test successful credential extraction from Authorization header."""
-    kwargs = {"headers": {"Authorization": f"Bearer {valid_jwt_token}", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": f"Bearer {valid_jwt_token}",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
 
@@ -562,7 +587,12 @@ def test_get_credentials_success_with_authorization_header(valid_jwt_token):
 
 def test_get_credentials_case_insensitive_header(valid_jwt_token):
     """Test credential extraction with case-insensitive Authorization header."""
-    kwargs = {"headers": {"authorization": f"Bearer {valid_jwt_token}", "Content-Type": "application/json"}}  # lowercase
+    kwargs = {
+        "headers": {
+            "authorization": f"Bearer {valid_jwt_token}",
+            "Content-Type": "application/json",
+        }
+    }  # lowercase
 
     credentials = get_credentials(**kwargs)
 
@@ -586,7 +616,12 @@ def test_get_credentials_no_authorization(kwargs_input):
 
 def test_get_credentials_invalid_authorization_format(valid_jwt_token):
     """Test credential extraction with invalid Authorization header format."""
-    kwargs = {"headers": {"Authorization": f"Basic {valid_jwt_token}", "Content-Type": "application/json"}}  # Wrong type
+    kwargs = {
+        "headers": {
+            "Authorization": f"Basic {valid_jwt_token}",
+            "Content-Type": "application/json",
+        }
+    }  # Wrong type
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -602,7 +637,12 @@ def test_get_credentials_malformed_authorization_header():
 
 def test_get_credentials_expired_jwt_token(expired_jwt_token):
     """Test credential extraction with expired JWT token."""
-    kwargs = {"headers": {"Authorization": f"Bearer {expired_jwt_token}", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": f"Bearer {expired_jwt_token}",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -610,7 +650,12 @@ def test_get_credentials_expired_jwt_token(expired_jwt_token):
 
 def test_get_credentials_invalid_jwt_token():
     """Test credential extraction with invalid JWT token."""
-    kwargs = {"headers": {"Authorization": "Bearer invalid.jwt.token", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": "Bearer invalid.jwt.token",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -627,7 +672,12 @@ def test_get_credentials_jwt_without_credentials():
     }
 
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    kwargs = {"headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -647,7 +697,12 @@ def test_get_credentials_incomplete_credentials():
     }
 
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    kwargs = {"headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -669,7 +724,12 @@ def test_get_credentials_expired_sts_credentials():
     }
 
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    kwargs = {"headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -691,7 +751,12 @@ def test_get_credentials_invalid_expiration_format():
     }
 
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-    kwargs = {"headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}}
+    kwargs = {
+        "headers": {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+    }
 
     credentials = get_credentials(**kwargs)
     assert credentials is None
@@ -795,13 +860,22 @@ def test_authenticate_enhanced_aws_errors():
             ("SignatureDoesNotMatch", 401, "Invalid AWS credentials"),
             ("TokenRefreshRequired", 401, "AWS credentials require MFA token"),
             ("ServiceUnavailable", 503, "AWS authentication service error"),
-            ("ThrottlingException", 503, "AWS authentication service error"),  # Add throttling
-            ("UnknownErrorCode", 503, "AWS authentication service error"),  # Add unknown error
+            (
+                "ThrottlingException",
+                503,
+                "AWS authentication service error",
+            ),  # Add throttling
+            (
+                "UnknownErrorCode",
+                503,
+                "AWS authentication service error",
+            ),  # Add unknown error
         ]
 
         for error_code, expected_status, expected_message in test_cases:
             mock_sts.get_session_token.side_effect = ClientError(
-                error_response={"Error": {"Code": error_code}}, operation_name="GetSessionToken"
+                error_response={"Error": {"Code": error_code}},
+                operation_name="GetSessionToken",
             )
 
             result = _authenticate(**valid_format_creds)

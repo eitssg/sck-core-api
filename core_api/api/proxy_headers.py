@@ -28,9 +28,15 @@ class SimpleProxyHeadersMiddleware:
                     try:
                         scope["server"] = (h, int(p))
                     except ValueError:
-                        scope["server"] = (host, 443 if scope.get("scheme") == "https" else 80)
+                        scope["server"] = (
+                            host,
+                            443 if scope.get("scheme") == "https" else 80,
+                        )
                 else:
-                    scope["server"] = (host, 443 if scope.get("scheme") == "https" else 80)
+                    scope["server"] = (
+                        host,
+                        443 if scope.get("scheme") == "https" else 80,
+                    )
 
             # Client IP
             if xf_for:

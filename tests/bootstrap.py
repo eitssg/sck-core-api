@@ -1,7 +1,5 @@
 import pytest
 
-import boto3
-
 from .conftest import *
 
 import core_framework as util

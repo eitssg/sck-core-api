@@ -162,13 +162,17 @@ def generate_user_agent(module_name: str, module_version: str) -> str:
             print(ua)
             # Output: "core_api/1.0.0 (Python/3.11.5; Windows/Version 10.0.19041)"
     """
-    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    python_version = (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
     os_name, os_version, _ = get_version_info()
     user_agent = f"{module_name}/{module_version} (Python/{python_version}; {os_name}/{os_version})"
     return user_agent
 
 
-def get_header(headers: Dict[str, str], name: str, default: Optional[str] = None) -> tuple[str, str]:
+def get_header(
+    headers: Dict[str, str], name: str, default: Optional[str] = None
+) -> tuple[str, str]:
     """Get header value with case-insensitive lookup.
 
     Performs case-insensitive header lookup to handle variations in header
@@ -348,7 +352,9 @@ def generate_proxy_event(
 
     # Generate multi-value versions (AWS API Gateway always includes these)
     multi_value_headers = {k: [v] for k, v in headers.items()}
-    multi_value_query_params = {k: [v] for k, v in query_params.items()} if query_params else {}
+    multi_value_query_params = (
+        {k: [v] for k, v in query_params.items()} if query_params else {}
+    )
 
     # Generate resource ID and request timing
     resource_id = generate_resource_id(resource)
@@ -373,7 +379,9 @@ def generate_proxy_event(
         protocol=f"{protocol}/1.1",  # AWS includes HTTP version
         requestId=request_id,
         extendedRequestId=extended_request_id,
-        requestTime=datetime.fromtimestamp(request_time_epoch / 1000).strftime("%d/%b/%Y:%H:%M:%S %z"),
+        requestTime=datetime.fromtimestamp(request_time_epoch / 1000).strftime(
+            "%d/%b/%Y:%H:%M:%S %z"
+        ),
         requestTimeEpoch=request_time_epoch,
         identity=identity,
         stage=stage,
@@ -400,7 +408,9 @@ def generate_proxy_event(
     return rv
 
 
-def get_user_information(token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
+def get_user_information(
+    token: str, role: Optional[str] = None
+) -> Optional[CognitoIdentity]:
     """Get user identity information from authentication token.
 
     Validates the provided JWT token and retrieves user identity information
@@ -512,15 +522,22 @@ class ProxyContext(BaseModel):
         and other standard context methods.
     """
 
-    function_name: str = Field(default_factory=lambda: util.get_api_lambda_name() or API_LAMBDA_NAME)
+    function_name: str = Field(
+        default_factory=lambda: util.get_api_lambda_name() or API_LAMBDA_NAME
+    )
     function_version: str = "$LATEST"
     invoked_function_arn: str = Field(
-        default_factory=lambda: util.get_api_lambda_arn() or f"arn:aws:lambda:us-east-1:123456789012:function:{API_LAMBDA_NAME}"
+        default_factory=lambda: util.get_api_lambda_arn()
+        or f"arn:aws:lambda:us-east-1:123456789012:function:{API_LAMBDA_NAME}"
     )
     memory_limit_in_mb: int = 512  # Realistic default
     aws_request_id: str
-    log_group_name: str = Field(default_factory=lambda: f"/aws/lambda/{util.get_api_lambda_name() or API_LAMBDA_NAME}")
-    log_stream_name: str = Field(default_factory=lambda: f"{datetime.now().strftime('%Y/%m/%d')}/[$LATEST]{uuid.uuid4().hex[:8]}")
+    log_group_name: str = Field(
+        default_factory=lambda: f"/aws/lambda/{util.get_api_lambda_name() or API_LAMBDA_NAME}"
+    )
+    log_stream_name: str = Field(
+        default_factory=lambda: f"{datetime.now().strftime('%Y/%m/%d')}/[$LATEST]{uuid.uuid4().hex[:8]}"
+    )
     identity: Optional[Dict[str, Any]] = None
     client_context: ClientContext = Field(
         default_factory=lambda: ClientContext(
@@ -601,6 +618,10 @@ def generate_proxy_context(event: ProxyEvent) -> ProxyContext:
             result = lambda_handler(event.model_dump(), context)
     """
     aws_request_id = event.requestContext.requestId
-    identity = event.requestContext.identity.model_dump() if event.requestContext.identity else None
+    identity = (
+        event.requestContext.identity.model_dump()
+        if event.requestContext.identity
+        else None
+    )
 
     return ProxyContext(aws_request_id=aws_request_id, identity=identity)

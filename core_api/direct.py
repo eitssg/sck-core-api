@@ -109,7 +109,9 @@ def check_if_user_authorized(auth: dict | None, action: str):
     account = util.get_automation_account()
 
     if not account:
-        raise UnauthorizedException("Automation Account is not specified in the environment")
+        raise UnauthorizedException(
+            "Automation Account is not specified in the environment"
+        )
 
     role = util.get_automation_api_role_arn(account, not action.endswith("get"))
 
@@ -185,7 +187,9 @@ def handler(event: dict, context: Any | None = None) -> dict:
         response = process_request(request)
 
         if not isinstance(response, Response):
-            raise TypeError(f"Handler returned type {type(response)}, expected Response object")
+            raise TypeError(
+                f"Handler returned type {type(response)}, expected Response object"
+            )
 
         # We expect a "Response" object to be returned, we simply need to dump it
         lambda_response = response.model_dump()

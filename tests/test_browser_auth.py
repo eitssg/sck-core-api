@@ -1,6 +1,7 @@
 import os
 import hashlib
 import random
+from botocore.utils import CLIENT_NAME_TO_HYPHENIZED_SERVICE_ID_OVERRIDES
 from fastapi.testclient import TestClient
 from core_api.api.fast_api import get_app
 from urllib.parse import urlencode, urlparse, parse_qs  # added parse helpers
@@ -12,13 +13,13 @@ server = TestClient(app)
 
 def test_public_browser_auth():
 
-    # Get the URL for the form showing a nice spinner that says "Authorizing, please wati..."
-    WEB_APP_CLIENT_ID = os.getenv("WEB_APP_CLIENT_ID", "")
-    WEB_APP_SECRET = os.getenv("WEB_APP_SECRET", "")
-    WEB_APP_AUTHORIZE = os.getenv("WEB_APP_AUTHORIZE", "")
+    # Get the URL for the form showing a nice spinner that says "Authorizing, please wait..."
+    CLIENT_ID = os.getenv("CLIENT_ID", "")
+    CLIENT_SECRET = os.getenv("CLIENT_SECRET", "")
+    CLIENT_CALLBACK = os.getenv("CLIENT_CALLBACK", "")
 
     # page in my react app where I put up a spinner and wait for the /token
-    REACT_APP_REDIRECT_URI = WEB_APP_AUTHORIZE
+    REACT_APP_REDIRECT_URI = CLIENT_CALLBACK
     REACT_APP_LOGIN_PAGE = "/login"
 
     # STEP 1 - Generate Verifier
@@ -33,7 +34,7 @@ def test_public_browser_auth():
     #
     #     The React WebApp does this:
     oauth_params = {
-        "client_id": WEB_APP_CLIENT_ID,
+        "client_id": CLIENT_ID,
         "response_type": "code",
         "login_hint": "email",
         "redirect_uri": REACT_APP_REDIRECT_URI,
@@ -90,7 +91,10 @@ def test_public_browser_auth():
     form_password = "mypassword"
 
     # call the OAUTH SERVER to login
-    response = server.post("http://localhost:8090/auth/v1/login", json={"email": form_email, "password": form_password})
+    response = server.post(
+        "http://localhost:8090/auth/v1/login",
+        json={"email": form_email, "password": form_password},
+    )
 
     assert response.status_code == 200
 
@@ -140,7 +144,7 @@ def test_public_browser_auth():
     # We need to call "/auth/v1/token" to convert our OAUTH server token to a CORE_API token
 
     # To use this API, the BROWSER APP needs to login, NOT the user.  We'll get the token from the 'code'
-    auth = {WEB_APP_CLIENT_ID: WEB_APP_SECRET}
+    auth = {CLIENT_ID: CLIENT_SECRET}
     data = {
         "grant_type": "authorization_code",
         "code": code,

@@ -1,11 +1,12 @@
 from typing import Optional
+from datetime import datetime, timezone
+import random
 import os
+import bcrypt
 from datetime import timedelta
 import httpx
 from fastapi import Request, APIRouter
 from fastapi.responses import JSONResponse
-
-from botocore.exceptions import BotoCoreError, ClientError
 
 import jwt
 
@@ -15,9 +16,15 @@ from core_db.response import SuccessResponse
 from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
 
-from .tools import check_rate_limit, encrypt_creds, get_user_access_key, encrypt_credentials, create_session_jwt
-
-from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, CRED_ENC_KEY_B64
+from .constants import JWT_SECRET_KEY, JWT_ALGORITHM
+from .tools import (
+    get_client_ip,
+    get_authenticated_user,
+    encrypt_aws_credentials,
+    check_rate_limit,
+    encrypt_credentials,
+    create_basic_session_jwt,
+)
 
 user_router = APIRouter()
 
@@ -56,7 +63,7 @@ def _profile_exists(user_id: str, profile_name: str = "default") -> bool:
         bool: True if the profile exists; otherwise False.
     """
     try:
-        ProfileActions.get(user_id=user_id, profile_name=profile_name)
+        ProfileActions.get(client="core", user_id=user_id, profile_name=profile_name)
         return True
     except Exception:
         return False
@@ -109,7 +116,7 @@ async def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
 
 
 @user_router.post("/v1/signup")
-async def oauth_signup(request: Request):
+async def oauth_signup(request: Request) -> JSONResponse:
     """Create or update the default profile, then return a session token.
 
     Route:
@@ -140,44 +147,50 @@ async def oauth_signup(request: Request):
     try:
         body = await request.json()
     except Exception as e:
-        return JSONResponse(status_code=400, content={"error": f"Invalid JSON body: {str(e)}", "code": 400})
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
+        )
 
-    client_ip = request.client.host if request.client else None
+    if not check_rate_limit(request, "oauth_signup", max_attempts=10, window_minutes=15):
+        return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
     # Common input
-    aws_access_key = body.get("access_key")
-    aws_secret_key = body.get("access_secret") or body.get("secret_key")
     first_name = body.get("first_name", "")
     last_name = body.get("last_name", "")
-
-    if not aws_access_key or not aws_secret_key:
-        return JSONResponse(status_code=400, content={"error": "Access Key and Access Secret are required", "code": 400})
-
-    credentials = {"AccessKeyId": aws_access_key, "SecretAccessKey": aws_secret_key}
+    password = body.get("password", "")
+    aws_access_key = body.get("aws_access_key", "")
+    aws_secret_key = body.get("aws_secret_key", "")
 
     # Determine mode
     ident = _read_identity_cookie(request.cookies)
     if ident:
         # SSO path: use identity cookie for user_id; encrypt with server key
-        if not check_rate_limit(request, "oauth_signup", max_attempts=10, window_minutes=15):
-            return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
-        user_id = ident.get("sub")
-        enc_blob = encrypt_creds(credentials)
-        next_url = ident.get("next") or "/"
+        user_id = ident.get("sub") or ident.get("email")
+        email = ident.get("email") or ident.get("sub")
+        password = random.token_urlsafe(16)  # Dummy password for encryption
     else:
         # Email/password path
-        user_id = body.get("email")
+        user_id = body.get("user_id") or body.get("email")
+        email = body.get("email") or body.get("user_id")
         password = body.get("password")
+
+        if not user_id or not password:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Email and password are required", "code": 400},
+            )
+
         captcha_token = body.get("captcha_token")
-        if not check_rate_limit(request, "oauth_signup", max_attempts=10, window_minutes=15):
-            return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
-        ok = await _verify_captcha(captcha_token, client_ip)
+
+        ok = await _verify_captcha(captcha_token, get_client_ip(request))
         if not ok:
             return JSONResponse(status_code=400, content={"error": "Invalid captcha", "code": 400})
-        if not user_id or not password:
-            return JSONResponse(status_code=400, content={"error": "Email and password are required", "code": 400})
-        enc_blob = encrypt_credentials(credentials, password)
-        next_url = "/"
+
+    # During sign-up, there may or may not be aws credentials.
+    # If there are not credentials, we'll safe the password, and we'll add
+    # AWS credentials to the user profile at a later time.
+    encrypted_credentials = encrypt_credentials(aws_access_key, aws_secret_key, password)
 
     try:
         # Persist profile with takeover protection / Load in UserProfile for validation with pydantic
@@ -185,14 +198,17 @@ async def oauth_signup(request: Request):
             **{
                 "user_id": user_id,
                 "profile_name": "default",
-                "email": user_id,
+                "email": email,
                 "first_name": first_name,
                 "last_name": last_name,
-                "credentials": enc_blob,
+                "credentials": encrypted_credentials,
             }
         ).model_dump()
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Profile data validation failed: {str(e)}", "code": 500})
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Profile data validation failed: {str(e)}", "code": 500},
+        )
 
     exists = _profile_exists(user_id=user_id, profile_name="default")
 
@@ -202,51 +218,185 @@ async def oauth_signup(request: Request):
 
             # Authenticated via SSO: allow create-or-update
             if exists:
-                ProfileActions.patch(**data)
+                ProfileActions.patch(client="core", **data)
             else:
                 log.debug("Creating new profile for SSO user", details=data)
-                ProfileActions.create(**data)
+                ProfileActions.create(client="core", **data)
 
         else:
 
             # Signup via email/password: creation only; reject if exists
             if exists:
-                return JSONResponse(status_code=409, content={"error": f"User '{user_id}' already exists", "code": 409})
+                return JSONResponse(
+                    status_code=409,
+                    content={"error": f"User '{user_id}' already exists", "code": 409},
+                )
 
             log.debug("Creating new profile for email/password user", details=data)
-            response: SuccessResponse = ProfileActions.create(**data)
+            response: SuccessResponse = ProfileActions.create(client="core", **data)
             if not response:
-                return JSONResponse(status_code=500, content={"error": "Profile creation failed", "code": 500})
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "Profile creation failed", "code": 500},
+                )
             if response.code != 200:
-                return JSONResponse(status_code=response.code, content={"error": "Profile creation failed", "code": response.code})
+                return JSONResponse(
+                    status_code=response.code,
+                    content={"error": "Profile creation failed", "code": response.code},
+                )
 
     except Exception:
         return JSONResponse(status_code=500, content={"error": "Profile update failed", "code": 500})
 
     try:
 
-        # Return a short-lived session token (no cookies) so SPA can call /authorize → /token
-        cred_jwe = encrypt_creds(credentials)
-        session_jwt = create_session_jwt(user_id, cred_jwe)
+        jwt_token = create_basic_session_jwt(user_id)
 
+        # Return a short-lived session token (no cookies) so SPA can call /authorize → /token
         payload = {
             "code": 201,
             "data": {
                 "user_id": user_id,
                 "profile_name": "default",
-                "token": session_jwt,
-                "token_type": "Bearer",
+                "token": jwt_token,
             },
         }
         return JSONResponse(status_code=201, content=payload)
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Issuing session failed: {str(e)}", "code": 500})
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Issuing session failed: {str(e)}", "code": 500},
+        )
+
+
+@user_router.put("/v1/users/me")
+async def update_user(request: Request) -> JSONResponse:
+    """Update user profile fields including AWS credentials.
+
+    Route:
+        PUT /auth/v1/users/me
+
+    Request:
+        JSON: {
+            aws_access_key?: string,
+            aws_secret_key?: string,
+            first_name?: string,
+            last_name?: string,
+            email?: string
+        }
+
+    Behavior:
+        - Updates only provided fields (PATCH semantics)
+        - AWS credentials are encrypted and merged with existing credentials
+        - Requires valid Authorization: Bearer token
+    """
+    # Get authenticated user first
+    authorized, user_id = get_authenticated_user(request)
+    if not authorized or not user_id:
+        return JSONResponse(status_code=401, content={"error": "Unauthorized", "code": 401})
+
+    if not check_rate_limit(request, "update_user", max_attempts=20, window_minutes=1):
+        log.warning(f"Rate limit exceeded for user {user_id} on /v1/users/me")
+        return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
+
+    try:
+        body = await request.json()
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
+        )
+
+    # Extract update fields
+    aws_access_key = body.get("aws_access_key")
+    aws_secret_key = body.get("aws_secret_key")
+    first_name = body.get("first_name")
+    last_name = body.get("last_name")
+    email = body.get("email")
+
+    # Get current profile
+    try:
+        response: SuccessResponse = ProfileActions.get(
+            client="core",
+            user_id=user_id,
+            profile_name="default",
+        )
+        current_data = response.data
+    except Exception as e:
+        log.error(f"Failed to retrieve user profile for {user_id}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to retrieve user profile", "code": 500})
+
+    # Prepare update data (only include fields that are provided)
+    update_data = {"user_id": user_id, "profile_name": "default"}
+
+    # Update basic profile fields if provided
+    if first_name is not None:
+        update_data["first_name"] = first_name
+    if last_name is not None:
+        update_data["last_name"] = last_name
+    if email is not None:
+        update_data["email"] = email
+
+    # Handle AWS credentials update
+    if aws_access_key is not None or aws_secret_key is not None:
+        if not (aws_access_key and aws_secret_key):
+            return JSONResponse(
+                status_code=400, content={"error": "Both aws_access_key and aws_secret_key are required", "code": 400}
+            )
+
+        try:
+            # Get existing credentials envelope or create new one
+            existing_credentials = current_data.get("credentials", {})
+
+            # Preserve existing password hash if present
+            existing_password_hash = None
+            if isinstance(existing_credentials, dict) and "password" in existing_credentials:
+                existing_password_hash = existing_credentials["password"]
+
+            # Create new AWS credentials
+            new_aws_creds = encrypt_aws_credentials(aws_access_key, aws_secret_key)
+
+            # Merge with existing envelope
+            updated_credentials = {"created_at": datetime.now(timezone.utc).isoformat()}
+
+            # Preserve password hash if it exists
+            if existing_password_hash:
+                updated_credentials["password"] = existing_password_hash
+
+            # Add new AWS credentials
+            if new_aws_creds:
+                updated_credentials.update(new_aws_creds)
+
+            update_data["credentials"] = updated_credentials
+
+        except Exception as e:
+            log.error(f"Failed to encrypt AWS credentials for {user_id}: {e}")
+            return JSONResponse(status_code=500, content={"error": "Failed to encrypt AWS credentials", "code": 500})
+
+    # Perform the update
+    try:
+        ProfileActions.patch(client="core", **update_data)
+
+        response_data = {"message": "User updated successfully", "updated_fields": list(update_data.keys())}
+
+        # Include AWS credential status in response
+        if "credentials" in update_data:
+            response_data["has_aws_credentials"] = True
+
+        return JSONResponse(
+            status_code=200,
+            content={"data": response_data, "code": 200},
+        )
+
+    except Exception as e:
+        log.error(f"Failed to update user profile for {user_id}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to update user profile", "code": 500})
 
 
 @user_router.post("/v1/login")
-async def oauth_login(request: Request):
-    """Authenticate with email/password and mint a short-lived session JWT.
+async def user_login(request: Request) -> JSONResponse:
+    """Authenticate with email/password and return a basic session JWT.
 
     Route:
         POST /auth/v1/login
@@ -255,9 +405,9 @@ async def oauth_login(request: Request):
         JSON: { "email": string, "password": string }
 
     Behavior:
-        - Loads the user's default profile and decrypts stored AWS credentials using the provided password.
-        - Returns a session JWT (typ=session) that embeds a JWE of the long-term keys (cred_jwe).
-        - No cookies are set; clients must send this token in Authorization: Bearer.
+        - Validates user password against stored hash
+        - Returns a session JWT (typ=session) with NO AWS credentials
+        - Session JWT only identifies the user for OAuth flows
 
     Response:
         200 JSON:
@@ -266,29 +416,62 @@ async def oauth_login(request: Request):
             "code": 200
           }
     """
-
     try:
         body = await request.json()
     except Exception as e:
-        return JSONResponse(status_code=400, content={"error": f"Invalid JSON body: {str(e)}", "code": 400})
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
+        )
 
     try:
         user_id = body.get("email")
         password = body.get("password")
         if not user_id or not password:
-            return JSONResponse(status_code=400, content={"error": "email_and_password_required", "code": 400})
+            return JSONResponse(
+                status_code=400,
+                content={"error": "email_and_password_required", "code": 400},
+            )
 
         if not check_rate_limit(request, "oauth_login", max_attempts=10, window_minutes=15):
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
             return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
-        access_key, access_secret = get_user_access_key(user_id, password)
-        if not access_key or not access_secret:
-            return JSONResponse(status_code=401, content={"Authorization": "Authorization Failed.", "code": 401})
+        # Get user profile and validate password
+        try:
+            response: SuccessResponse = ProfileActions.get(
+                client="core",
+                user_id=user_id,
+                profile_name="default",
+            )
+            profile_data = response.data
+        except Exception as e:
+            log.debug(f"Profile not found for user {user_id}: {e}")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authorization Failed", "code": 401},
+            )
 
-        # New: return a short-lived session token that carries a JWE of the raw keys (not STS session)
-        cred_jwe = encrypt_creds({"AccessKeyId": access_key, "SecretAccessKey": access_secret})
-        session_jwt = create_session_jwt(user_id, cred_jwe)
+        # Check if user has a password (some SSO users might not)
+        credentials = profile_data.get("credentials", {})
+        if not isinstance(credentials, dict) or "password" not in credentials:
+            log.debug(f"No password found for user {user_id}")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authorization Failed", "code": 401},
+            )
+
+        # Validate password against stored hash
+        stored_hash = credentials["password"]
+        if not stored_hash or not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
+            log.debug(f"Password validation failed for user {user_id}")
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authorization Failed", "code": 401},
+            )
+
+        # Create session JWT with NO AWS credentials - just user identity
+        session_jwt = create_basic_session_jwt(user_id)
 
         resp = JSONResponse(
             status_code=200,
@@ -302,13 +485,10 @@ async def oauth_login(request: Request):
             },
         )
         return resp
-    except (BotoCoreError, ClientError) as e:
-        error_code = getattr(e, "response", {}).get("Error", {}).get("Code", "Unknown")
-        if error_code in ["InvalidUserID.NotFound", "SignatureDoesNotMatch"]:
-            return JSONResponse(status_code=401, content={"error": "Invalid AWS credentials", "code": 401})
-        elif error_code == "TokenRefreshRequired":
-            return JSONResponse(status_code=401, content={"error": "AWS credentials require MFA token", "code": 401})
-        else:
-            return JSONResponse(status_code=503, content={"error": "AWS authentication service error", "code": 503})
-    except Exception:
-        return JSONResponse(status_code=500, content={"error": "Authentication processing error", "code": 500})
+
+    except Exception as e:
+        log.error(f"Login error for {user_id}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Authentication processing error", "code": 500},
+        )

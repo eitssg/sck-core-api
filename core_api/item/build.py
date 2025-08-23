@@ -47,7 +47,9 @@ class ApiBuildActions(ApiActions, BuildActions):
         try:
             branch = BranchModel.get(build.parent_prn)
         except DoesNotExist:
-            raise NotFoundException(f"Build {build.prn}: Branch not found: {build.parent_prn}")
+            raise NotFoundException(
+                f"Build {build.prn}: Branch not found: {build.parent_prn}"
+            )
 
         # The release and teardown actions do not require a "Package" definition.
         payload = TaskPayload(
@@ -59,7 +61,9 @@ class ApiBuildActions(ApiActions, BuildActions):
                 BranchShortName=branch.short_name,
                 Build=build.name,
             ),
-            Package=PackageDetails(BucketName=util.get_bucket_name(), BucketRegion=util.get_bucket_region()),
+            Package=PackageDetails(
+                BucketName=util.get_bucket_name(), BucketRegion=util.get_bucket_region()
+            ),
         )
 
         if util.is_local_mode():
@@ -84,7 +88,9 @@ class ApiBuildActions(ApiActions, BuildActions):
         build = BuildModel(**response.data)
 
         if not BuildStatus(build.status).is_allowed_to_release():
-            raise BadRequestException(f"Build {build.prn} is not allowed to be released: {build.status}")
+            raise BadRequestException(
+                f"Build {build.prn} is not allowed to be released: {build.status}"
+            )
 
         build.status = RELEASE_REQUESTED
 
@@ -97,7 +103,9 @@ class ApiBuildActions(ApiActions, BuildActions):
             # Trigger the release
             release_response = cls.__invoker_action_request("release", build)
         except ClientError as e:
-            raise BadRequestException(f"AWS Client Error requesting bu8ild releasing: {e}")
+            raise BadRequestException(
+                f"AWS Client Error requesting bu8ild releasing: {e}"
+            )
 
         if not release_response:
             raise BadRequestException(f"Invalid release response: {release_response}")
@@ -117,7 +125,9 @@ class ApiBuildActions(ApiActions, BuildActions):
         build = BuildModel(**response.data)
 
         if not BuildStatus(build.status).is_allowed_to_teardown():
-            raise BadRequestException(f"Build {build.prn} is not allowed to be teared down: {build.status}")
+            raise BadRequestException(
+                f"Build {build.prn} is not allowed to be teared down: {build.status}"
+            )
 
         build.status = TEARDOWN_REQUESTED
 
@@ -129,7 +139,9 @@ class ApiBuildActions(ApiActions, BuildActions):
             # Trigger the teardown
             teardown_response = cls.__invoker_action_request("teardown", build)
         except ClientError as e:
-            raise BadRequestException(f"AWS Client Error requesting build teardown: {e}")
+            raise BadRequestException(
+                f"AWS Client Error requesting build teardown: {e}"
+            )
 
         if not teardown_response:
             raise BadRequestException(f"Invalid teardown response: {teardown_response}")

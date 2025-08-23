@@ -7,7 +7,10 @@ try:
     print(f"JWT version: {getattr(jwt, '__version__', 'Unknown')}")
 
     # Test encoding
-    test_payload = {"test": "data", "exp": datetime.now(timezone.utc) + timedelta(hours=1)}
+    test_payload = {
+        "test": "data",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
     token = jwt.encode(test_payload, "secret", algorithm="HS256")
     print(f"✅ JWT encode works: {type(token)} - {token[:50]}...")
 

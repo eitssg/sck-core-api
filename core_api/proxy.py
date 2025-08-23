@@ -39,7 +39,12 @@ import core_logging as log
 import core_framework as util
 
 from core_db.response import ErrorResponse, Response
-from core_db.exceptions import BadRequestException, NotFoundException, UnauthorizedException, UnknownException
+from core_db.exceptions import (
+    BadRequestException,
+    NotFoundException,
+    UnauthorizedException,
+    UnknownException,
+)
 
 # Registry actions and routes for API Gateway
 from .event.event import event_actions
@@ -119,7 +124,9 @@ class ProxyResponse(dict):
             # }
     """
 
-    def __init__(self, response: Response, correlation_id: Optional[str] = None) -> None:
+    def __init__(
+        self, response: Response, correlation_id: Optional[str] = None
+    ) -> None:
         """Initialize proxy response with core response data.
 
         Args:
@@ -434,38 +441,62 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         return ProxyResponse(result, correlation_id)
 
     except (ValueError, TypeError) as e:
-        error_response = ErrorResponse(message=str(e), code=400, metadata={"correlation_id": correlation_id})
+        error_response = ErrorResponse(
+            message=str(e), code=400, metadata={"correlation_id": correlation_id}
+        )
         log.warning("Client error in API request", details=error_response.model_dump())
         return ProxyResponse(error_response, correlation_id)
 
     except UnauthorizedException as e:
-        error_response = ErrorResponse(message="Authentication required", code=401, metadata={"correlation_id": correlation_id})
+        error_response = ErrorResponse(
+            message="Authentication required",
+            code=401,
+            metadata={"correlation_id": correlation_id},
+        )
         log.warning("Authentication failed", details=error_response.model_dump())
         return ProxyResponse(error_response, correlation_id)
 
     except NotFoundException as e:
-        error_response = ErrorResponse(message=str(e), code=404, metadata={"correlation_id": correlation_id})
+        error_response = ErrorResponse(
+            message=str(e), code=404, metadata={"correlation_id": correlation_id}
+        )
         log.warning("Returning 404 response", details=error_response.model_dump())
         return ProxyResponse(error_response, correlation_id)
 
     except PermissionError as e:
         error_response = ErrorResponse(
-            message="User not authorized for this operation", code=403, metadata={"correlation_id": correlation_id}
+            message="User not authorized for this operation",
+            code=403,
+            metadata={"correlation_id": correlation_id},
         )
-        log.warning("Authorization error in API request", details=error_response.model_dump())
+        log.warning(
+            "Authorization error in API request", details=error_response.model_dump()
+        )
         return ProxyResponse(error_response, correlation_id)
 
     except BadRequestException as e:
-        error_response = ErrorResponse(message="Bad request", code=400, metadata={"correlation_id": correlation_id})
+        error_response = ErrorResponse(
+            message="Bad request", code=400, metadata={"correlation_id": correlation_id}
+        )
         log.warning("Bad request in API handler", details=error_response.model_dump())
         return ProxyResponse(error_response, correlation_id)
 
     except UnknownException as e:
-        error_response = ErrorResponse(message="Internal server error", code=500, metadata={"correlation_id": correlation_id})
+        error_response = ErrorResponse(
+            message="Internal server error",
+            code=500,
+            metadata={"correlation_id": correlation_id},
+        )
         log.error("Unknown error in API handler", details=error_response.model_dump())
         return ProxyResponse(error_response, correlation_id)
 
     except Exception as e:
-        error_response = ErrorResponse(message="Internal server error", code=500, metadata={"correlation_id": correlation_id})
-        log.error("Unexpected error in API handler", details=error_response.model_dump())
+        error_response = ErrorResponse(
+            message="Internal server error",
+            code=500,
+            metadata={"correlation_id": correlation_id},
+        )
+        log.error(
+            "Unexpected error in API handler", details=error_response.model_dump()
+        )
         return ProxyResponse(error_response, correlation_id)

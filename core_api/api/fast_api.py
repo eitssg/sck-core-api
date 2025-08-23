@@ -34,7 +34,7 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv(), override=False)
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -154,7 +154,12 @@ def get_app() -> FastAPI:
     if __app is not None:
         return __app
 
-    __app = FastAPI(title="SCK Core API", description="Simple Cloud Kit Core API", version="1.0.0", lifespan=lifespan)
+    __app = FastAPI(
+        title="SCK Core API",
+        description="Simple Cloud Kit Core API",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
 
     # Must come early so downstream middleware sees the correct scheme/host/client
     __app.add_middleware(SimpleProxyHeadersMiddleware)
@@ -178,7 +183,7 @@ def get_app() -> FastAPI:
 
     # Health check endpoint (SECOND - before catch-all)
     @__app.get("/health", include_in_schema=False)
-    async def health_check():
+    async def health_check() -> Response:
         """Application health check endpoint.
 
         Returns system health information including React build status,
@@ -214,7 +219,7 @@ def get_app() -> FastAPI:
             "react_index_exists": os.path.exists(index_path),
             "react_assets_exists": os.path.exists(assets_dir),
             "static_dir": STATIC_DIR,
-            "assets_count": len(os.listdir(assets_dir)) if os.path.exists(assets_dir) else 0,
+            "assets_count": (len(os.listdir(assets_dir)) if os.path.exists(assets_dir) else 0),
         }
 
     # Mount React assets folder for JS, CSS, images (THIRD)
@@ -233,7 +238,11 @@ def get_app() -> FastAPI:
         if request.url.path.startswith("/api/"):
             return JSONResponse(
                 status_code=404,
-                content={"detail": "API endpoint not found", "path": request.url.path, "method": request.method},
+                content={
+                    "detail": "API endpoint not found",
+                    "path": request.url.path,
+                    "method": request.method,
+                },
             )
         # Let the catch-all route handle non-API 404s
         raise exc
@@ -286,10 +295,15 @@ def get_app() -> FastAPI:
         if os.path.exists(index_path):
             log.debug(f"Serving React SPA for route: /{full_path}")
             return FileResponse(
-                index_path, media_type="text/html", headers={"Cache-Control": "no-cache"}  # Prevent caching of SPA routes
+                index_path,
+                media_type="text/html",
+                headers={"Cache-Control": "no-cache"},  # Prevent caching of SPA routes
             )
         else:
             log.error(f"React application not found at: {index_path}")
-            raise HTTPException(status_code=404, detail="React application not found. Run 'npm run build' in sck-core-ui first.")
+            raise HTTPException(
+                status_code=404,
+                detail="React application not found. Run 'npm run build' in sck-core-ui first.",
+            )
 
     return __app

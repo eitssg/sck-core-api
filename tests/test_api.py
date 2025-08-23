@@ -45,7 +45,9 @@ def teardown_action(bootstrap_dynamo):
 
     task_payload = TaskPayload(
         task="teardown",  # Pydantic models use snake_case
-        deployment_details=DeploymentDetails(portfolio="simple-cloud-kit", app="api", branch="main", build="1"),
+        deployment_details=DeploymentDetails(
+            portfolio="simple-cloud-kit", app="api", branch="main", build="1"
+        ),
     )
 
     # Pydantic models use snake_case attributes

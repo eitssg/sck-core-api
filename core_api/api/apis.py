@@ -38,8 +38,6 @@ from .tools import (
     CognitoIdentity,
     generate_proxy_event,
     generate_proxy_context,
-    get_user_information,
-    get_header,
 )
 
 MEDIA_TYPE = "application/json"
@@ -142,7 +140,9 @@ async def authorize_request(request: Request, role: str) -> CognitoIdentity:
     # return identity
 
 
-async def generate_event_context(request: Request, identity: CognitoIdentity) -> tuple[ProxyEvent, ProxyContext]:
+async def generate_event_context(
+    request: Request, identity: CognitoIdentity
+) -> tuple[ProxyEvent, ProxyContext]:
     """Generate Lambda event and context from FastAPI request.
 
     Converts a FastAPI request into AWS Lambda proxy event and context objects
@@ -269,9 +269,17 @@ async def generate_response_from_lambda(result: dict) -> Response:
     # Determine media type from headers or default
     media_type = final_headers.get("content-type", MEDIA_TYPE)
 
-    log.debug("Response from Lambda:", details={"status": status_code, "headers": final_headers, "body": body})
+    log.debug(
+        "Response from Lambda:",
+        details={"status": status_code, "headers": final_headers, "body": body},
+    )
 
-    return Response(content=content, status_code=status_code, headers=final_headers, media_type=media_type)
+    return Response(
+        content=content,
+        status_code=status_code,
+        headers=final_headers,
+        media_type=media_type,
+    )
 
 
 async def proxy_forward(request: Request) -> Response:
@@ -342,8 +350,17 @@ async def proxy_forward(request: Request) -> Response:
 
     except ValueError as e:
         # Authorization errors (401)
-        return Response(content=util.to_json({"message": str(e)}), status_code=401, media_type=MEDIA_TYPE)
+        return Response(
+            content=util.to_json({"message": str(e)}),
+            status_code=401,
+            media_type=MEDIA_TYPE,
+        )
     except Exception as e:
         # Internal server errors (500)
-        error_response = {"message": "Internal server error", "error": str(e) if util.is_debug_mode() else "An error occurred"}
-        return Response(content=util.to_json(error_response), status_code=500, media_type=MEDIA_TYPE)
+        error_response = {
+            "message": "Internal server error",
+            "error": str(e) if util.is_debug_mode() else "An error occurred",
+        }
+        return Response(
+            content=util.to_json(error_response), status_code=500, media_type=MEDIA_TYPE
+        )

@@ -54,11 +54,11 @@ DOMAIN_PREFIX = "core"  # e.g. core.execute-api.us-east-1.amazonaws.com
 
 class RequestMethod(Enum):
     """HTTP request methods supported by the API.
-    
+
     Maps HTTP methods to their corresponding action names for internal
     processing. Provides both the standard HTTP method name and the
     action-oriented name used in the application logic.
-    
+
     Attributes:
         LIST: Retrieve multiple resources (GET with list semantics).
         GET: Retrieve a single resource.
@@ -68,14 +68,14 @@ class RequestMethod(Enum):
         UPDATE: Update/replace a resource.
         DELETE: Remove a resource.
         PATCH: Partially update a resource.
-        
+
     Example:
         .. code-block:: python
-        
+
             method = RequestMethod.POST
             print(method)        # Output: "create"
             print(method.value)  # Output: "create"
-            
+
             # Check if method creates resources
             if method in [RequestMethod.POST, RequestMethod.CREATE]:
                 print("This method creates resources")
@@ -92,7 +92,7 @@ class RequestMethod(Enum):
 
     def __str__(self) -> str:
         """Return string representation of the enum value.
-        
+
         Returns:
             str: The action name for this HTTP method.
         """
@@ -100,7 +100,7 @@ class RequestMethod(Enum):
 
     def __repr__(self) -> str:
         """Return detailed string representation of the enum.
-        
+
         Returns:
             str: Full enum representation with class and member name.
         """
@@ -109,11 +109,11 @@ class RequestMethod(Enum):
 
 class RequestType(Enum):
     """Types of resources that can be requested through the API.
-    
+
     Defines all available resource types in the system, including both
     primary resources (portfolio, app, component) and registry resources
     for metadata and configuration management.
-    
+
     Attributes:
         PORTFOLIO: Portfolio management operations.
         APP: Application lifecycle operations.
@@ -126,21 +126,21 @@ class RequestType(Enum):
         REG_PORTFOLIO: Registry portfolio metadata.
         REG_APP: Registry application metadata.
         REG_ZONE: Registry zone configuration.
-        
+
     Note:
         Registry resources (REG_*) use colon notation to indicate
         nested resource hierarchies within the registry subsystem.
-        
+
     Example:
         .. code-block:: python
-        
+
             resource_type = RequestType.PORTFOLIO
             print(resource_type)        # Output: "portfolio"
-            
+
             # Registry resources
             reg_type = RequestType.REG_CLIENT
             print(reg_type)            # Output: "registry:client"
-            
+
             # Use in action strings
             action = f"{resource_type}:{RequestMethod.CREATE}"
             print(action)              # Output: "portfolio:create"
@@ -160,7 +160,7 @@ class RequestType(Enum):
 
     def __str__(self) -> str:
         """Return string representation of the enum value.
-        
+
         Returns:
             str: The resource type identifier.
         """
@@ -168,7 +168,7 @@ class RequestType(Enum):
 
     def __repr__(self) -> str:
         """Return detailed string representation of the enum.
-        
+
         Returns:
             str: Full enum representation with class and member name.
         """
@@ -180,39 +180,39 @@ RequestRoutesType = Dict[RequestType, ApiActionsClass]
 
 class Request(BaseModel):
     """Structured request model for Lambda handler invocation.
-    
+
     This class provides a structured interface for Lambda function handlers,
     converting the raw API Gateway proxy event into a typed, validated request
     object with action-based routing information.
-    
+
     The ``data`` field corresponds to the ``body`` field in ProxyEvent, but
     provides a dictionary interface instead of requiring JSON string parsing.
-    
+
     Attributes:
         action (str): Action to perform in format "type:method" (e.g., "portfolio:create").
         data (Dict[str, Any]): Primary payload data for the action (parsed from JSON).
         auth (Optional[Dict[str, Any]]): Authentication information extracted from headers.
-        
+
     Note:
         The Request model serves as an abstraction layer between the raw AWS
         API Gateway event format and the application's business logic, providing
         type safety and validation for common request patterns.
-        
+
     Example:
         .. code-block:: python
-        
+
             # From API Gateway event
             request = Request(
                 action="portfolio:create",
                 data={"name": "My Portfolio", "description": "Portfolio description"},
                 auth={"user_id": "123", "role": "admin"}
             )
-            
+
             # Access typed fields
             action_parts = request.action.split(":")
             resource_type = action_parts[0]  # "portfolio"
             method = action_parts[1]         # "create"
-            
+
             # Use with property setters
             request.typ = RequestType.PORTFOLIO
             request.method = RequestMethod.CREATE
@@ -230,7 +230,7 @@ class Request(BaseModel):
     )
     auth: Optional[Dict[str, Any]] = Field(
         None,
-        description="Authentication information extracted from request headers and context"
+        description="Authentication information extracted from request headers and context",
     )
 
     _type: Optional[RequestType] = PrivateAttr(None)
@@ -239,7 +239,7 @@ class Request(BaseModel):
     @property
     def typ(self) -> Optional[RequestType]:
         """Get the request type.
-        
+
         Returns:
             Optional[RequestType]: The resource type for this request.
         """
@@ -248,10 +248,10 @@ class Request(BaseModel):
     @typ.setter
     def typ(self, value: RequestType) -> None:
         """Set the request type and update action string.
-        
+
         Args:
             value (RequestType): The resource type to set.
-            
+
         Note:
             If method is also set, this will automatically update the action string.
         """
@@ -262,7 +262,7 @@ class Request(BaseModel):
     @property
     def method(self) -> Optional[RequestMethod]:
         """Get the request method.
-        
+
         Returns:
             Optional[RequestMethod]: The action method for this request.
         """
@@ -271,10 +271,10 @@ class Request(BaseModel):
     @method.setter
     def method(self, value: RequestMethod) -> None:
         """Set the request method and update action string.
-        
+
         Args:
             value (RequestMethod): The action method to set.
-            
+
         Note:
             If type is also set, this will automatically update the action string.
         """
@@ -286,16 +286,16 @@ class Request(BaseModel):
     @classmethod
     def validate_action(cls, value: str) -> str:
         """Validate and normalize the action field format.
-        
+
         Args:
             value (str): Action string to validate.
-            
+
         Returns:
             str: Validated and normalized action string.
-            
+
         Raises:
             ValueError: If action format is invalid or contains unknown types/methods.
-            
+
         Note:
             Supports both "type:method" and "namespace:type:method" formats.
             The latter is automatically normalized to the former.
@@ -320,13 +320,13 @@ class Request(BaseModel):
     @classmethod
     def validate_model(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Validate model and construct action from type/method if needed.
-        
+
         Args:
             values (Dict[str, Any]): Raw model values.
-            
+
         Returns:
             Dict[str, Any]: Validated model values with action field set.
-            
+
         Raises:
             ValueError: If neither action nor type/method combination is provided.
         """
@@ -334,19 +334,21 @@ class Request(BaseModel):
             typ = values.pop("typ", None)
             method = values.pop("method", None)
             if not typ or not method:
-                raise ValueError("Either 'action' field or 'typ'+'method' fields are required")
+                raise ValueError(
+                    "Either 'action' field or 'typ'+'method' fields are required"
+                )
             values["action"] = f"{typ}:{method}"
         return values
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Serialize model excluding None values by default.
-        
+
         Args:
             **kwargs: Additional arguments passed to parent model_dump.
-            
+
         Returns:
             Dict[str, Any]: Serialized model data.
-            
+
         Note:
             Sets exclude_none=True by default to match API response conventions.
         """
@@ -357,11 +359,11 @@ class Request(BaseModel):
 
 class CognitoIdentity(BaseModel):
     """AWS Cognito identity information for authenticated API requests.
-    
+
     Contains complete identity and authentication context from AWS Cognito,
     matching the structure provided by AWS API Gateway in the request context.
     Used for authorization, auditing, and user tracking.
-    
+
     Attributes:
         cognitoIdentityPoolId (Optional[str]): Cognito Identity Pool identifier.
         accountId (Optional[str]): AWS account ID of the authenticated user.
@@ -375,17 +377,17 @@ class CognitoIdentity(BaseModel):
         userArn (Optional[str]): AWS ARN of the authenticated user.
         userAgent (Optional[str]): HTTP User-Agent string from client request.
         user (Optional[str]): User identifier (username or user ID).
-        
+
     Note:
         All fields are optional to handle various authentication scenarios:
-        
+
         - Anonymous access (no Cognito fields set)
         - Federated identity (some provider fields set)
         - Full Cognito authentication (most fields populated)
-        
+
     Example:
         .. code-block:: python
-        
+
             # Typical authenticated user
             identity = CognitoIdentity(
                 accountId="123456789012",
@@ -394,7 +396,7 @@ class CognitoIdentity(BaseModel):
                 sourceIp="192.168.1.100",
                 cognitoAuthenticationType="authenticated"
             )
-            
+
             # Check authentication status
             if identity.cognitoAuthenticationType == "authenticated":
                 print(f"Authenticated user: {identity.user}")
@@ -403,63 +405,52 @@ class CognitoIdentity(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     cognitoIdentityPoolId: Optional[str] = Field(
-        None,
-        description="Cognito Identity Pool ID for federated identities"
+        None, description="Cognito Identity Pool ID for federated identities"
     )
     accountId: Optional[str] = Field(
-        None,
-        description="AWS account ID associated with the user"
+        None, description="AWS account ID associated with the user"
     )
     cognitoIdentityId: Optional[str] = Field(
-        None,
-        description="Unique identifier for the Cognito identity"
+        None, description="Unique identifier for the Cognito identity"
     )
     caller: Optional[str] = Field(
-        None,
-        description="Identifier of the calling service or application"
+        None, description="Identifier of the calling service or application"
     )
     sourceIp: Optional[str] = Field(
-        None,
-        description="IP address from which the request originated"
+        None, description="IP address from which the request originated"
     )
     principalOrgId: Optional[str] = Field(
-        None,
-        description="AWS Organizations principal organization ID"
+        None, description="AWS Organizations principal organization ID"
     )
     accessKey: Optional[str] = Field(
-        None,
-        description="AWS access key for assumed role credentials"
+        None, description="AWS access key for assumed role credentials"
     )
     cognitoAuthenticationType: Optional[str] = Field(
         None,
-        description="Type of Cognito authentication ('authenticated' or 'unauthenticated')"
+        description="Type of Cognito authentication ('authenticated' or 'unauthenticated')",
     )
     cognitoAuthenticationProvider: Optional[str] = Field(
-        None,
-        description="Cognito authentication provider used for login"
+        None, description="Cognito authentication provider used for login"
     )
     userArn: Optional[str] = Field(
-        None,
-        description="AWS ARN of the authenticated user"
+        None, description="AWS ARN of the authenticated user"
     )
     userAgent: Optional[str] = Field(
-        None,
-        description="HTTP User-Agent string from the client request"
+        None, description="HTTP User-Agent string from the client request"
     )
     user: Optional[str] = Field(
-        None,
-        description="User identifier (username, email, or user ID)"
+        None, description="User identifier (username, email, or user ID)"
     )
 
 
 class RequestContext(BaseModel):
     """AWS API Gateway request context information.
-    
+
     Contains comprehensive metadata about the API Gateway request, including
     routing information, timing data, identity context, and AWS-specific
     identifiers. This matches the requestContext structure that AWS API Gateway
     provides to Lambda functions.
-    
+
     Attributes:
         resourceId (str): API Gateway resource identifier.
         resourcePath (str): Resource path template with parameter placeholders.
@@ -476,18 +467,18 @@ class RequestContext(BaseModel):
         domainName (str): Full domain name of the API Gateway endpoint.
         identity (CognitoIdentity): Authentication and identity information.
         apiId (str): API Gateway API identifier.
-        
+
     Note:
         The RequestContext provides complete metadata for:
-        
+
         - Request routing and resource identification
         - Timing and tracing information
         - Authentication and authorization context
         - AWS infrastructure identifiers
-        
+
     Example:
         .. code-block:: python
-        
+
             context = RequestContext(
                 resourceId="abc123",
                 resourcePath="/users/{id}",
@@ -496,7 +487,7 @@ class RequestContext(BaseModel):
                 requestId="550e8400-e29b-41d4-a716-446655440000",
                 identity=cognito_identity
             )
-            
+
             # Access routing information
             print(f"Resource: {context.resourcePath}")
             print(f"Method: {context.httpMethod}")
@@ -505,9 +496,7 @@ class RequestContext(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    resourceId: str = Field(
-        description="API Gateway resource identifier for routing"
-    )
+    resourceId: str = Field(description="API Gateway resource identifier for routing")
     resourcePath: str = Field(
         description="Resource path template with parameter placeholders (e.g., '/users/{id}')"
     )
@@ -515,63 +504,56 @@ class RequestContext(BaseModel):
         description="HTTP method for the request (GET, POST, PUT, DELETE, etc.)"
     )
     extendedRequestId: Optional[str] = Field(
-        None,
-        description="Extended request ID for detailed request tracing"
+        None, description="Extended request ID for detailed request tracing"
     )
     requestTime: str = Field(
         description="Human-readable request timestamp in API Gateway format",
-        default_factory=lambda: datetime.now(timezone.utc).strftime("%d/%b/%Y:%H:%M:%S %z")
+        default_factory=lambda: datetime.now(timezone.utc).strftime(
+            "%d/%b/%Y:%H:%M:%S %z"
+        ),
     )
     path: str = Field(
         description="Full request path including API Gateway stage prefix"
     )
     accountId: Optional[str] = Field(
-        None,
-        description="AWS account ID that owns the API Gateway"
+        None, description="AWS account ID that owns the API Gateway"
     )
-    protocol: str = Field(
-        description="HTTP protocol version",
-        default="HTTP/1.1"
-    )
+    protocol: str = Field(description="HTTP protocol version", default="HTTP/1.1")
     stage: str = Field(
         description="API Gateway deployment stage name (prod, dev, etc.)",
-        default_factory=util.get_environment
+        default_factory=util.get_environment,
     )
     domainPrefix: str = Field(
-        description="Domain prefix for the API Gateway endpoint",
-        default=DOMAIN_PREFIX
+        description="Domain prefix for the API Gateway endpoint", default=DOMAIN_PREFIX
     )
     requestTimeEpoch: int = Field(
         description="Request timestamp as Unix epoch time in milliseconds",
-        default_factory=lambda: int(datetime.now(timezone.utc).timestamp() * 1000)
+        default_factory=lambda: int(datetime.now(timezone.utc).timestamp() * 1000),
     )
     requestId: str = Field(
         description="Unique identifier for this specific API request"
     )
     domainName: str = Field(
         description="Full domain name of the API Gateway endpoint",
-        default=f"{DOMAIN_PREFIX}.execute-api.us-east-1.amazonaws.com"
+        default=f"{DOMAIN_PREFIX}.execute-api.us-east-1.amazonaws.com",
     )
     identity: CognitoIdentity = Field(
         description="Authentication and identity information for the request"
     )
-    apiId: str = Field(
-        description="API Gateway API identifier",
-        default=API_ID
-    )
+    apiId: str = Field(description="API Gateway API identifier", default=API_ID)
 
 
 class ProxyEvent(BaseModel):
     """AWS API Gateway proxy integration event model.
-    
+
     Represents the complete event structure that AWS API Gateway sends to
     Lambda functions via proxy integration. This model ensures type safety
     and validation for all AWS API Gateway event fields.
-    
+
     The body field is automatically parsed from JSON string to dictionary
     for convenient access in handler functions, while maintaining compatibility
     with the AWS event format.
-    
+
     Attributes:
         httpMethod (str): HTTP method (GET, POST, PUT, DELETE, etc.).
         resource (str): API resource path with parameter placeholders.
@@ -585,18 +567,18 @@ class ProxyEvent(BaseModel):
         multiValueHeaders (Dict[str, List[str]]): Multi-value HTTP headers.
         isBase64Encoded (bool): Whether the body content is base64 encoded.
         body (Union[Dict[str, Any], str]): Request body (auto-parsed from JSON).
-        
+
     Note:
         AWS API Gateway always provides both single-value and multi-value
         versions of headers and query parameters. The multi-value versions
         are lists that can contain multiple values for the same key.
-        
+
         The body field accepts both string (raw AWS format) and dict (parsed)
         formats, automatically converting JSON strings to dictionaries.
-        
+
     Example:
         .. code-block:: python
-        
+
             # From AWS API Gateway
             event = ProxyEvent(
                 httpMethod="POST",
@@ -606,10 +588,10 @@ class ProxyEvent(BaseModel):
                 body='{"name": "John", "email": "john@example.com"}',
                 requestContext=request_context
             )
-            
+
             # Access parsed body
             user_data = event.body  # Returns: {"name": "John", "email": "john@example.com"}
-            
+
             # Route key for handler lookup
             route = event.route_key  # Returns: "POST:/users"
     """
@@ -624,59 +606,56 @@ class ProxyEvent(BaseModel):
     )
     path: Optional[str] = Field(
         None,
-        description="Actual request path with resolved parameters (e.g., '/users/123')"
+        description="Actual request path with resolved parameters (e.g., '/users/123')",
     )
     queryStringParameters: Dict[str, str] = Field(
-        description="Single-value query string parameters",
-        default_factory=dict
+        description="Single-value query string parameters", default_factory=dict
     )
     multiValueQueryStringParameters: Dict[str, List[str]] = Field(
         description="Multi-value query string parameters (AWS API Gateway format)",
-        default_factory=dict
+        default_factory=dict,
     )
     pathParameters: Dict[str, str] = Field(
-        description="Path parameter values extracted from the URL",
-        default_factory=dict
+        description="Path parameter values extracted from the URL", default_factory=dict
     )
     stageVariables: Dict[str, str] = Field(
         description="API Gateway stage variables for environment configuration",
-        default_factory=dict
+        default_factory=dict,
     )
     requestContext: RequestContext = Field(
         description="Complete request context information from API Gateway"
     )
     headers: Dict[str, str] = Field(
-        description="Single-value HTTP request headers",
-        default_factory=dict
+        description="Single-value HTTP request headers", default_factory=dict
     )
     multiValueHeaders: Dict[str, List[str]] = Field(
         description="Multi-value HTTP headers (AWS API Gateway format)",
-        default_factory=dict
+        default_factory=dict,
     )
     isBase64Encoded: bool = Field(
         description="Whether the body content is base64 encoded (for binary data)",
-        default=False
+        default=False,
     )
     body: Union[Dict[str, Any], str] = Field(
         description="Request body content (automatically parsed from JSON string)",
-        default_factory=dict
+        default_factory=dict,
     )
 
     @field_validator("body", mode="before")
     @classmethod
     def body_dict(cls, body: Any, info: ValidationInfo) -> Union[Dict[str, Any], str]:
         """Convert JSON string body to dictionary for convenient access.
-        
+
         Args:
             body (Any): Raw body value from API Gateway.
             info (ValidationInfo): Pydantic validation context.
-            
+
         Returns:
             Union[Dict[str, Any], str]: Parsed dictionary or original string.
-            
+
         Raises:
             ValueError: If JSON string is malformed.
-            
+
         Note:
             - None values are converted to empty dictionaries
             - Valid dictionaries are passed through unchanged
@@ -696,17 +675,19 @@ class ProxyEvent(BaseModel):
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON string for body: {e}") from e
         else:
-            raise ValueError(f"Invalid body type: expected dict or str, got {type(body)}")
+            raise ValueError(
+                f"Invalid body type: expected dict or str, got {type(body)}"
+            )
 
     @field_validator("httpMethod", mode="before")
     @classmethod
     def uppercase_method(cls, httpMethod: str, info: ValidationInfo) -> str:
         """Normalize HTTP method to uppercase for consistency.
-        
+
         Args:
             httpMethod (str): HTTP method string.
             info (ValidationInfo): Pydantic validation context.
-            
+
         Returns:
             str: Uppercase HTTP method.
         """
@@ -715,13 +696,13 @@ class ProxyEvent(BaseModel):
     @property
     def route_key(self) -> str:
         """Generate route key for handler lookup.
-        
+
         Returns:
             str: Route key in format "METHOD:resource" for handler routing.
-            
+
         Example:
             .. code-block:: python
-            
+
                 event = ProxyEvent(httpMethod="GET", resource="/users/{id}")
                 route = event.route_key  # Returns: "GET:/users/{id}"
         """

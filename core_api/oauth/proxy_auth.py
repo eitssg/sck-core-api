@@ -84,13 +84,17 @@ def get_credentials(event: ProxyEvent) -> Optional[Dict[str, Any]]:
         if expiration_str:
             try:
                 if expiration_str.endswith("Z"):
-                    expiration = datetime.fromisoformat(expiration_str.replace("Z", "+00:00"))
+                    expiration = datetime.fromisoformat(
+                        expiration_str.replace("Z", "+00:00")
+                    )
                 elif expiration_str.endswith("+00:00"):
                     expiration = datetime.fromisoformat(expiration_str)
                 elif "+" in expiration_str or expiration_str.count("-") > 2:
                     expiration = datetime.fromisoformat(expiration_str)
                 else:
-                    expiration = datetime.fromisoformat(expiration_str).replace(tzinfo=timezone.utc)
+                    expiration = datetime.fromisoformat(expiration_str).replace(
+                        tzinfo=timezone.utc
+                    )
 
                 now_utc = datetime.now(timezone.utc)
                 if now_utc > expiration:

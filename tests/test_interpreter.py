@@ -17,7 +17,9 @@ def test_environment_debug():
     # Check if we're in the expected environment
     expected_python = "D:\\Development\\simple-cloud-kit-oss\\simple-cloud-kit\\sck-core-api\\.venv\\Scripts\\python.exe"
     print(f"Expected Python: {expected_python}")
-    print(f"Match: {'✅' if expected_python.lower() in sys.executable.lower() else '❌'}")
+    print(
+        f"Match: {'✅' if expected_python.lower() in sys.executable.lower() else '❌'}"
+    )
 
     # Check environment variables
     print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', 'Not set')}")
@@ -43,7 +45,9 @@ def test_environment_debug():
 
     # List JWT packages
     try:
-        result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "list"], capture_output=True, text=True
+        )
         lines = result.stdout.split("\n")
         jwt_lines = [line for line in lines if "jwt" in line.lower()]
         print(f"JWT-related packages: {jwt_lines}")
