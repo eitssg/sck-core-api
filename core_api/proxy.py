@@ -53,9 +53,11 @@ from .registry.portfolio import registry_portfolio_actions
 from .registry.app import registry_app_actions
 from .registry.zone import registry_zone_actions
 from .facts.facter import facts_actions
-from .api.auth import auth_actions, get_credentials
+
+from .oauth.proxy_auth import get_credentials
 
 from .request import ProxyEvent, ActionHandlerRoutes
+
 from .api.tools import (
     get_header,
     HDR_AUTHORIZATION,
@@ -77,7 +79,6 @@ api_paths: ActionHandlerRoutes = {
     **registry_app_actions,
     **registry_zone_actions,
     **facts_actions,
-    **auth_actions,
 }
 
 
@@ -133,7 +134,7 @@ class ProxyResponse(dict):
         if correlation_id:
             self["headers"][HDR_X_CORRELATION_ID] = correlation_id
 
-        self["body"] = response.model_dump_json()
+        self["body"] = response.model_dump_json(exclude_none=True)
         self["isBase64Encoded"] = False
 
 
@@ -217,8 +218,7 @@ def check_if_user_authorized(event: ProxyEvent) -> Dict[str, Any]:
 
     # FIXED: Extract AWS STS credentials from JWT token instead of expecting raw token
     # Use model_dump() to convert ProxyEvent to dict for get_credentials compatibility
-    event_dict = event.model_dump()
-    credentials = get_credentials(**event_dict)
+    credentials = get_credentials(event)
 
     if not credentials:
         raise ValueError("No valid authentication token provided or token has expired")
@@ -395,15 +395,18 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             },
         )
 
-        # Validate user authorization and establish session credentials
-        user_identity = check_if_user_authorized(request)
-
         # Build route key for handler lookup
         route_key = request.route_key
         action_handler = api_paths.get(route_key, None)
 
         if not action_handler:
             raise NotFoundException(f"Unsupported resource API: {route_key}")
+
+        # Validate user authorization and establish session credentials
+        if route_key not in ["POST:/api/v1/login"]:
+            user_identity = check_if_user_authorized(request)
+        else:
+            user_identity = {"user": "anonymous"}
 
         log.info(
             "Executing action handler",
@@ -426,7 +429,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                 "result": result.code,
             },
         )
-        log.debug("Action result data", details=result.model_dump(exclude_none=True))
+        log.debug("Action result data:", details=result.model_dump())
 
         return ProxyResponse(result, correlation_id)
 

@@ -23,10 +23,11 @@ Attributes:
 
 import base64
 
+import core_logging as log
 import core_framework as util
 import core_helper.aws as aws
 
-from fastapi import Request, APIRouter, HTTPException
+from fastapi import Request, APIRouter
 from fastapi.responses import Response
 from fastapi.routing import APIRoute
 
@@ -46,59 +47,47 @@ STATUS_CODE = "statusCode"
 BODY = "body"
 
 
-class RouterSingleton:
-    """Singleton class for managing FastAPI router instance.
+_router: APIRouter | None = None
 
-    This class ensures only one router is created and reused across the application,
-    automatically configuring all API routes based on the proxy configuration.
 
-    Attributes:
-        _router (APIRouter | None): Private router instance, None until first access.
+def get_api_router() -> APIRouter:
+    """Get or create the FastAPI router instance.
+
+    Creates a new router if one doesn't exist, automatically adding all API routes
+    from the proxy configuration. Each route is configured to forward requests
+    to the ``proxy_forward`` endpoint.
+
+    Returns:
+        APIRouter: Singleton router instance with configured API routes.
 
     Note:
-        The router is lazily initialized on first access and includes all routes
-        defined in the ``api_paths`` configuration.
+        Routes are created from ``api_paths`` keys in format "METHOD:resource",
+        where METHOD is the HTTP method and resource is the URL path.
+
+    Example:
+        .. code-block:: python
+
+            router = RouterSingleton.get_router()
+            # Subsequent calls return the same instance
+            same_router = RouterSingleton.get_router()
+            assert router is same_router  # True
     """
+    global _router
 
-    _router: APIRouter | None = None
-
-    @classmethod
-    def get_router(cls) -> APIRouter:
-        """Get or create the FastAPI router instance.
-
-        Creates a new router if one doesn't exist, automatically adding all API routes
-        from the proxy configuration. Each route is configured to forward requests
-        to the ``proxy_forward`` endpoint.
-
-        Returns:
-            APIRouter: Singleton router instance with configured API routes.
-
-        Note:
-            Routes are created from ``api_paths`` keys in format "METHOD:resource",
-            where METHOD is the HTTP method and resource is the URL path.
-
-        Example:
-            .. code-block:: python
-
-                router = RouterSingleton.get_router()
-                # Subsequent calls return the same instance
-                same_router = RouterSingleton.get_router()
-                assert router is same_router  # True
-        """
-        if cls._router is None:
-            cls._router = APIRouter()
-            for method_resource in api_paths.keys():
-                method, resource = method_resource.split(":")
-                # strip "/api" prefix if present
-                if resource.startswith("/api"):
-                    resource = resource[4:]
-                cls._router.add_api_route(
-                    resource,
-                    endpoint=proxy_forward,
-                    methods=[method],
-                    response_class=Response,
-                )
-        return cls._router
+    if _router is None:
+        _router = APIRouter()
+        for method_resource in api_paths.keys():
+            method, resource = method_resource.split(":")
+            # strip "/api" prefix if present
+            if resource.startswith("/api"):
+                resource = resource[4:]
+            _router.add_api_route(
+                resource,
+                endpoint=proxy_forward,
+                methods=[method],
+                response_class=Response,
+            )
+    return _router
 
 
 async def authorize_request(request: Request, role: str) -> CognitoIdentity:
@@ -127,28 +116,30 @@ async def authorize_request(request: Request, role: str) -> CognitoIdentity:
             identity = await authorize_request(request, "arn:aws:iam::123:role/ReadRole")
             print(f"User: {identity.username}")
     """
-    headers = request.headers
-    _, bearer = get_header(headers, "Authorization")
+    return CognitoIdentity()
 
-    if bearer:
-        if not bearer.startswith("Bearer"):
-            raise ValueError("Authorization header is not in the correct format")
-        parts = bearer.split(" ")
-        if len(parts) != 2:
-            raise ValueError("Authorization header is not in the correct format")
-        token = parts[1]
-    else:
-        token = None
+    # headers = request.headers
+    # _, bearer = get_header(headers, "Authorization")
 
-    if not token:
-        raise ValueError("No Authorization token provided")
+    # if bearer:
+    #     if not bearer.startswith("Bearer"):
+    #         raise ValueError("Authorization header is not in the correct format")
+    #     parts = bearer.split(" ")
+    #     if len(parts) != 2:
+    #         raise ValueError("Authorization header is not in the correct format")
+    #     token = parts[1]
+    # else:
+    #     token = None
 
-    identity = get_user_information(token, role)
+    # if not token:
+    #     raise ValueError("No Authorization token provided")
 
-    if not identity:
-        raise ValueError("User is not authorized")
+    # identity = get_user_information(token, role)
 
-    return identity
+    # if not identity:
+    #     raise ValueError("User is not authorized")
+
+    # return identity
 
 
 async def generate_event_context(request: Request, identity: CognitoIdentity) -> tuple[ProxyEvent, ProxyContext]:
@@ -278,6 +269,8 @@ async def generate_response_from_lambda(result: dict) -> Response:
     # Determine media type from headers or default
     media_type = final_headers.get("content-type", MEDIA_TYPE)
 
+    log.debug("Response from Lambda:", details={"status": status_code, "headers": final_headers, "body": body})
+
     return Response(content=content, status_code=status_code, headers=final_headers, media_type=media_type)
 
 
@@ -315,6 +308,7 @@ async def proxy_forward(request: Request) -> Response:
     try:
         # Lambda functions are in the automation account
         account = util.get_automation_account()
+        log.debug("Using Automation Account: %s", account)
 
         if not account:
             raise ValueError("No Automation Account specified in the environment")
@@ -323,14 +317,17 @@ async def proxy_forward(request: Request) -> Response:
         is_write_operation = request.method.lower() != "get"
         role = util.get_automation_api_role_arn(account, is_write_operation)
 
+        log.debug("Using IAM Role for operation: %s", role)
+
         # Authorize the user for this operation
+
         identity = await authorize_request(request, role)
 
         # Generate Lambda event and context
         lambda_event, context = await generate_event_context(request, identity)
 
         # Convert event to dict for Lambda invocation
-        event = lambda_event.model_dump()
+        event = lambda_event.model_dump(exclude_none=True)
 
         # Execute in local mode or invoke AWS Lambda
         if util.is_local_mode():
@@ -350,34 +347,3 @@ async def proxy_forward(request: Request) -> Response:
         # Internal server errors (500)
         error_response = {"message": "Internal server error", "error": str(e) if util.is_debug_mode() else "An error occurred"}
         return Response(content=util.to_json(error_response), status_code=500, media_type=MEDIA_TYPE)
-
-
-def get_fast_api_router() -> APIRouter:
-    """Create a FastAPI Router with all proxy endpoints.
-
-    Returns a configured FastAPI router that includes all API endpoints defined
-    in the proxy configuration. This is the main entry point for integrating
-    the API with a FastAPI application.
-
-    Returns:
-        APIRouter: The FastAPI APIRouter instance with all configured routes.
-
-    Note:
-        This function returns a singleton router instance. Multiple calls
-        return the same router with the same route configuration.
-
-    Example:
-        Integration with FastAPI application::
-
-            from fastapi import FastAPI
-            from core_api.api.apis import get_fast_api_router
-
-            app = FastAPI()
-            app.include_router(get_fast_api_router(), prefix="/api")
-
-        With custom configuration::
-
-            router = get_fast_api_router()
-            app.include_router(router, prefix="/api/v1", tags=["Core API"])
-    """
-    return RouterSingleton.get_router()

@@ -1,9 +1,11 @@
 param(
     [string]$HostName = "localhost",
-    [int]$Port = 8080,
+    [int]$Port = 8090,
     [string]$LogLevel = "debug",
     [switch]$NoReload
 )
+
+$EnvFile = "$PSScriptRoot\.env"
 
 $ErrorActionPreference = "Stop"
 
@@ -14,7 +16,7 @@ try {
     $Env:LOG_LEVEL = $LogLevel.ToUpper()
     $Env:VOLUME = "P:\core"
     $Env:LOG_PATH = "P:\core\logs"
-    $Env:CLIENT = "core"
+    $Env:CLIENT = "test-client"
 
     # Ensure directories exist
     @($Env:VOLUME, $Env:LOG_PATH) | ForEach-Object {
@@ -31,6 +33,8 @@ try {
         "--host", $HostName,
         "--port", $Port,
         "--log-level", $LogLevel,
+        "--proxy-headers",
+        "--forwarded-allow-ips=*",
         "--access-log"
     )
 
@@ -38,8 +42,17 @@ try {
         $uvicornArgs += @("--reload", "--reload-dir", ".\core_api")
     }
 
+    # If a .env file exists, pass it to uvicorn
+    if (Test-Path $EnvFile) {
+        $uvicornArgs += @("--env-file", $EnvFile)
+        Write-Host "Using env file: $EnvFile" -ForegroundColor Yellow
+    } else {
+        Write-Host "No .env file found at: $EnvFile" -ForegroundColor DarkYellow
+    }
+
     Write-Host "Starting FastAPI server..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
+    Write-Host "  Client: $Env:CLIENT" -ForegroundColor Cyan
     Write-Host "  Host: $Env:HOST" -ForegroundColor Cyan
     Write-Host "  Port: $Env:PORT" -ForegroundColor Cyan
     Write-Host "  Log Level: $Env:LOG_LEVEL" -ForegroundColor Cyan

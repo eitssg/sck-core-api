@@ -32,10 +32,7 @@ from botocore.exceptions import ClientError, BotoCoreError
 
 import core_framework as util  # CORRECTED: Import util for to_json()
 
-from core_api.api.auth import (
-    authenticate_action,
-    _authenticate,
-    get_credentials,
+from core_api.oauth.auth import (
     validate_token,
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
