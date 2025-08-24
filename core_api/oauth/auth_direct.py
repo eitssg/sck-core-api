@@ -4,6 +4,7 @@ import random
 import os
 import bcrypt
 from datetime import timedelta
+from core_db.registry import ClientFact
 import httpx
 from fastapi import Request, APIRouter
 from fastapi.responses import JSONResponse
@@ -18,6 +19,7 @@ from core_db.profile.model import UserProfile
 
 from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES
 from .tools import (
+    JwtPayload,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
@@ -169,11 +171,11 @@ async def oauth_signup(request: Request) -> JSONResponse:
     if not client_id:
         return JSONResponse(status_code=400, content={"error": "client_id is required", "code": 400})
 
-    app_info = get_oauth_app_info(client_id=client_id)
+    app_info: ClientFact = get_oauth_app_info(client_id=client_id)
     if not app_info:
         return JSONResponse(status_code=400, content={"error": "invalid_client", "code": 400})
 
-    client = body.get("client", app_info.get("Client", "core"))
+    client = app_info.client
 
     # Determine mode (SSO Sign-In-With-Github or Sign-In-With-Email)
     ident = _read_identity_cookie(request.cookies)
@@ -247,7 +249,7 @@ async def oauth_signup(request: Request) -> JSONResponse:
             if exists:
                 ProfileActions.patch(client=client, **data)
             else:
-                log.debug("Creating new profile for SSO user", details=data)
+                log.debug(f"Creating new profile for SSO user: {user_id}")
                 ProfileActions.create(client=client, **data)
 
         else:
@@ -259,7 +261,7 @@ async def oauth_signup(request: Request) -> JSONResponse:
                     content={"error": f"User '{user_id}' already exists", "code": 409},
                 )
 
-            log.debug("Creating new profile for email/password user", details=data)
+            log.debug(f"Creating new profile for email/password user: {user_id}")
             response: SuccessResponse = ProfileActions.create(client=client, **data)
             if not response:
                 return JSONResponse(
@@ -288,6 +290,7 @@ async def oauth_signup(request: Request) -> JSONResponse:
                 "user_id": user_id,
                 "profile_name": "default",
                 "token": jwt_token,
+                "token_type": "Bearer",
             },
         }
         return JSONResponse(status_code=201, content=payload)
@@ -321,12 +324,12 @@ async def update_user(request: Request) -> JSONResponse:
         - Requires valid Authorization: Bearer token
     """
     # Get authenticated user first
-    user_id, client_id, client = get_authenticated_user(request)
-    if not user_id or not client or not client_id:
+    jwt_payload, _ = get_authenticated_user(request)
+    if jwt_payload is None:
         return JSONResponse(status_code=401, content={"error": "Unauthorized", "code": 401})
 
     if not check_rate_limit(request, "update_user", max_attempts=20, window_minutes=1):
-        log.warning(f"Rate limit exceeded for user {user_id} on /v1/users/me")
+        log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /v1/users/me")
         return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
     try:
@@ -337,7 +340,9 @@ async def update_user(request: Request) -> JSONResponse:
             content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
         )
 
-    log.debug(f"Updating user {user_id} from client '{client_id}' for '{client}' with data:", details=dict(body))
+    log.debug(
+        f"Updating user {jwt_payload.sub} from client '{jwt_payload.cid}' for '{jwt_payload.cnm}' with data:", details=dict(body)
+    )
 
     # Extract update fields
     aws_access_key = body.get("aws_access_key")
@@ -349,17 +354,17 @@ async def update_user(request: Request) -> JSONResponse:
     # Get current profile
     try:
         response: SuccessResponse = ProfileActions.get(
-            client=client,
-            user_id=user_id,
+            client=jwt_payload.cnm,
+            user_id=jwt_payload.sub,
             profile_name="default",
         )
-        current_data = response.data
+        current_data = UserProfile(**response.data)
     except Exception as e:
-        log.error(f"Failed to retrieve user profile for {user_id}: {e}")
+        log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to retrieve user profile", "code": 500})
 
     # Prepare update data (only include fields that are provided)
-    update_data = {"user_id": user_id, "profile_name": "default"}
+    update_data = {"user_id": jwt_payload.sub, "profile_name": "default"}
 
     # Update basic profile fields if provided
     if first_name is not None:
@@ -373,7 +378,7 @@ async def update_user(request: Request) -> JSONResponse:
     if aws_access_key and aws_secret_key:
         try:
             # Get existing credentials envelope or create new one
-            existing_credentials = current_data.get("Credentials", None)
+            existing_credentials = current_data.credentials
             if existing_credentials is None:
                 existing_credentials = {"CreatedAt": datetime.now(timezone.utc).isoformat()}
 
@@ -386,12 +391,12 @@ async def update_user(request: Request) -> JSONResponse:
             update_data["Credentials"] = existing_credentials
 
         except Exception as e:
-            log.error(f"Failed to encrypt AWS credentials for {user_id}: {e}")
+            log.error(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
             return JSONResponse(status_code=500, content={"error": "Failed to encrypt AWS credentials", "code": 500})
 
     # Perform the update
     try:
-        ProfileActions.patch(client=client, **update_data)
+        ProfileActions.patch(client=jwt_payload.cnm, **update_data)
 
         response_data = {"message": "User updated successfully", "updated_fields": list(update_data.keys())}
 
@@ -405,7 +410,7 @@ async def update_user(request: Request) -> JSONResponse:
         )
 
     except Exception as e:
-        log.error(f"Failed to update user profile for {user_id}: {e}")
+        log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to update user profile", "code": 500})
 
 
@@ -518,14 +523,14 @@ async def user_login(request: Request) -> JSONResponse:
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
             return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
-        app_info = get_oauth_app_info(client_id)
+        app_info: ClientFact = get_oauth_app_info(client_id)
         if not app_info:
             return JSONResponse(
                 status_code=400,
                 content={"error": "invalid_client", "code": 400},
             )
 
-        client = body.get("client", app_info.get("Client", "core"))
+        client = app_info.client
         returnTo = body.get("returnTo")
 
         # Get user profile and validate password
@@ -535,7 +540,7 @@ async def user_login(request: Request) -> JSONResponse:
                 user_id=user_id,
                 profile_name="default",
             )
-            profile_data = response.data
+            profile_data = UserProfile(**response.data)
         except Exception as e:
             log.debug(f"Profile not found for user {user_id}: {e}")
             return JSONResponse(
@@ -544,7 +549,7 @@ async def user_login(request: Request) -> JSONResponse:
             )
 
         # Check if user has a password (some SSO users might not)
-        credentials = profile_data.get("Credentials", {})
+        credentials = profile_data.credentials or {}
         stored_hash = credentials.get("Password") or credentials.get("password")
         if not stored_hash:
             log.debug(f"No password found for user {user_id}")
@@ -565,10 +570,11 @@ async def user_login(request: Request) -> JSONResponse:
 
         # Create session JWT with NO AWS credentials - just user identity
         session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
+        seconds = int(timedelta(minutes=minutes).total_seconds())
 
         resp_data = {
             "token": session_jwt,
-            "expires_in": int(timedelta(minutes=minutes).total_seconds()),
+            "expires_in": seconds,
             "token_type": "Bearer",
         }
         if returnTo:

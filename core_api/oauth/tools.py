@@ -7,12 +7,12 @@ import uuid
 import bcrypt
 from datetime import datetime, timedelta, timezone
 
+from core_db.registry import ClientFact
 from fastapi import Request
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jwcrypto import jwe
 from pydantic import BaseModel, Field, model_validator
 
 import jwt
@@ -27,25 +27,14 @@ from core_db.profile.actions import ProfileActions
 from core_db.oauth.actions import RateLimitActions
 from core_db.registry.client import ClientActions
 
-from .constants import CRED_ENC_KEY_B64, JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES, JWT_EXPIRATION_HOURS
-
-
-def validate_token(token: str) -> dict:
-    """
-    Validate and decode a JWT token.
-
-    Args:
-        token (str): JWT token string to validate
-
-    Returns:
-        dict: Decoded JWT payload if valid
-
-    Raises:
-        jwt.InvalidTokenError: If token is invalid, expired, or malformed
-        jwt.ExpiredSignatureError: If token has expired
-        jwt.InvalidSignatureError: If token signature is invalid
-    """
-    return jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+from .constants import (
+    CRED_ENC_KEY_B64,
+    JWT_SECRET_KEY,
+    JWT_ALGORITHM,
+    REFRESH_MIN_INTERVAL_SECONDS,
+    SESSION_JWT_MINUTES,
+    JWT_EXPIRATION_HOURS,
+)
 
 
 class JwtPayload(BaseModel):
@@ -60,11 +49,66 @@ class JwtPayload(BaseModel):
     cnm: str | None = Field(None, description="Client Name")
     scp: str | None = Field(None, description="Scope of the Access token")
     enc: str | None = Field(None, description="Encrypted AWS STS temporary credentials (JWE)")
+    nbf: int | None = Field(None, description="Not before time as UNIX timestamp")
+
+    def is_expired(self) -> bool:
+        """Check if the token is expired."""
+        return self.exp is not None and self.exp < int(datetime.now(timezone.utc).timestamp())
+
+    def is_not_before(self) -> bool:
+        """Check if the token is not yet valid."""
+        return self.nbf is not None and self.nbf > int(datetime.now(timezone.utc).timestamp())
+
+    def is_valid(self) -> bool:
+        """Check if the token is valid (not expired and not before)."""
+        return not self.is_expired() and not self.is_not_before()
+
+    def is_refresh(self) -> bool:
+        """Check if the token is a refresh token."""
+        return self.typ == "refresh"
+
+    def is_access(self) -> bool:
+        """Check if the token is an access token."""
+        return self.typ == "access"
+
+    def is_bearer(self) -> bool:
+        """Check if the token is a bearer token."""
+        return self.typ == "bearer"
+
+    def is_client_credentials(self) -> bool:
+        """Check if the token is a client credentials token."""
+        return self.typ == "client_credentials"
+
+    def is_system(self) -> bool:
+        """Check if the token is a system token."""
+        return self.typ == "system"
+
+    def is_service_account(self) -> bool:
+        """Check if the token is a service account token."""
+        return self.typ == "service_account"
+
+    def is_anonymous(self) -> bool:
+        """Check if the token is an anonymous token."""
+        return self.typ == "anonymous"
+
+    def is_public(self) -> bool:
+        """Check if the token is a public token."""
+        return self.typ == "public"
+
+    def is_internal(self) -> bool:
+        """Check if the token is an internal token."""
+        return self.typ == "internal"
+
+    def ttl_seconds(self) -> int:
+        """Get the token time-to-live in seconds."""
+        return self.ttl * 60 if self.ttl else 0
 
     @model_validator(mode="before")
     def validate_fields(cls, values: dict) -> dict:
-        if "typ" not in values:
-            values["typ"] = "access"
+        typ = values.get("typ")
+        if not typ:
+            typ = "access"
+            values["typ"] = typ
         if "iss" not in values:
             values["iss"] = "sck-core-api"
 
@@ -88,15 +132,38 @@ class JwtPayload(BaseModel):
         if "scp" not in values:
             values["scp"] = "read"
 
+        if typ == "refresh" and "nbf" not in values:
+            nbf = int((datetime.now(timezone.utc) + timedelta(seconds=REFRESH_MIN_INTERVAL_SECONDS)).timestamp())
+            values["nbf"] = nbf
+
         return values
 
     def model_dump(self, **kwargs) -> dict:
         kwargs.setdefault("exclude_none", True)
         return super().model_dump(**kwargs)
 
+    def encode(self) -> str:
+        """Encode the JWT payload as a JWT token."""
+        return jwt.encode(self.model_dump(), JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    @classmethod
+    def decode(cls, token: str) -> "JwtPayload":
+        """Decode a JWT token into a JwtPayload instance."""
+        payload = jwt.decode(
+            token,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": True,
+            },
+        )
+        return cls(**payload)
+
 
 def is_password_compliant(password: str) -> bool:
-    """Check if password meets security complexity requirements.
+    """Check if password meets security complexity requirements
 
     Enforces enterprise-grade password policy for user account security.
     All requirements must be met for password to be considered compliant
@@ -486,7 +553,7 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
     Returns:
         str: Signed JWT token for session authentication
 
-    JWT Claims:
+    JWT Claims (via JwtPayload model):
         - sub (str): User identifier (email address)
         - typ (str): Token type "session"
         - iss (str): Issuer "sck-core-api"
@@ -522,12 +589,12 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
         cid=client_id,
         cnm=client_name,
         ttl=minutes,
-    ).model_dump()
+    )
 
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return payload.encode()
 
 
-def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str, client_id: str, client_name: str) -> str:
+def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload) -> str:
     """Generate OAuth access token with encrypted AWS STS temporary credentials and client context
 
     Takes user's long-term AWS credentials, exchanges them for time-limited STS credentials,
@@ -536,10 +603,7 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
 
     Args:
         aws_credentials (dict): User's long-term AWS credentials
-        user_id (str): User identifier (subject claim)
-        scope (str): OAuth scope string
-        client_id (str): OAuth client ID for context
-        client_name (str): Client name/slug for data operations
+        jwt_payload (JwtPayload): JWT payload containing user and client information
 
     Returns:
         str: Signed JWT access token containing encrypted AWS STS credentials
@@ -550,7 +614,7 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
         RuntimeError: Encryption system failures
         Exception: JWT signing or general processing errors
 
-    JWT Claims:
+    JWT Claims (via JwtPayload model):
         - sub (str): User identifier
         - typ (str): "access_token"
         - iss (str): "sck-core-api"
@@ -617,9 +681,13 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
 
         # Create STS client and get temporary credentials for the API
         sts_client = boto3.client("sts", aws_access_key_id=access_key, aws_secret_access_key=secret_key)
-        result = sts_client.get_session_token(
-            DurationSeconds=duration_seconds, SerialNumber=mfa_device_id, TokenCode=mfa_token_code
-        )
+
+        if mfa_device_id and mfa_token_code:
+            result = sts_client.get_session_token(
+                DurationSeconds=duration_seconds, SerialNumber=mfa_device_id, TokenCode=mfa_token_code
+            )
+        else:
+            result = sts_client.get_session_token(DurationSeconds=duration_seconds)
 
         if "Credentials" in result:
             sts_credentials = result["Credentials"]
@@ -628,22 +696,21 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
                 sts_credentials["Expiration"] = sts_credentials["Expiration"].isoformat()
 
     except (BotoCoreError, ClientError) as e:
-        log.warn(f"Error retrieving STS credentials for user {user_id}: {e}")
+        log.warn(f"Error retrieving STS credentials for user {jwt_payload.sub}: {e}")
 
     creds_enc = encrypt_creds(sts_credentials)
 
     minutes = 60 * JWT_EXPIRATION_HOURS
 
     payload = JwtPayload(
-        sub=user_id,
-        cid=client_id,
-        cnm=client_name,
+        sub=jwt_payload.sub,
+        cid=jwt_payload.cid,
+        cnm=jwt_payload.cnm,
+        scp=jwt_payload.scp,
         enc=creds_enc,
         ttl=minutes,
-        scp=scope,
-    ).model_dump()
-
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    )
+    return payload.encode()
 
 
 def get_client_ip(request: Request) -> str:
@@ -687,7 +754,7 @@ def get_client_ip(request: Request) -> str:
         >>> # Direct: "192.168.1.100"
         >>> # Proxied: "203.0.113.1" (from X-Forwarded-For)
         >>> # Unknown: "unknown"
-         >>> # Use for rate limiting or logging
+        >>> # Use for rate limiting or logging
     """
     ip = request.client.host if request.client else "unknown"
 
@@ -741,7 +808,7 @@ def get_client_identifier(request: Request) -> str:
     Examples:
         >>> identifier = get_client_identifier(request)
         >>> # "203.0.113.1#Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-         >>> # Use for rate limiting or abuse detection
+        >>> # Use for rate limiting or abuse detection
     """
     real_ip = get_client_ip(request)
 
@@ -787,97 +854,100 @@ def _get_rate_limit_key(identifier: str, endpoint: str) -> str:
 def check_rate_limit(request: Request, endpoint: str, max_attempts: int = 5, window_minutes: int = 15) -> bool:
     """Enforce sliding window rate limiting per client per endpoint using DynamoDB storage
 
-        Implements robust rate limiting to prevent abuse while maintaining good user experience.
-        Uses sliding window algorithm with automatic cleanup and fail-open security model.
+    Implements robust rate limiting to prevent abuse while maintaining good user experience.
+    Uses sliding window algorithm with automatic cleanup and fail-open security model.
 
-        Args:
-            request (Request): FastAPI request object.
-            endpoint (str): API endpoint name (e.g., "signup", "login").
-            max_attempts (int, optional): Maximum attempts allowed in window. Defaults to 5.
-            window_minutes (int, optional): Time window in minutes. Defaults to 15.
+    Args:
+        request (Request): FastAPI request object.
+        endpoint (str): API endpoint name (e.g., "signup", "login").
+        max_attempts (int, optional): Maximum attempts allowed in window. Defaults to 5.
+        window_minutes (int, optional): Time window in minutes. Defaults to 15.
 
-        Returns:
-            bool: True if request should be allowed, False if rate limited.
+    Returns:
+        bool: True if request should be allowed, False if rate limited.
 
-        Rate Limiting Algorithm:
-            1. Generate client identifier (IP + user agent)
-            2. Create DynamoDB key for endpoint + client
-            3. Retrieve existing attempt history
-            4. Filter attempts to current time window
-            5. Check if under limit, record current attempt
-            6. Update DynamoDB with new attempt list
-            7. Set TTL for automatic record cleanup
+    Rate Limiting Algorithm:
+        1. Generate client identifier (IP + user agent)
+        2. Create DynamoDB key for endpoint + client
+        3. Retrieve existing attempt history
+        4. Filter attempts to current time window
+        5. Check if under limit, record current attempt
+        6. Update DynamoDB with new attempt list
+        7. Set TTL for automatic record cleanup
 
-        Storage Structure (DynamoDB):
-            {
-                "client": "core",
-                "code": "rate#login#192.168.1.1#Mozilla",
-                "attempts": [1640995200, 1640995260, 1640995320],
-                "ttl": 1640997000
-            }
+    Storage Structure (DynamoDB):
+        {
+            "client": "core",
+            "code": "rate#login#192.168.1.1#Mozilla",
+            "attempts": [1640995200, 1640995260, 1640995320],
+            "ttl": 1640997000
+        }
 
-        Security:
-            - Sliding window prevents sustained abuse
-            - Per-endpoint granularity (different limits per API)
-            - Fail-open design (allow on database errors)
-            - Client fingerprinting resists simple IP changes
-            - Automatic record expiration prevents storage bloat
+    Security:
+        - Sliding window prevents sustained abuse
+        - Per-endpoint granularity (different limits per API)
+        - Fail-open design (allow on database errors)
+        - Client fingerprinting resists simple IP changes
+        - Automatic record expiration prevents storage bloat
 
-        Performance Features:
-            - Single DynamoDB read + write per check
-            - TTL-based automatic cleanup
-            - Minimal data storage (timestamps only)
-            - Efficient sliding window calculation
+    Performance Features:
+        - Single DynamoDB read + write per check
+        - TTL-based automatic cleanup
+        - Minimal data storage (timestamps only)
+        - Efficient sliding window calculation
 
-        Operational Benefits:
-            - Configurable per endpoint and client type
-            - Observable via DynamoDB metrics
-            - Self-healing (expired records auto-deleted)
-            - Graceful degradation on outages
+    Operational Benefits:
+        - Configurable per endpoint and client type
+        - Observable via DynamoDB metrics
+        - Self-healing (expired records auto-deleted)
+        - Graceful degradation on outages
 
-        Rate Limit Algorithm:
-            1. Get client identifier (IP + user agent)
-            2. Retrieve attempt history from DynamoDB
-            3. Filter attempts to current time window
-            4. Check if under limit, add current attempt
-            5. Update DynamoDB with new attempt list
-            6. Set TTL for automatic cleanup
+    Rate Limit Algorithm:
+        1. Get client identifier (IP + user agent)
+        2. Retrieve attempt history from DynamoDB
+        3. Filter attempts to current time window
+        4. Check if under limit, add current attempt
+        5. Update DynamoDB with new attempt list
+        6. Set TTL for automatic cleanup
 
-        Examples:
-            >>> # Standard login protection
-            >>> if not check_rate_limit(request, "login", 5, 15):
-            ...     return JSONResponse({"error": "Rate limited"}, status_code=429)
-            >>>
-            >>> # Stricter signup limits
-            >>> if not check_rate_limit(request, "signup", 3, 60):
-            ...     return JSONResponse({"error": "Too many signups"}, status_code=429)
-            >>>
-            >>> # API endpoint protection
-            >>> if not check_rate_limit(request, "api_call", 100, 1):
-            ...     return JSONResponse({"error": "API rate limit exceeded"}, status_code=429)
-    +
-    +    Common Rate Limit Patterns:
-    +        - Login: 5-10 attempts per 15 minutes
-    +        - Signup: 2-3 attempts per hour
-    +        - Password reset: 3 attempts per hour
-    +        - API calls: 100-1000 per minute
-    +        - File uploads: 10 per hour
+    Examples:
+        >>> # Standard login protection
+        >>> if not check_rate_limit(request, "login", 5, 15):
+        ...     return JSONResponse({"error": "Rate limited"}, status_code=429)
+        >>>
+        >>> # Stricter signup limits
+        >>> if not check_rate_limit(request, "signup", 3, 60):
+        ...     return JSONResponse({"error": "Too many signups"}, status_code=429)
+        >>>
+        >>> # API access protection
+        >>> if not check_rate_limit(request, "api_call", 100, 1):
+        ...     return JSONResponse({"error": "API rate limit exceeded"}, status_code=429)
+
+    Common Rate Limit Patterns:
+        - Login: 5-10 attempts per 15 minutes
+        - Signup: 2-3 attempts per hour
+        - Password reset: 3 attempts per hour
+        - API calls: 100-1000 per minute
+        - File uploads: 10 per hour
+
     """
     identifier = get_client_identifier(request)
     key = _get_rate_limit_key(identifier, endpoint)
     now = int(time.time())
     window_start = now - (window_minutes * 60)
 
+    client = "core"
+
     try:
         # Get current attempts
-        sr: SuccessResponse = RateLimitActions.get(**{"code": key})
+        sr: SuccessResponse = RateLimitActions.get(client=client, code=key)
         response = sr.data
 
-    except Exception:
+    except Exception as e:
         # No record exists (probably) - create initial record
         try:
             data = {
-                "client": "core",
+                "client": client,
                 "code": key,
                 "attempts": [now],
                 "ttl": now + (window_minutes * 60 * 2),  # TTL = 2x window for safety
@@ -900,14 +970,15 @@ def check_rate_limit(request: Request, endpoint: str, max_attempts: int = 5, win
 
         # Add current attempt
         attempts.append(now)
-        RateLimitActions.update(
-            **{
-                "client": "core",
-                "code": key,
-                "attempts": attempts,
-                "ttl": now + (window_minutes * 60 * 2),  # TTL = 2x window
-            }
-        )
+        data = {
+            "client": client,
+            "code": key,
+            "attempts": attempts,
+            "ttl": now + (window_minutes * 60 * 2),  # TTL = 2x window
+        }
+
+        RateLimitActions.update(**data)
+
         return True
 
     except Exception as e:
@@ -991,7 +1062,7 @@ def cookie_opts() -> dict:
     return opts
 
 
-def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, str | None]:
+def get_authenticated_user(request: Request) -> Tuple[JwtPayload | None, str | None]:
     """Extract the authenticated user and client context from JWT token.
 
     Checks Authorization header or sck_token cookie for valid JWT,
@@ -1005,14 +1076,15 @@ def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, st
         request (Request): FastAPI request object
 
     Returns:
-        Tuple[str | None, str | None, str | None]: (user_id, client_id, client_name)
-                                                   Returns (None, None, None) if no valid token found
+        Tuple[JwtPayload | None, str | None]: (jwt_payload, jwt_signature)
+                                              Returns (None, None) if no valid token found
 
     Example:
-        >>> user_id, client_id, client_name = get_authenticated_user(request)
-        >>> if user_id:
+        >>> jwt_payload, jwt_signature = get_authenticated_user(request)
+        >>> if jwt_payload:
         ...     # User is authenticated, use client_name for data operations
-        ...     ProfileActions.get(client=client_name or "core", user_id=user_id, profile_name="default")
+        ...     client = jwt_payload.cnm or "core"
+        ...     profile = ProfileActions.get(client=client, user_id=jwt_payload.sub, profile_name="default")
 
     Auth Sources (in order of preference):
         1. Authorization: Bearer <JWT> header
@@ -1026,7 +1098,7 @@ def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, st
     Security:
         - Validates JWT signature and expiration
         - Supports multiple authentication methods
-        - Returns None values for invalid/missing tokens
+        - Returns (None, None) for invalid/missing tokens
         - Logs warnings for invalid tokens
 
     Raises:
@@ -1041,33 +1113,24 @@ def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, st
         token = request.cookies["sck_token"]
 
     if not token:
-        return None, None, None
+        return None, None
 
     try:
-        payload = jwt.decode(
-            token,
-            JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM],
-            options={
-                "verify_signature": True,
-                "verify_exp": True,
-                "verify_iat": True,
-            },
-        )
+        jwt_parts = token.split(".")
+        if len(jwt_parts) == 3:
+            jwt_signature = jwt_parts[2]
 
-        user_id = payload.get("sub")
-        client_id = payload.get("cid")
-        client_name = payload.get("cnm")
+        jwt_payload = JwtPayload.decode(token)
 
-        return user_id, client_id, client_name
+        return jwt_payload, jwt_signature
 
     except jwt.InvalidTokenError:
         log.warning("Invalid JWT token in request")
 
-    return None, None, None
+    return None, None
 
 
-def get_oauth_app_info(client_id: str) -> dict | None:
+def get_oauth_app_info(client_id: str) -> ClientFact | None:
     """Retrieve OAuth client application registration from database by client identifier.
 
     Fetches complete OAuth client configuration including redirect URIs, client name,
@@ -1077,7 +1140,7 @@ def get_oauth_app_info(client_id: str) -> dict | None:
         client_id (str): OAuth client identifier to lookup (e.g., "coreui", "mobile-app")
 
     Returns:
-        dict | None: Complete client registration record or None if not found:
+        ClientFact | None: Complete client registration record or None if not found:
                     {
                         "client_id": "coreui",
                         "Client": "core",
@@ -1122,7 +1185,7 @@ def get_oauth_app_info(client_id: str) -> dict | None:
     try:
         response = ClientActions.get(client_id=client_id)
         log.debug(f"OAuth app info for client {client_id}:", details=response.data)
-        return response.data
+        return ClientFact(**response.data)
     except Exception as e:
         log.error(f"Failed to get OAuth app info for client {client_id}: {e}")
         return None

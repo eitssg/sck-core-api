@@ -1,12 +1,10 @@
 from typing import Set, Optional, Tuple
-
 import hashlib
-import secrets
-import uuid
-
 import base64
+import uuid
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
+from core_db.registry import ClientFact
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse, JSONResponse
 
@@ -14,40 +12,49 @@ import jwt
 
 import core_logging as log
 
-from core_db.oauth.actions import AuthActions
+from core_db.oauth import AuthActions, Authorizations
 from core_db.exceptions import BadRequestException, ConflictException, UnknownException
 from core_db.response import SuccessResponse
 
-from .tools import check_rate_limit, get_user_access_key, get_authenticated_user, create_access_token_with_sts, get_oauth_app_info
+from .tools import (
+    JwtPayload,
+    check_rate_limit,
+    get_user_access_key,
+    get_authenticated_user,
+    create_access_token_with_sts,
+    get_oauth_app_info,
+)
 
 from .constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     JWT_EXPIRATION_HOURS,
-    REFRESH_MIN_INTERVAL_SECONDS,
     ALLOWED_SCOPES,
 )
 
 oauth_router = APIRouter()
 
 
-def _mint_refresh_token(user_id: str, client_id: str, scope: str, lifetime_days: int = 30, client_name: str = None) -> str:
+def _mint_refresh_token(jwt_payload: JwtPayload, lifetime_days: int = 30) -> str:
     """Mint a refresh token with user identity only - NO AWS credentials."""
-    payload = {
-        "sub": user_id,
-        "cnm": client_name,
-        "aud": client_id,
-        "iat": datetime.now(tz=timezone.utc),
-        "exp": datetime.now(tz=timezone.utc) + timedelta(days=lifetime_days),
-        "typ": "refresh",
-        "scope": scope,
-        "nbf": int((datetime.now(timezone.utc) + timedelta(seconds=REFRESH_MIN_INTERVAL_SECONDS)).timestamp()),
-    }
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    exp = datetime.now(tz=timezone.utc) + timedelta(days=lifetime_days)
+    exp = int(exp.timestamp())
+
+    payload = JwtPayload(
+        sub=jwt_payload.sub,
+        cnm=jwt_payload.cnm,
+        cid=jwt_payload.cid,
+        scp=jwt_payload.scp,
+        typ="refresh",
+        exp=exp,
+    )
+
+    return payload.encode()
 
 
 def _pkce_calc_challenge(verifier: str, method: str = "S256") -> str:
-    """Compute PKCE code_challenge from code_verifier."""
+    """Compute PKCE authz.code_challenge from code_verifier."""
     m = (method or "S256").upper()
     if m == "PLAIN":
         return verifier
@@ -88,9 +95,7 @@ def _get_client_allowed_scopes(client_id: str) -> Set[str]:
     Returns:
         Set[str]: Allowed scopes for the client.
     """
-    if client_id == "coreui":
-        return ALLOWED_SCOPES
-    return set()
+    return ALLOWED_SCOPES
 
 
 def _get_user_allowed_scopes(user_id: str) -> Set[str]:
@@ -149,11 +154,22 @@ def validate_requested_scopes(client_id: str, requested: str, user_id: str) -> s
     return " ".join(sorted(granted))
 
 
-def _validate_client_credentials(client_id: str, client_secret: str) -> Tuple[str, bool]:
+def _validate_client_credentials(client_secret: str, app_info: ClientFact) -> Tuple[str, bool]:
+
+    client_id = app_info.client_id
+    secret_hash = app_info.client_secret
+
+    # Generate SHA-256 hash of provided secret to compare with stored hash
+    provided_hash = hashlib.sha256(client_secret.encode("utf-8")).hexdigest()
+
+    if provided_hash != secret_hash:
+        log.info(f"Invalid client_secret for client {client_id}")
+        return client_id, False
+
     return client_id, True
 
 
-def authenticate_client(request: Request, form: dict) -> tuple[str, bool]:
+def _authenticate_client(request: Request, form: dict) -> tuple[str, bool]:
     """Authenticate OAuth client using standard methods."""
     # Method 1: HTTP Basic Authentication
     auth_header = request.headers.get("Authorization", "")
@@ -169,7 +185,7 @@ def authenticate_client(request: Request, form: dict) -> tuple[str, bool]:
 
 @oauth_router.get("/v1/cred_enc_key")
 async def get_cred_enc_key(request: Request) -> JSONResponse:
-    """Get the credential encryption key."""
+    """Generate a new AWS credential encryption key."""
 
     key_bytes = secrets.token_bytes(32)
     key_b64url = base64.urlsafe_b64encode(key_bytes).decode().rstrip("=")
@@ -204,43 +220,80 @@ async def oauth_authorize(request: Request) -> Response:
 
     log.debug(f"Received OAuth authorization request:", details=dict(request.query_params))
 
+    # 1) Validate ALL required parameters BEFORE rate limiting or DB calls
+    if not client_id:
+        return JSONResponse(
+            status_code=400, content={"error": "invalid_request", "error_description": "Missing required parameter: client_id"}
+        )
+
+    if not response_type:
+        return JSONResponse(
+            status_code=400, content={"error": "invalid_request", "error_description": "Missing required parameter: response_type"}
+        )
+
+    if response_type != "code":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "unsupported_response_type", "error_description": "Only response_type=code is supported"},
+        )
+
+    if not redirect_uri:
+        return JSONResponse(
+            status_code=400, content={"error": "invalid_request", "error_description": "Missing required parameter: redirect_uri"}
+        )
+
+    # Optional: Validate state parameter format if present
+    if state and (len(state) > 512 or "\n" in state or "\r" in state):
+        return JSONResponse(
+            status_code=400, content={"error": "invalid_request", "error_description": "Invalid state parameter format"}
+        )
+
+    # 2) Now check rate limiting (only for valid requests)
     if not check_rate_limit(request, "oauth_authorize", max_attempts=10, window_minutes=15):
         log.warning(f"Rate limit exceeded for client {client_id} on /auth/v1/authorize")
         return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
-    if not client_id:
-        return JSONResponse(
-            status_code=400, content={"error": "invalid_request", "Missing required parameter: client_id": "Missing client_id"}
+    # 3) Require authenticated user with valid session token
+    jwt_payload, jwt_signature = get_authenticated_user(request)
+    # Check for missing or invalid authentication
+    if not jwt_payload:
+        # No valid token at all - redirect to login
+        pass  # Continue to login redirect logic below
+    elif jwt_payload.typ != "session":
+        # Wrong token type - return error instead of redirect
+        token_type_name = {"access_token": "access token", "refresh": "refresh token"}.get(
+            jwt_payload.typ, f"'{jwt_payload.typ}' token"
         )
 
-    # 1) Basic validation
-    app_info = _get_oauth_app_info(client_id) if client_id else None
-    if not app_info or response_type != "code" or not redirect_uri:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "invalid_request",
-                "error_description": f"Invalid client_id, response_type, or redirect_uri",
-            },
-        )
-
-    # 2) Ensure redirect_uri matches registered one (reuse app_info)
-    registered_uris = app_info.get("ClientRedirectUrls", [])
-    if redirect_uri not in [uri for uri in registered_uris if uri]:
         return JSONResponse(
             status_code=400,
             content={
-                "error": "invalid_redirect_uri",
-                "error_description": f"redirect_uri not registered for this client: {redirect_uri}",
+                "error": "invalid_token_type",
+                "error_description": f"Cannot use {token_type_name} for authorization flow. Please authenticate with session token from login.",
             },
         )
+    elif jwt_payload.cid != client_id:
+        # Client ID mismatch - return error
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "client_mismatch",
+                "error_description": f"Token was issued for client '{jwt_payload.cid}' but request is for client '{client_id}'",
+            },
+        )
+    else:
+        # Valid session token with matching client - continue with OAuth flow
+        # Skip the login redirect logic
+        pass
 
-    # 3) Require authenticated user.
-    is_auth, user_id = get_authenticated_user(request)
-    if not is_auth or not user_id:
+    # Only redirect to login if no valid session token
+    if not jwt_payload or jwt_payload.typ != "session" or jwt_payload.cid != client_id:
 
         # If you have NOT signed in to THIS server, (I'm talking aboujt the oauth server)
         # then redirect to this server's login page.
+
+        # Also, if the client_id you specified does not match the authenticated client's ID,
+        # you should handle that case (e.g., by showing an error or redirecting).
 
         # Only replay allowed OAuth params (and an optional sanitized login_hint).
         allowed = {
@@ -269,43 +322,49 @@ async def oauth_authorize(request: Request) -> Response:
 
         return RedirectResponse(url=login_url, status_code=302)
 
-    # 4) Process scopes (request + policy => granted)
-    requested_scopes = _parse_scopes(scope_param)
-    granted_scopes = _grant_scopes(client_id, user_id, requested_scopes)
-
-    # 5) Generate and persist the code (tie it to user+client+scopes)
-    code = str(uuid.uuid4())
-    if not code:
+    # 4) Database validation (client lookup) - AFTER auth check and rate limiting
+    app_info: ClientFact = get_oauth_app_info(client_id)
+    if not app_info:
         return JSONResponse(
-            status_code=500,
+            status_code=400,
             content={
-                "error": "server_error",
-                "error_description": "Failed to generate authorization code",
+                "error": "invalid_request",
+                "error_description": f"Invalid client_id. Client '{client_id}' not found in database.",
             },
         )
 
-    # Extract JWT signature for tracking the same token
-    session_token = None
-    authz_hdr = (request.headers.get("Authorization") or "").strip()
-    if authz_hdr.lower().startswith("bearer "):
-        session_token = authz_hdr.split(" ", 1)[1].strip()
-    elif "sck_token" in request.cookies:
-        session_token = request.cookies["sck_token"]
+    if jwt_payload.cnm != app_info.client:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": f"Client mismatch: {jwt_payload.cnm} != {app_info.client}",
+            },
+        )
 
-    jwt_signature = None
-    if session_token:
-        # Extract signature part of JWT (last part after final dot)
-        jwt_parts = session_token.split(".")
-        if len(jwt_parts) == 3:
-            jwt_signature = jwt_parts[2]  # signature part
+    # 5) Validate redirect_uri against registration
+    registered_uris = app_info.client_redirect_urls
+    if redirect_uri not in [uri for uri in registered_uris if uri]:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_redirect_uri",
+                "error_description": f"redirect_uri not registered for this client: {redirect_uri}",
+            },
+        )
 
-    client = app_info.get("Client")
+    # 6) Process scopes (request + policy => granted)
+    requested_scopes = _parse_scopes(scope_param)
+    granted_scopes = _grant_scopes(client_id, jwt_payload.sub, requested_scopes)
+
+    # 7) Generate and persist the code (tie it to user+client+scopes)
+    code = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     authorization = {
-        "client": client,
+        "client": jwt_payload.cnm,
         "code": code,
         "client_id": client_id,
-        "user_id": user_id,
+        "user_id": jwt_payload.sub,
         "redirect_url": redirect_uri,
         "scope": " ".join(granted_scopes),
         "expires_at": expires_at,
@@ -323,7 +382,7 @@ async def oauth_authorize(request: Request) -> Response:
     except UnknownException as e:
         return JSONResponse(status_code=500, content={"error": str(e), "code": 500})
 
-    # 6) Redirect back to client app with code + state
+    # 8) Redirect back to client app with code + state
     sep = "&" if "?" in redirect_uri else "?"
     redirect_back = f"{redirect_uri}{sep}{urlencode({'code': code, 'state': state or ''})}"
 
@@ -332,17 +391,19 @@ async def oauth_authorize(request: Request) -> Response:
     return RedirectResponse(url=redirect_back, status_code=302)
 
 
-def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Response:
-
-    client_id = form.get("client_id", "").strip()
-
-    # Extract client name (slug) from app_info
-    client_name = app_info.get("client") or app_info.get("name") or "unknown"
+def authorization_code_grant(
+    form: dict,
+    jwt_payload: JwtPayload,
+    jwt_signature: str,
+    app_info: ClientFact,
+) -> Response:
 
     code = (form.get("code") or "").strip()
     redirect_uri = (form.get("redirect_uri") or "").strip()
-    code_verifier = (form.get("code_verifier") or "").strip()  # PKCE (public clients)
+    code_verifier = (form.get("code_verifier") or "").strip()
+
     if not code or not redirect_uri:
+        log.info(f"Missing code or redirect_uri for client {app_info.client_id}")
         return JSONResponse(
             status_code=400,
             content={
@@ -352,8 +413,9 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
         )
 
     # Validate redirect_uri matches client registration (reuse app_info)
-    registered_uris = app_info.get("redirect_uris", [app_info.get("redirect_uri")])  # support both formats
+    registered_uris = app_info.client_redirect_urls or []
     if redirect_uri not in [uri for uri in registered_uris if uri]:
+        log.info(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
         return JSONResponse(
             status_code=400,
             content={
@@ -364,46 +426,23 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
 
     # Load authorization code record
     try:
-        rec: SuccessResponse = AuthActions.get(client="core", code=code)
-        authz = rec.data if hasattr(rec, "data") else rec
+        rec: SuccessResponse = AuthActions.get(client=jwt_payload.cnm, code=code)
+        authz = Authorizations(**rec.data)
     except Exception:
+        log.info(f"Failed to retrieve authorization code for client {app_info.client_id}: {code}")
         return JSONResponse(
             status_code=400,
             content={
                 "error": "invalid_grant",
-                "error_description": "code not found",
+                "error_description": f"code '{code}' not found",
             },
         )
 
     # Validate code record
-    code_client_id = authz.get("client_id")
-    code_user_id = authz.get("user_id")
-    code_redirect = authz.get("redirect_url")
-    code_scope = authz.get("scope") or ""
-    code_used = authz.get("used")
-    code_expires_at = authz.get("expires_at")
-    code_challenge = authz.get("code_challenge")
-    code_challenge_method = (authz.get("code_challenge_method") or "S256") if code_challenge else None
+    code_challenge_method = (authz.code_challenge_method or "S256") if authz.code_challenge else None
 
-    if code_client_id != client_id:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "invalid_grant",
-                "error_description": "code client mismatch",
-            },
-        )
-
-    if redirect_uri != code_redirect:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "invalid_grant",
-                "error_description": "redirect_uri does not match code",
-            },
-        )
-
-    if code_used:
+    if authz.used:
+        log.info(f"Authorization code already used for client {app_info.client_id}: {code}")
         return JSONResponse(
             status_code=400,
             content={
@@ -412,14 +451,43 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
             },
         )
 
+    if jwt_signature != authz.jwt_signature:
+        log.info(f"Token signature mismatch for client {app_info.client_id}: {code}")
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "invalid_grant",
+                "error_description": "token signature mismatch",
+            },
+        )
+
+    if jwt_payload.cid != authz.client_id:
+        log.info(f"Code client mismatch for client {app_info.client_id}: {code}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_grant",
+                "error_description": "code client mismatch",
+            },
+        )
+
+    if redirect_uri != authz.redirect_url:
+        log.info(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_grant",
+                "error_description": "redirect_uri does not match code",
+            },
+        )
+
     try:
-        if isinstance(code_expires_at, str):
-            expires_dt = datetime.fromisoformat(code_expires_at.replace("Z", "+00:00"))
-        elif isinstance(code_expires_at, datetime):
-            expires_dt = code_expires_at
+        if authz.expires_at is not None:
+            expires_dt = authz.expires_at
         else:
             expires_dt = None
         if not expires_dt or datetime.now(timezone.utc) > expires_dt.astimezone(timezone.utc):
+            log.info(f"Authorization code expired for client {app_info.client_id}: {code}")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -428,6 +496,7 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
                 },
             )
     except Exception:
+        log.info(f"Failed to retrieve authorization code expiry for client {app_info.client_id}: {code}")
         return JSONResponse(
             status_code=400,
             content={
@@ -437,9 +506,9 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
         )
 
     # PKCE verification for public clients
-    is_confidential = app_info.get("client_type", "") == "confidential"
-    if not is_confidential:
-        if not code_challenge:
+    if app_info.client_type and app_info.client_type == "confidential":
+        if not authz.code_challenge:
+            log.info(f"Missing code_challenge for client {app_info.client_id}: {code}")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -448,6 +517,7 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
                 },
             )
         if not code_verifier:
+            log.info(f"Missing code_verifier for client {app_info.client_id}: {code}")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -458,6 +528,7 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
         try:
             expected = _pkce_calc_challenge(code_verifier, code_challenge_method or "S256")
         except Exception:
+            log.info(f"Failed to calculate PKCE challenge for client {app_info.client_id}: {code}")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -465,7 +536,8 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
                     "error_description": "invalid code_verifier/method",
                 },
             )
-        if expected != code_challenge:
+        if expected != authz.code_challenge:
+            log.info(f"PKCE verification failed for client {app_info.client_id}: {code}")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -474,51 +546,10 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
                 },
             )
 
-    # Extract session JWT for user identity only (NO credentials)
-    authz_hdr = (request.headers.get("Authorization") or "").strip()
-    sess_token = authz_hdr.split(" ", 1)[1].strip() if authz_hdr.lower().startswith("bearer ") else request.cookies.get("sck_token")
-    if not sess_token:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "invalid_grant", "error_description": "missing session"},
-        )
-
-    # Validate this is the same JWT token used for authorization
-    current_jwt_parts = sess_token.split(".")
-    if len(current_jwt_parts) == 3:
-        current_signature = current_jwt_parts[2]
-        stored_signature = authz.get("jwt_signature")
-        if stored_signature and current_signature != stored_signature:
-            return JSONResponse(
-                status_code=401,
-                content={"error": "invalid_grant", "error_description": "token signature mismatch"},
-            )
-
-    try:
-        sess = jwt.decode(
-            sess_token,
-            JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM],
-            options={"verify_signature": True, "verify_exp": True, "verify_iat": True},
-        )
-    except jwt.InvalidTokenError:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "invalid_grant", "error_description": "invalid session"},
-        )
-
-    if sess.get("typ") != "session" or sess.get("sub") != code_user_id:
-        return JSONResponse(
-            status_code=401,
-            content={
-                "error": "invalid_grant",
-                "error_description": "session subject/type mismatch",
-            },
-        )
-
     # Get AWS credentials from database profile (NOT from session token)
-    ak, sk = get_user_access_key(code_user_id)
-    if not ak or not sk:
+    aws_credentials = get_user_access_key(jwt_payload.sub)
+    if aws_credentials is None:
+        log.info(f"Missing AWS credentials for client {app_info.client_id}: {jwt_payload.sub}")
         return JSONResponse(
             status_code=401,
             content={
@@ -530,15 +561,11 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
     # Mint the access token with STS session inside
     try:
         access_token = create_access_token_with_sts(
-            access_key=ak,
-            secret_key=sk,
-            user_id=code_user_id,
-            scope=code_scope,
-            client_id=client_id,
-            client_name=client_name,
+            aws_credentials=aws_credentials,
+            jwt_payload=jwt_payload,
         )
     except Exception as e:
-        log.error(f"Failed to create access token: {e}")
+        log.info(f"Failed to create access token: {e}")
         return JSONResponse(
             status_code=502,
             content={
@@ -549,35 +576,32 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
 
     # Update refresh token to include client info
     refresh_token = _mint_refresh_token(
-        user_id=code_user_id,
-        client_id=client_id,
-        client_name=client_name,  # Add client name
-        scope=code_scope,
+        jwt_payload=jwt_payload,
         lifetime_days=30,
     )
 
     # Mark code as used
     try:
-        AuthActions.update(
-            client=client_id,
+        AuthActions.patch(
+            client=jwt_payload.cnm,
             code=code,
             used=True,
             used_at=datetime.now(timezone.utc),
         )
     except Exception:
-        log.warning(f"Failed to mark code used: {code}")
+        log.info(f"Failed to mark code used: {code}")
 
     result = {
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": int(JWT_EXPIRATION_HOURS * 3600),
-        "scope": code_scope,
+        "scope": authz.scope or "",
         "refresh_token": refresh_token,
     }
     return JSONResponse(status_code=200, content=result)
 
 
-def refresh_token_grant(request: Request, form: dict) -> Response:
+def refresh_token_grant(form: dict, jwt_payload: JwtPayload, jwt_signature: str, app_info: ClientFact) -> Response:
 
     # RFC 6749 Section 6: refresh an access token
     refresh_token = (form.get("refresh_token") or "").strip()
@@ -590,11 +614,13 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
             },
         )
     try:
-        rt = jwt.decode(
-            refresh_token,
-            JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM],
-            options={"verify_signature": True, "verify_exp": True, "verify_iat": True},
+        rt = JwtPayload(
+            **jwt.decode(
+                refresh_token,
+                JWT_SECRET_KEY,
+                algorithms=[JWT_ALGORITHM],
+                options={"verify_signature": True, "verify_exp": True, "verify_iat": True},
+            )
         )
     except jwt.InvalidTokenError:
         return JSONResponse(
@@ -605,10 +631,7 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
             },
         )
 
-    client_id = form.get("client_id", "").strip() or rt.get("aud")
-    client_name = rt.get("client_name", "unknown")  # Get from existing refresh token
-
-    if rt.get("aud") != client_id or rt.get("typ") != "refresh":
+    if rt.cid != jwt_payload.cid or rt.typ != "refresh":
         return JSONResponse(
             status_code=400,
             content={
@@ -617,18 +640,15 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
             },
         )
 
-    user_id = rt.get("sub")
-    scope = rt.get("scope", "")
-
-    if not user_id:
+    if not jwt_payload.sub:
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "invalid refresh token"},
         )
 
     # Get fresh AWS credentials from database (NOT from refresh token)
-    ak, sk = get_user_access_key(user_id)
-    if not ak or not sk:
+    aws_credentials = get_user_access_key(jwt_payload.sub)
+    if not aws_credentials:
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "no AWS credentials"},
@@ -637,12 +657,11 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
     # Create new access token with client info
     try:
         access_token = create_access_token_with_sts(
-            access_key=ak,
-            secret_key=sk,
-            user_id=user_id,
-            scope=scope,
-            client_id=client_id,
-            client_name=client_name,
+            aws_credentials=aws_credentials,
+            user_id=jwt_payload.sub,
+            scope=rt.scp or "",
+            client_id=jwt_payload.cid,
+            client=jwt_payload.cnm,
         )
     except Exception as e:
         log.error(f"Failed to create access token: {e}")
@@ -653,10 +672,10 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
 
     # Create new refresh token with client info
     new_refresh = _mint_refresh_token(
-        user_id=user_id,
-        client_id=client_id,
-        client_name=client_name,
-        scope=scope,
+        user_id=jwt_payload.sub,
+        client_id=jwt_payload.cid,
+        client_name=jwt_payload.cnm,
+        scope=rt.scp or "",
         lifetime_days=30,
     )
 
@@ -664,7 +683,7 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": int(JWT_EXPIRATION_HOURS * 3600),
-        "scope": scope,
+        "scope": rt.scp or "",
         "refresh_token": new_refresh,
     }
     return JSONResponse(status_code=200, content=result)
@@ -716,24 +735,35 @@ async def oauth_token(request: Request) -> dict:
             },
         )
 
-    # Common client auth (used by both branches)
-    auth_header = request.headers.get("Authorization", "")
-    cid_basic, secret_basic = _parse_basic_auth(auth_header)
-    client_id = (cid_basic or (form.get("client_id") or "")).strip()
-    client_secret = (secret_basic or (form.get("client_secret") or "")).strip()
+    client_id = form.get("client_id", "").strip()
+
+    if not client_id:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "client_id required"},
+        )
+
+    jwt_payload, jwt_signature = get_authenticated_user(request)
+    if not jwt_payload or not client_id or client_id != jwt_payload.cid:
+        return JSONResponse(
+            status_code=401, content={"error": "invalid_client", "error_description": "unauthenticated request", "code": 401}
+        )
+
+    client_secret = form.get("client_secret", "").strip()
 
     if not check_rate_limit(request, "oauth_token", max_attempts=10, window_minutes=15):
         log.warning(f"Rate limit exceeded for client {client_id} on /auth/v1/token")
         return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
     # Validate client registration once
-    app_info = get_oauth_app_info(client_id) if client_id else None
+    app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
         return JSONResponse(status_code=401, content={"error": "invalid_client", "error_description": "unknown client"})
 
-    registered_secret = app_info.get("client_secret")
-    is_confidential = bool(registered_secret)
-    if is_confidential and client_secret != registered_secret:
+    is_confidential = bool(app_info.client_secret)
+    _, validated = _validate_client_credentials(client_secret, app_info)
+    if is_confidential and not validated:
+        log.info(f"Invalid client_secret for client {client_id}")
         return JSONResponse(
             status_code=401,
             content={
@@ -745,11 +775,11 @@ async def oauth_token(request: Request) -> dict:
     grant_type = (form.get("grant_type") or "").strip()
     if grant_type == "authorization_code":
 
-        return authorization_code_grant(request, form, app_info)
+        return authorization_code_grant(form, jwt_payload, jwt_signature, app_info)
 
     elif grant_type == "refresh_token":
 
-        return refresh_token_grant(request, form)
+        return refresh_token_grant(form, jwt_payload, jwt_signature, app_info)
 
     else:
         return JSONResponse(
