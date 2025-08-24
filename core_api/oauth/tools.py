@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Dict
+from typing import Optional, Dict, Tuple
 import time
 import base64
 import os
@@ -8,6 +8,12 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+from jwcrypto import jwe
+from pydantic import BaseModel, Field, model_validator
 
 import jwt
 from jwcrypto.jwe import JWE
@@ -20,38 +26,95 @@ from core_db.profile.model import UserProfile
 from core_db.profile.actions import ProfileActions
 from core_db.oauth.actions import RateLimitActions
 
-from .constants import CRED_ENC_KEY_B64, JWT_SECRET_KEY, JWT_ALGORITHM
+from .constants import CRED_ENC_KEY_B64, JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES, JWT_EXPIRATION_HOURS
 
 
 def validate_token(token: str) -> dict:
     """
-    Validate a JWT token and return the decoded payload.
-
-    This function verifies the JWT signature, expiration, and format.
-    It uses HS256 algorithm by default but respects the JWT_ALGORITHM setting.
+    Validate and decode a JWT token.
 
     Args:
-        token (str): JWT token to validate. Must be a valid JWT format.
+        token (str): JWT token string to validate
 
     Returns:
-        dict: Decoded JWT payload if valid, containing standard JWT claims
-              (sub, iat, exp, etc.) plus any custom claims. Returns error
-              dict with 'error' key if validation fails.
+        dict: Decoded JWT payload if valid
 
-    Examples:
-        >>> payload = validate_token("eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...")
-        >>> if "error" not in payload:
-        ...     user_id = payload["sub"]
+    Raises:
+        jwt.InvalidTokenError: If token is invalid, expired, or malformed
+        jwt.ExpiredSignatureError: If token has expired
+        jwt.InvalidSignatureError: If token signature is invalid
     """
-    try:
-        decoded = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        return decoded
-    except jwt.ExpiredSignatureError:
-        log.warning("JWT token has expired")
-        return {"error": "Token has expired"}
-    except jwt.InvalidTokenError:
-        log.warning("Invalid JWT token")
-        return {"error": "Invalid token"}
+    return jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+
+
+class JwtPayload(BaseModel):
+    sub: str = Field(...)
+    iat: int | None = Field(None, description="Issued at time as UNIX timestamp")
+    exp: int | None = Field(None, description="Expiration time as UNIX timestamp")
+    typ: str | None = Field(None, description="Token type")
+    iss: str | None = Field(None, description="Issuer")
+    jti: str | None = Field(None, description="Unique token identifier")
+    ttl: int | None = Field(None, description="Token time-to-live in minutes")
+    cid: str | None = Field(None, description="Client ID")
+    cnm: str | None = Field(None, description="Client Name")
+    scp: str | None = Field(None, description="Scope of the Access token")
+    enc: str | None = Field(None, description="Encrypted AWS STS temporary credentials (JWE)")
+
+    @model_validator(mode="before")
+    def validate_fields(cls, values: dict) -> dict:
+        if "typ" not in values:
+            values["typ"] = "access"
+        if "iss" not in values:
+            values["iss"] = "sck-core-api"
+
+        ttl = int(values.get("ttl", 1440))
+        if ttl > 1440:  # 24 hours max
+            ttl = 1440
+        elif ttl < 5:  # 5 minutes min
+            ttl = 5
+        values["ttl"] = ttl
+
+        now = datetime.now(timezone.utc)
+        exp = now + timedelta(minutes=ttl)
+
+        if "iat" not in values:
+            values["iat"] = int(now.timestamp())
+        if "exp" not in values:
+            values["exp"] = int(exp.timestamp())
+        if "jti" not in values:
+            values["jti"] = uuid.uuid4().hex
+
+        if "scp" not in values:
+            values["scp"] = "read"
+
+        return values
+
+    def model_dump(self, **kwargs) -> dict:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(**kwargs)
+
+
+def is_password_compliant(password: str) -> bool:
+    """
+    Check if the provided password meets complexity requirements.
+
+    Args:
+        password (str): Password string to check.
+
+    Returns:
+        bool: True if password is compliant, False otherwise.
+    """
+    if len(password) < 8:
+        return False
+    if not any(char.isdigit() for char in password):
+        return False
+    if not any(char.isupper() for char in password):
+        return False
+    if not any(char.islower() for char in password):
+        return False
+    if not any(char in "!@#$%^&*()-+" for char in password):
+        return False
+    return True
 
 
 def encrypt_credentials(aws_access_key: str | None = None, aws_secret_key: str | None = None, password: str | None = None) -> dict:
@@ -87,10 +150,10 @@ def encrypt_credentials(aws_access_key: str | None = None, aws_secret_key: str |
 
     # If password provided, hash it for verification
     if password:
-        if len(password) < 8:
+        if not is_password_compliant(password):
             raise ValueError("Password must be at least 8 characters")
         password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12))
-        envelope["password"] = password_hash.decode("utf-8")
+        envelope["Password"] = password_hash.decode("utf-8")
 
     # If AWS credentials provided, encrypt them
     if aws_access_key and aws_secret_key:
@@ -122,256 +185,186 @@ def _b64pad(v: str) -> str:
 
 
 # Global JWK for credential encryption/decryption
-_CRED_JWK = None
+def get_encryption_key() -> JWK | None:
 
-if CRED_ENC_KEY_B64:
+    if not CRED_ENC_KEY_B64:
+        log.warning("CRED_ENC_KEY not configured - cannot encrypt/decrypt credentials")
+        return None
+
+    key_bytes = base64.urlsafe_b64decode(_b64pad(CRED_ENC_KEY_B64))
+    l = len(key_bytes)
+    if l != 32:
+        log.error(f"CRED_ENC_KEY must be 32 bytes (base64url-decoded), got {l} bytes")
+        return None
+
     try:
-        key_bytes = base64.urlsafe_b64decode(_b64pad(CRED_ENC_KEY_B64))
-        l = len(key_bytes)
-        if l != 32:
-            raise ValueError(f"CRED_ENC_KEY must be 32 bytes (base64url-decoded), got {l} bytes")
-        _CRED_JWK = JWK(kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode())
+        return JWK(kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode())
     except Exception as e:
-        raise RuntimeError(f"Failed to initialize credential encryption key: {e}")
+        log.error(f"Failed to create JWK from CRED_ENC_KEY: {e}")
+        return None
 
 
-def encrypt_aws_credentials(aws_access_key: str, aws_access_secret) -> None | Dict[str, str]:
+def encrypt_aws_credentials(aws_access_key: str, aws_secret_key: str) -> None | Dict[str, str]:
+    """
+    Encrypt AWS credentials using JWE.
 
-    if not aws_access_key or not aws_access_secret:
+    The return is a "partial" profiles dict containing the encrypted AWS credentials.
+
+    Example:
+        {
+            "AwsCredentials": "jwe-encrypted-credentials",
+            "Encryption": "jwe"
+        }
+
+        You can use this value to insert into the user profile "Credentials" field.
+
+    Example:
+
+        This is a full example of a user profile with encrypted credentials:
+        {
+            "Credentials": {
+                "Password": "bcrypt-hash",
+                "AwsCredentials": "jwe-encrypted-credentials",
+                "Encryption": "jwe"
+            }
+        }
+
+    Args:
+        aws_access_key (str): AWS access key ID
+        aws_secret_key (str): AWS secret access key
+
+    Returns:
+        dict: Encrypted AWS credentials in a partial Profiles dict or None if encryption fails
+
+    """
+    if not aws_access_key or not aws_secret_key:
         return None
 
     credentials = {
         "AccessKeyId": aws_access_key,
-        "SecretAccessKey": aws_access_secret,
+        "SecretAccessKey": aws_secret_key,
     }
 
     # We may be saving the password only
-    return {"aws_credentials": encrypt_creds(credentials), "encryption": "jwe"}
+    return {"AwsCredentials": encrypt_creds(credentials), "Encryption": "jwe"}
 
 
-def encrypt_creds(creds: Dict) -> str:
+def encrypt_creds(credentials: dict) -> str:
     """
-    Encrypt AWS STS credentials using JWE with AES-256-GCM.
-
-    This function encrypts AWS credentials (typically temporary STS tokens)
-    for secure transmission in JWT tokens. Uses JWE with direct key agreement
-    and AES-256-GCM authenticated encryption.
+    Encrypt credentials dictionary using JWE (JSON Web Encryption).
 
     Args:
-        creds (dict): AWS STS credential fields to encrypt. Should contain:
-                     - AccessKeyId (str): Temporary access key
-                     - SecretAccessKey (str): Temporary secret key
-                     - SessionToken (str): STS session token
-                     - Expiration (str, optional): Token expiration time
+        credentials (dict): Dictionary containing sensitive credential data
 
     Returns:
-        str: Compact JWE string containing the encrypted credentials.
-             Format: header.encrypted_key.iv.ciphertext.tag
+        str: JWE-encrypted string of the credentials
 
     Raises:
-        RuntimeError: If CRED_ENC_KEY not properly configured
-        Exception: If JWE encryption fails
-
-    Security:
-        - AES-256-GCM provides confidentiality and authenticity
-        - Direct key agreement (no key wrapping overhead)
-        - Compact serialization for efficient transmission
-        - Server-controlled encryption key
-
-    Examples:
-        >>> sts_creds = {
-        ...     "AccessKeyId": "ASIA...",
-        ...     "SecretAccessKey": "temp_secret...",
-        ...     "SessionToken": "token...",
-        ...     "Expiration": "2023-01-01T12:00:00Z"
-        ... }
-        >>> jwe_string = encrypt_creds(sts_creds)
-        >>> # Include jwe_string in JWT token
+        ValueError: If credentials cannot be serialized or encrypted
+        Exception: If encryption key is invalid or missing
     """
-    if not _CRED_JWK:
-        raise RuntimeError("CRED_ENC_KEY not configured - cannot encrypt credentials")
+    enc_key = get_encryption_key()
 
-    if not creds or not isinstance(creds, dict):
-        raise ValueError("Credentials must be a non-empty dictionary")
+    if not enc_key:
+        raise RuntimeError("Encryption key not available")
+
+    cred_json = json.dumps(credentials)
+    jwe_creds = JWE(cred_json.encode("utf-8"), alg="dir", enc="A256GCM")
+    jwe_creds.add_recipient(enc_key)
+
+    return jwe_creds.serialize(compact=True)
+
+
+def decrypt_creds(encrypted_credentials: str) -> dict:
+    """
+    Decrypt JWE-encrypted credentials back to dictionary.
+
+    Args:
+        encrypted_credentials (str): JWE-encrypted credential string
+
+    Returns:
+        dict: Decrypted credentials dictionary
+
+    Raises:
+        ValueError: If encrypted string is malformed or cannot be decrypted
+        Exception: If decryption key is invalid
+    """
+    enc_key = get_encryption_key()
+
+    if not enc_key:
+        raise RuntimeError("Decryption key not available")
 
     try:
-        jwe = JWE(
-            plaintext=json.dumps(creds, separators=(",", ":")).encode("utf-8"),
-            protected={"alg": "dir", "enc": "A256GCM"},
-        )
-        jwe.add_recipient(_CRED_JWK)
-        return jwe.serialize(compact=True)
+        jwe_creds = JWE()
+        jwe_creds.deserialize(encrypted_credentials)
+        jwe_creds.decrypt(enc_key)
+        return json.loads(jwe_creds.payload.decode("utf-8"))
     except Exception as e:
-        log.error(f"JWE encryption failed: {e}")
-        raise RuntimeError(f"Failed to encrypt credentials: {e}")
+        log.error(f"Failed to decrypt credentials: {e}")
+        raise ValueError("Failed to decrypt credentials")
 
 
-def decrypt_creds(enc: str) -> dict:
+def get_user_access_key(user_id: str, password: Optional[str] = None) -> dict:
     """
-    Decrypt a compact JWE string and return the AWS STS credential dict.
+    Load and decrypt user's AWS credentials from database profile.
 
-    This function decrypts JWE-encrypted AWS credentials using the server's
-    encryption key. Typically used to extract temporary STS credentials
-    from JWT tokens.
+    Retrieves user profile, validates password if provided, and extracts
+    AWS access key and secret key from encrypted credentials envelope.
 
     Args:
-        enc (str): Compact JWE string produced by encrypt_creds().
-                  Must be in format: header.encrypted_key.iv.ciphertext.tag
+        user_id (str): User identifier to lookup credentials for
+        password (str, optional): User password for validation. If None, skips password check.
 
     Returns:
-        dict: Decrypted AWS STS credential fields containing:
-              - AccessKeyId (str): Temporary access key
-              - SecretAccessKey (str): Temporary secret key
-              - SessionToken (str): STS session token
-              - Expiration (str, optional): Token expiration time
+        dict: Dictionary containing AWS access key and secret key
 
     Raises:
-        RuntimeError: If CRED_ENC_KEY not configured or decryption fails
-        ValueError: If JWE format is invalid
-
-    Security:
-        - Verifies JWE authenticity and integrity
-        - Only server with correct key can decrypt
-        - Protects against tampering and forgery
-
-    Examples:
-        >>> jwe_string = "eyJhbGci..."  # From JWT token
-        >>> creds = decrypt_creds(jwe_string)
-        >>> access_key = creds["AccessKeyId"]
-        >>> secret_key = creds["SecretAccessKey"]
-        >>> session_token = creds["SessionToken"]
+        ValueError: If password validation fails or credentials are malformed
+        Exception: If profile lookup fails or decryption fails
     """
-    if not _CRED_JWK:
-        raise RuntimeError("CRED_ENC_KEY not configured - cannot decrypt credentials")
-
-    if not enc or not isinstance(enc, str):
-        raise ValueError("Encrypted credentials must be a non-empty string")
-
     try:
-        jwe = JWE()
-        jwe.deserialize(enc, key=_CRED_JWK)
-        return json.loads(jwe.payload.decode("utf-8"))
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Invalid JSON in decrypted credentials: {e}")
-    except Exception as e:
-        log.error(f"JWE decryption failed: {e}")
-        raise RuntimeError(f"Failed to decrypt credentials: {e}")
+        if not user_id:
+            raise ValueError("User ID is required for validation.")
 
+        response: SuccessResponse = ProfileActions.get(client="core", user_id=user_id, profile_name="default")
+        profile = UserProfile(**response.data)
 
-def decrypt_credentials(env: Dict, password: str = None) -> dict:
-    """
-    Decrypt AWS credentials from encrypted envelope stored in database.
+        if not profile.credentials:
+            raise ValueError("No credentials envelope found")
 
-    This function handles decryption of long-term AWS credentials stored
-    in the database. It verifies passwords for regular users and decrypts
-    the JWE-encrypted credential payload.
+        credentials = profile.credentials
 
-    Args:
-        env (dict): Stored credential envelope from encrypt_credentials() containing:
-                   - encryption (str): Should be "jwe"
-                   - aws_credentials (str): JWE-encrypted credential string
-                   - password (str, optional): bcrypt hash for verification
-                   - created_at (str): Creation timestamp
-        password (str, optional): User password for verification. Required if
-                                 envelope contains password hash.
+        if password:
+            stored_hash = credentials.get("Password") or credentials.get("password")
+            if not stored_hash or not bcrypt.checkpw(password.encode("utf-8"), stored_hash):
+                raise ValueError("Password validation failed. Bad password.")
 
-    Returns:
-        dict: Decrypted AWS credentials containing:
-              - AccessKeyId (str): AWS access key ID
-              - SecretAccessKey (str): AWS secret access key
-              - Region (str, optional): AWS region
-
-    Raises:
-        ValueError: If password verification fails or envelope is malformed
-        RuntimeError: If credential decryption fails
-
-    Security:
-        - Verifies bcrypt password hash before decryption
-        - Constant-time password comparison via bcrypt
-        - JWE provides authenticated encryption of credentials
-        - Prevents unauthorized access to stored credentials
-
-    Examples:
-        >>> # For regular user
-        >>> envelope = {...}  # From database
-        >>> creds = decrypt_credentials(envelope, "user_password")
-        >>>
-        >>> # For SSO user (no password)
-        >>> creds = decrypt_credentials(envelope)
-    """
-    if not env or not isinstance(env, dict):
-        raise ValueError("Credential envelope must be a non-empty dictionary")
-
-    try:
-        # If envelope has password hash, verify it
-        if "password" in env and password:
-            stored_hash = env["password"].encode("utf-8")
-            if not bcrypt.checkpw(password.encode("utf-8"), stored_hash):
-                raise ValueError("Invalid password")
-        elif "password" in env and not password:
-            raise ValueError("Password required for this credential")
-
-        # Decrypt using server key (JWE)
-        jwe_creds = env.get("aws_credentials")
+        jwe_creds = credentials.get("AwsCredentials") or credentials.get("aws_credentials")
         if not jwe_creds:
             raise ValueError("No credentials found in envelope")
 
         return decrypt_creds(jwe_creds)
 
-    except ValueError:
-        raise  # Re-raise ValueError as-is
-    except Exception as e:
-        log.error(f"Credential decryption failed for envelope: {e}")
-        raise RuntimeError(f"Credential decryption failed: {e}")
-
-
-def get_user_access_key(user_id: str, password: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Load and decrypt user's AWS credentials from database.
-
-    Returns (None, None) if user exists but has no AWS credentials yet.
-    This is normal for newly created users who haven't added AWS keys.
-    """
-    try:
-        response: SuccessResponse = ProfileActions.get(user_id=user_id, profile_name="default")
-        profile = UserProfile(**response.data)
-
-        if not profile.credentials:
-            log.debug(f"No credentials envelope found for user {user_id}")
-            return None, None
-
-        # Handle envelope format
-        if isinstance(profile.credentials, dict):
-            # Check if envelope has AWS credentials
-            if "aws_credentials" not in profile.credentials:
-                log.debug(f"No AWS credentials in envelope for user {user_id}")
-                return None, None
-
-            # Decrypt AWS credentials
-            creds = decrypt_credentials(profile.credentials, password)
-            return creds.get("AccessKeyId"), creds.get("SecretAccessKey")
-        else:
-            log.debug(f"Unsupported credential format for user {user_id}")
-            return None, None
-
     except Exception as e:
         log.debug(f"Error retrieving credentials for user {user_id}: {e}")
-        return None, None
+        raise
 
 
-def create_basic_session_jwt(user_id: str, minutes: int | None = None) -> str:
+def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, minutes: int = SESSION_JWT_MINUTES) -> str:
     """
-    Create a basic session JWT token for user identity only.
+    Create a basic session JWT token for user authentication with client context.
 
-    This token contains NO AWS credentials and is only used for OAuth flows
-    to identify the authenticated user during authorize/token exchanges.
+    This token contains only user identity and client context - NO AWS credentials.
+    Used for session management and OAuth flows before final token issuance.
 
     Args:
-        user_id (str): User identifier (subject claim in JWT).
-        minutes (int | None, optional): Token lifetime in minutes. Defaults to 30.
+        client_id (str): OAuth client ID
+        client_name (str): Client name/slug for data operations
+        user_id (str): User identifier (subject claim)
+        minutes (int): Token validity in minutes. Defaults to SESSION_JWT_MINUTES.
 
     Returns:
-        str: JWT token string containing only user identity claims.
+        str: JWT session token with client context
 
     JWT Claims:
         - sub: User ID
@@ -386,95 +379,97 @@ def create_basic_session_jwt(user_id: str, minutes: int | None = None) -> str:
         >>> session_token = create_basic_session_jwt("user@example.com", 30)
         >>> # Token contains only user identity for OAuth flows
     """
-    ttl = minutes if isinstance(minutes, int) and minutes > 0 else int(os.getenv("SESSION_JWT_MINUTES", "30"))
+    payload = JwtPayload(
+        sub=user_id,
+        cid=client_id,
+        cnm=client_name,
+        ttl=minutes,
+    ).model_dump()
 
-    # Enforce reasonable session token limits
-    if ttl > 1440:  # 24 hours max
-        ttl = 1440
-    elif ttl < 5:  # 5 minutes min
-        ttl = 5
-
-    now = datetime.now(timezone.utc)
-    exp = now + timedelta(minutes=ttl)
-
-    payload = {
-        "sub": user_id,
-        "typ": "session",
-        "iss": "sck-core-api",
-        "iat": int(now.timestamp()),
-        "exp": int(exp.timestamp()),
-        "jti": uuid.uuid4().hex,
-        # NO AWS credentials - this is identity-only token
-    }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
-def create_session_jwt(user_id: str, cred_jwe: str, minutes: int | None = None) -> str:
+def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str, client_id: str, client_name: str) -> str:
     """
-    Create a short-lived session JWT token containing encrypted AWS credentials.
+    Create OAuth access token with embedded STS temporary credentials and client context.
 
-    This function creates JWT tokens for user sessions, typically containing
-    encrypted long-term AWS credentials that can be exchanged for temporary
-    STS tokens. Used for maintaining user sessions across requests.
+    Takes user's long-term AWS credentials, exchanges them for temporary STS credentials,
+    then embeds the encrypted STS credentials and client context in a JWT access token.
 
     Args:
-        user_id (str): User identifier (subject claim in JWT).
-        cred_jwe (str): JWE-encrypted AWS credentials string.
-        minutes (int | None, optional): Token lifetime in minutes. Defaults to
-                                       SESSION_JWT_MINUTES env var or 30 minutes.
+        aws_credentials (dict): User's long-term AWS credentials
+        user_id (str): User identifier (subject claim)
+        scope (str): OAuth scope string
+        client_id (str): OAuth client ID for context
+        client_name (str): Client name/slug for data operations
 
     Returns:
-        str: JWT token string containing session claims and encrypted credentials.
+        str: JWT access token with encrypted STS credentials and client context
 
     Raises:
-        Various JWT encoding exceptions if token creation fails.
-
-    Security:
-        - Short-lived tokens (30 minutes default)
-        - Credentials double-encrypted (JWE + JWT signing)
-        - Unique JTI for token tracking/revocation
-        - Server-controlled token lifetime
+        ValueError: If user has no AWS credentials configured
+        RuntimeError: If STS token generation fails
+        BotoCoreError: If AWS STS service call fails
+        ClientError: If AWS credentials are invalid
 
     JWT Claims:
-        - sub: User ID
-        - typ: "session"
-        - iss: "sck-core-api"
-        - iat: Issued at timestamp
-        - exp: Expiration timestamp
-        - jti: Unique token ID
-        - cred_jwe: Encrypted AWS credentials
+        - sub: User ID, typ: "access_token", iss: "sck-core-api"
+        - iat/exp: Timestamps, jti: Unique token ID, scope: OAuth scope
+        - client_id: OAuth client identifier, client_name: Client slug for data operations
+        - aws_credentials: Encrypted STS credentials (JWE)
 
-    Examples:
-        >>> cred_jwe = encrypt_creds(aws_credentials)
-        >>> session_token = create_session_jwt("user@example.com", cred_jwe, 60)
-        >>> # Return session_token to client
+    Example:
+        >>> aws_creds = {"AccessKeyId": "AKIA...", "SecretAccessKey": "secret..."}
+        >>> token = create_access_token_with_sts(
+        ...     aws_creds, "user@example.com", "read write", "myapp", "core"
+        ... )
+        >>> # Token contains encrypted STS credentials for API access
     """
-    ttl = minutes if isinstance(minutes, int) and minutes > 0 else int(os.getenv("SESSION_JWT_MINUTES", "30"))
 
-    # Enforce reasonable session token limits
-    if ttl > 1440:  # 24 hours max
-        ttl = 1440
-    elif ttl < 5:  # 5 minutes min
-        ttl = 5
+    # Use provided duration or default
+    duration_seconds = 3600 * JWT_EXPIRATION_HOURS
 
-    now = datetime.now(timezone.utc)
-    exp = now + timedelta(minutes=ttl)
-
-    payload = {
-        "sub": user_id,
-        "typ": "session",
-        "iss": "sck-core-api",
-        "iat": int(now.timestamp()),
-        "exp": int(exp.timestamp()),
-        "jti": uuid.uuid4().hex,
-        # JWE of long-term access keys (server-only decrypt)
-        "cred_jwe": cred_jwe,
+    sts_credentials = {
+        "AccessKeyId": "",
+        "SecretAccessKey": "",
+        "SessionToken": "",
+        "Expiration": "",
     }
+
+    mfa_device_id = None
+    mfa_token_code = None
+
+    try:
+        # Get the AWS credentials (stored on your user profile)
+        access_key = aws_credentials.get("AccessKeyId")
+        secret_key = aws_credentials.get("SecretAccessKey")
+
+        # Create STS client and get temporary credentials for the API
+        sts_client = boto3.client("sts", aws_access_key_id=access_key, aws_secret_access_key=secret_key)
+        result = sts_client.get_session_token(
+            DurationSeconds=duration_seconds, SerialNumber=mfa_device_id, TokenCode=mfa_token_code
+        )
+
+        if "Credentials" in result:
+            sts_credentials = result["Credentials"]
+
+    except (BotoCoreError, ClientError) as e:
+        log.warn(f"Error retrieving STS credentials for user {user_id}: {e}")
+
+    creds_enc = encrypt_creds(sts_credentials)
+
+    minutes = 60 * JWT_EXPIRATION_HOURS
+
+    payload = JwtPayload(
+        sub=user_id,
+        cid=client_id,
+        cnm=client_name,
+        enc=creds_enc,
+        ttl=minutes,
+        scp=scope,
+    ).model_dump()
+
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-
-def create_access_token_with_sts(user_id, scope, client_id, client_name) -> str:
-    pass
 
 
 def get_client_ip(request: Request) -> str:
@@ -713,24 +708,41 @@ def cookie_opts() -> dict:
     return opts
 
 
-def get_authenticated_user(request: Request) -> Tuple[bool, Optional[str]]:
-    """Extract the authenticated user from Authorization or cookie.
+def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, str | None]:
+    """
+    Extract the authenticated user and client context from JWT token.
+
+    Checks Authorization header or sck_token cookie for valid JWT,
+    then extracts user identity and client information.
 
     Auth sources (in order):
         - Authorization: Bearer <JWT>
         - sck_token cookie
 
+    Args:
+        request (Request): FastAPI request object
+
     Returns:
-        Tuple[bool, Optional[str]]: (True, sub) if a valid JWT is found; otherwise (False, None).
+        Tuple[str | None, str | None, str | None]: (user_id, client_id, client_name)
+                                                   Returns (None, None, None) if no valid token found
+
+    Example:
+        >>> user_id, client_id, client_name = get_authenticated_user(request)
+        >>> if user_id:
+        ...     # User is authenticated, use client_name for data operations
+        ...     ProfileActions.get(client=client_name or "core", user_id=user_id, profile_name="default")
     """
+    # Get the token from either the "authorization" header or the "sck_token" cookie
     authz = (request.headers.get("authorization") or "").strip()
     token = None
     if authz.lower().startswith("bearer "):
         token = authz.split(" ", 1)[1].strip()
     elif "sck_token" in request.cookies:
         token = request.cookies["sck_token"]
+
     if not token:
-        return False, None
+        return None, None, None
+
     try:
         payload = jwt.decode(
             token,
@@ -742,7 +754,14 @@ def get_authenticated_user(request: Request) -> Tuple[bool, Optional[str]]:
                 "verify_iat": True,
             },
         )
-        # Optional: enforce typ/access on Bearer usage, etc.
-        return True, payload.get("sub")
+
+        user_id = payload.get("sub")
+        client_id = payload.get("cid")
+        client_name = payload.get("cnm")
+
+        return user_id, client_id, client_name
+
     except jwt.InvalidTokenError:
-        return False, None
+        log.warning("Invalid JWT token in request")
+
+    return None, None, None
