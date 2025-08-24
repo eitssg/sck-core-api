@@ -1,10 +1,14 @@
 from typing import Set, Optional, Tuple
+
 import hashlib
 import base64
 import uuid
+import secrets
+
 from urllib.parse import urlencode
+
 from datetime import datetime, timedelta, timezone
-from core_db.registry import ClientFact
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse, JSONResponse
 
@@ -12,6 +16,7 @@ import jwt
 
 import core_logging as log
 
+from core_db.registry import ClientFact
 from core_db.oauth import AuthActions, Authorizations
 from core_db.exceptions import BadRequestException, ConflictException, UnknownException
 from core_db.response import SuccessResponse
