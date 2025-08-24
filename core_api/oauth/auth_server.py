@@ -1,6 +1,7 @@
+from typing import Set, Optional, Tuple
+
 import hashlib
 import secrets
-from typing import Set, Optional, Tuple
 import uuid
 
 import base64
@@ -16,14 +17,8 @@ import core_logging as log
 from core_db.oauth.actions import AuthActions
 from core_db.exceptions import BadRequestException, ConflictException, UnknownException
 from core_db.response import SuccessResponse
-from core_db.registry.client.actions import ClientActions
 
-from .tools import (
-    check_rate_limit,
-    get_user_access_key,
-    get_authenticated_user,
-    create_access_token_with_sts,
-)
+from .tools import check_rate_limit, get_user_access_key, get_authenticated_user, create_access_token_with_sts, get_oauth_app_info
 
 from .constants import (
     JWT_SECRET_KEY,
@@ -36,17 +31,17 @@ from .constants import (
 oauth_router = APIRouter()
 
 
-def _mint_refresh_token(user_id: str, client_id: str, scope: str, lifetime_days: int = 30) -> str:
+def _mint_refresh_token(user_id: str, client_id: str, scope: str, lifetime_days: int = 30, client_name: str = None) -> str:
     """Mint a refresh token with user identity only - NO AWS credentials."""
     payload = {
         "sub": user_id,
+        "cnm": client_name,
         "aud": client_id,
         "iat": datetime.now(tz=timezone.utc),
         "exp": datetime.now(tz=timezone.utc) + timedelta(days=lifetime_days),
         "typ": "refresh",
         "scope": scope,
         "nbf": int((datetime.now(timezone.utc) + timedelta(seconds=REFRESH_MIN_INTERVAL_SECONDS)).timestamp()),
-        # NO AWS credentials - refresh tokens only identify the user
     }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
@@ -60,24 +55,6 @@ def _pkce_calc_challenge(verifier: str, method: str = "S256") -> str:
         raise ValueError("unsupported code_challenge_method")
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
-
-
-def _get_oauth_app_info(client_id: str) -> dict | None:
-    """Return client registration for a given client_id, or None if unregistered.
-
-    Args:
-        client_id (str): OAuth client identifier.
-
-    Returns:
-        Optional[dict]: Registration info with redirect_uri if known; else None.
-    """
-    try:
-        response = ClientActions.get(client_id=client_id)
-        log.debug(f"OAuth app info for client {client_id}:", details=response.data)
-        return response.data
-    except Exception as e:
-        log.error(f"Failed to get OAuth app info for client {client_id}: {e}")
-        return None
 
 
 def _parse_basic_auth(
@@ -306,6 +283,22 @@ async def oauth_authorize(request: Request) -> Response:
                 "error_description": "Failed to generate authorization code",
             },
         )
+
+    # Extract JWT signature for tracking the same token
+    session_token = None
+    authz_hdr = (request.headers.get("Authorization") or "").strip()
+    if authz_hdr.lower().startswith("bearer "):
+        session_token = authz_hdr.split(" ", 1)[1].strip()
+    elif "sck_token" in request.cookies:
+        session_token = request.cookies["sck_token"]
+
+    jwt_signature = None
+    if session_token:
+        # Extract signature part of JWT (last part after final dot)
+        jwt_parts = session_token.split(".")
+        if len(jwt_parts) == 3:
+            jwt_signature = jwt_parts[2]  # signature part
+
     client = app_info.get("Client")
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     authorization = {
@@ -319,6 +312,7 @@ async def oauth_authorize(request: Request) -> Response:
         "used": False,
         "code_challenge": code_challenge,
         "code_challenge_method": code_challenge_method if code_challenge else None,
+        "jwt_signature": jwt_signature,
     }
     try:
         resonse: SuccessResponse = AuthActions.create(**authorization)
@@ -341,11 +335,6 @@ async def oauth_authorize(request: Request) -> Response:
 def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Response:
 
     client_id = form.get("client_id", "").strip()
-
-    # Get client info including the client name/slug
-    app_info = _get_oauth_app_info(client_id)
-    if not app_info:
-        return JSONResponse(status_code=401, content={"error": "invalid_client", "error_description": "unknown client"})
 
     # Extract client name (slug) from app_info
     client_name = app_info.get("client") or app_info.get("name") or "unknown"
@@ -494,6 +483,17 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
             content={"error": "invalid_grant", "error_description": "missing session"},
         )
 
+    # Validate this is the same JWT token used for authorization
+    current_jwt_parts = sess_token.split(".")
+    if len(current_jwt_parts) == 3:
+        current_signature = current_jwt_parts[2]
+        stored_signature = authz.get("jwt_signature")
+        if stored_signature and current_signature != stored_signature:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "invalid_grant", "error_description": "token signature mismatch"},
+            )
+
     try:
         sess = jwt.decode(
             sess_token,
@@ -530,8 +530,8 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
     # Mint the access token with STS session inside
     try:
         access_token = create_access_token_with_sts(
-            ak,
-            sk,
+            access_key=ak,
+            secret_key=sk,
             user_id=code_user_id,
             scope=code_scope,
             client_id=client_id,
@@ -567,13 +567,14 @@ def authorization_code_grant(request: Request, form: dict, app_info: dict) -> Re
     except Exception:
         log.warning(f"Failed to mark code used: {code}")
 
-    return {
+    result = {
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": int(JWT_EXPIRATION_HOURS * 3600),
         "scope": code_scope,
         "refresh_token": refresh_token,
     }
+    return JSONResponse(status_code=200, content=result)
 
 
 def refresh_token_grant(request: Request, form: dict) -> Response:
@@ -659,13 +660,14 @@ def refresh_token_grant(request: Request, form: dict) -> Response:
         lifetime_days=30,
     )
 
-    return {
+    result = {
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": int(JWT_EXPIRATION_HOURS * 3600),
         "scope": scope,
         "refresh_token": new_refresh,
     }
+    return JSONResponse(status_code=200, content=result)
 
 
 @oauth_router.post("/v1/token")
@@ -725,12 +727,9 @@ async def oauth_token(request: Request) -> dict:
         return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
 
     # Validate client registration once
-    app_info = _get_oauth_app_info(client_id) if client_id else None
+    app_info = get_oauth_app_info(client_id) if client_id else None
     if not app_info:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "invalid_client", "error_description": "unknown client"},
-        )
+        return JSONResponse(status_code=401, content={"error": "invalid_client", "error_description": "unknown client"})
 
     registered_secret = app_info.get("client_secret")
     is_confidential = bool(registered_secret)
@@ -746,11 +745,11 @@ async def oauth_token(request: Request) -> dict:
     grant_type = (form.get("grant_type") or "").strip()
     if grant_type == "authorization_code":
 
-        return await authorization_code_grant(request, form, app_info)
+        return authorization_code_grant(request, form, app_info)
 
     elif grant_type == "refresh_token":
 
-        return await refresh_token_grant(request, form)
+        return refresh_token_grant(request, form)
 
     else:
         return JSONResponse(

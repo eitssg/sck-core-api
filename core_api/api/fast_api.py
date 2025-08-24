@@ -39,10 +39,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from ..oauth.oauth_server import oauth_router
+from ..oauth.auth_server import oauth_router
 from ..oauth.client_management import client_router
-from ..oauth.direct_auth import user_router
-from ..oauth.github_sso import github_router
+from ..oauth.auth_direct import user_router
+from ..oauth.auth_github import github_router
 from .apis import get_api_router
 from .proxy_headers import SimpleProxyHeadersMiddleware
 

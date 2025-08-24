@@ -357,7 +357,10 @@ def encrypt_creds(credentials: dict) -> str:
         raise RuntimeError("Encryption key not available")
 
     cred_json = json.dumps(credentials)
-    jwe_creds = JWE(cred_json.encode("utf-8"), alg="dir", enc="A256GCM")
+
+    # Create JWE with protected header and payload
+    protected = {"alg": "dir", "enc": "A256GCM"}
+    jwe_creds = JWE(cred_json, protected)
     jwe_creds.add_recipient(enc_key)
 
     return jwe_creds.serialize(compact=True)
