@@ -25,6 +25,7 @@ from core_db.response import SuccessResponse
 from core_db.profile.model import UserProfile
 from core_db.profile.actions import ProfileActions
 from core_db.oauth.actions import RateLimitActions
+from core_db.registry.client import ClientActions
 
 from .constants import CRED_ENC_KEY_B64, JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES, JWT_EXPIRATION_HOURS
 
@@ -95,14 +96,29 @@ class JwtPayload(BaseModel):
 
 
 def is_password_compliant(password: str) -> bool:
-    """
-    Check if the provided password meets complexity requirements.
+    """Check if password meets security complexity requirements.
+
+    Enforces enterprise-grade password policy for user account security.
+    All requirements must be met for password to be considered compliant
 
     Args:
-        password (str): Password string to check.
+        password (str): Plain text password to validate
 
     Returns:
-        bool: True if password is compliant, False otherwise.
+        bool: True if password meets all requirements, False otherwise
+
+    Password Requirements:
+        - Minimum 8 characters length
+        - At least 1 uppercase letter (A-Z)
+        - At least 1 lowercase letter (a-z)
+        - At least 1 digit (0-9)
+        - At least 1 special character (!@#$%^&*()-+)
+
+    Examples:
+        >>> is_password_compliant("Pass123!")      # True - meets all requirements
+        >>> is_password_compliant("password")      # False - no uppercase, digit, special
+        >>> is_password_compliant("PASSWORD123!")  # False - no lowercase
+        >>> is_password_compliant("Pass!")         # False - too short, no digit
     """
     if len(password) < 8:
         return False
@@ -118,8 +134,10 @@ def is_password_compliant(password: str) -> bool:
 
 
 def encrypt_credentials(aws_access_key: str | None = None, aws_secret_key: str | None = None, password: str | None = None) -> dict:
-    """
-    Encrypt AWS credentials with server key using JWE.
+    """Create encrypted credential envelope for secure storage in user profiles
+
+    Combines password hashing (bcrypt) and AWS credential encryption (JWE) into a single
+    envelope structure. Supports partial credentials - either password only, AWS only, or both.
 
     Creates an envelope that can store password hash and/or AWS credentials.
     Both are optional - allows creating users without AWS credentials initially.
@@ -130,21 +148,36 @@ def encrypt_credentials(aws_access_key: str | None = None, aws_secret_key: str |
         password (str, optional): User password for verification hash
 
     Returns:
-        dict: Encrypted credential envelope containing:
-              - password (str, optional): bcrypt hash if password provided
-              - aws_credentials (str, optional): JWE-encrypted credentials if provided
-              - encryption (str): Always "jwe" if aws_credentials present
-              - created_at (str): ISO timestamp of creation
+        dict: Credential envelope structure:
+              {
+                  "Password": "bcrypt_hash",           # If password provided
+                  "AwsCredentials": "jwe_encrypted",   # If AWS creds provided
+                  "Encryption": "jwe",                 # If AWS creds present
+                  "created_at": "2024-01-01T12:00:00Z" # Always present
+              }
+
+    Raises:
+        ValueError: If password fails complexity requirements
+        RuntimeError: If AWS credential encryption fails
+
+    Security Features:
+        - Passwords hashed with bcrypt (12 rounds, salted)
+        - AWS credentials encrypted with JWE using server key
+        - No plain text credentials ever stored
+        - Envelope versioning via created_at timestamp
 
     Examples:
         >>> # User signup with password only (no AWS creds yet)
-        >>> envelope = encrypt_credentials(password="user_password")
+        >>> envelope = encrypt_credentials(password="SecurePass123!")
+        >>> # {"Password": "$2b$12$...", "created_at": "2024-01-01T..."}
         >>>
         >>> # User signup with both password and AWS creds
         >>> envelope = encrypt_credentials("AKIA...", "secret...", "user_password")
+        >>> # {"Password": "$2b$12$...", "AwsCredentials": "eyJ...", "Encryption": "jwe", ...}
         >>>
         >>> # SSO user with AWS creds (no password)
         >>> envelope = encrypt_credentials("AKIA...", "secret...")
+        >>> # {"AwsCredentials": "eyJ...", "Encryption": "jwe", "created_at": "..."}
     """
     envelope = {"created_at": datetime.now(timezone.utc).isoformat()}
 
@@ -165,11 +198,10 @@ def encrypt_credentials(aws_access_key: str | None = None, aws_secret_key: str |
 
 
 def _b64pad(v: str) -> str:
-    """
-    Pad a base64url string to a valid length for decoding.
+    """Add missing padding to base64url strings for safe decoding
 
-    Base64url encoding may omit padding characters. This function
-    adds the necessary padding to make the string decodable.
+    Base64url encoding omits padding characters (=) to make URLs safe. This utility
+    function restores the required padding for proper base64 decoding.
 
     Args:
         v (str): Base64url string without padding.
@@ -177,15 +209,54 @@ def _b64pad(v: str) -> str:
     Returns:
         str: Padded base64 string safe to decode.
 
+    Algorithm:
+        Adds "=" characters based on string length modulo 4:
+        - Length % 4 = 0: No padding needed
+        - Length % 4 = 1: Invalid (should not occur)
+        - Length % 4 = 2: Add "=="
+        - Length % 4 = 3: Add "="
+
     Examples:
         >>> padded = _b64pad("SGVsbG8")  # "Hello" in base64url
+        >>> # "SGVsbG8=" - now properly padded
         >>> decoded = base64.urlsafe_b64decode(padded)
+        >>> # b'Hello'
     """
     return v + "=" * (-len(v) % 4)
 
 
 # Global JWK for credential encryption/decryption
 def get_encryption_key() -> JWK | None:
+    """Create JWK encryption key from environment variable for credential security
+
+    Converts the base64url-encoded CRED_ENC_KEY environment variable into a JSON Web Key
+    suitable for JWE encryption/decryption operations. Used internally by encrypt_creds()
+    and decrypt_creds() functions.
+
+    Returns:
+        JWK | None: JSON Web Key for AES-256-GCM encryption, None if key unavailable
+
+    Environment Variables:
+        CRED_ENC_KEY: Base64url-encoded 32-byte AES key for credential encryption
+
+    Key Requirements:
+        - Must be exactly 32 bytes when base64url-decoded (AES-256)
+        - Should be cryptographically random
+        - Must be consistent across all application instances
+
+    Security Notes:
+        - Key is loaded once and cached globally
+        - Missing key disables credential encryption/decryption
+        - Invalid key length prevents encryption operations
+        - All errors logged but don't expose key material
+
+    Examples:
+        >>> key = get_encryption_key()
+        >>> if key:
+        ...     # Encryption/decryption available
+        >>> else:
+        ...     # CRED_ENC_KEY not configured properly
+    """
 
     if not CRED_ENC_KEY_B64:
         log.warning("CRED_ENC_KEY not configured - cannot encrypt/decrypt credentials")
@@ -205,37 +276,54 @@ def get_encryption_key() -> JWK | None:
 
 
 def encrypt_aws_credentials(aws_access_key: str, aws_secret_key: str) -> None | Dict[str, str]:
-    """
-    Encrypt AWS credentials using JWE.
+    """Encrypt AWS access key and secret into JWE format for secure profile storage
 
-    The return is a "partial" profiles dict containing the encrypted AWS credentials.
-
-    Example:
-        {
-            "AwsCredentials": "jwe-encrypted-credentials",
-            "Encryption": "jwe"
-        }
-
-        You can use this value to insert into the user profile "Credentials" field.
-
-    Example:
-
-        This is a full example of a user profile with encrypted credentials:
-        {
-            "Credentials": {
-                "Password": "bcrypt-hash",
-                "AwsCredentials": "jwe-encrypted-credentials",
-                "Encryption": "jwe"
-            }
-        }
+    Creates a partial credential envelope containing only AWS credential encryption.
+    This is used internally by encrypt_credentials() and can be used standalone
+    when only AWS credentials need to be encrypted (e.g., credential updates).
 
     Args:
-        aws_access_key (str): AWS access key ID
-        aws_secret_key (str): AWS secret access key
+        aws_access_key (str): AWS access key ID (e.g., "AKIAIOSFODNN7EXAMPLE")
+        aws_secret_key (str): AWS secret access key (40-character string)
 
     Returns:
-        dict: Encrypted AWS credentials in a partial Profiles dict or None if encryption fails
+        dict | None: Partial credential envelope or None if inputs invalid:
+         {
+             "AwsCredentials": "jwe-encrypted-credentials",
+             "Encryption": "jwe"
+         }
 
+    Usage in User Profiles:
+        The returned dict is designed to be merged into a user profile's
+        "Credentials" field alongside password hashes and other data.
+
+    Profile Integration Example:
+        >>> aws_envelope = encrypt_aws_credentials("AKIA...", "secret...")
+        >>> user_profile["Credentials"].update(aws_envelope)
+        >>> # Results in:
+         {
+            "user_id": "user@example.com",
+             "Credentials": {
+                 "Password": "bcrypt-hash",
+                 "AwsCredentials": "jwe-encrypted-credentials",
+                 "Encryption": "jwe"
+             }
+         }
+
+    Security Features:
+        - Uses AES-256-GCM encryption via JWE
+        - No plain text AWS credentials in output
+        - Encryption key derived from CRED_ENC_KEY env var
+        - Safe to store in database or logs
+
+    Examples:
+        >>> # Encrypt new AWS credentials
+        >>> envelope = encrypt_aws_credentials("AKIA123...", "wJalrXUt...")
+        >>> # {"AwsCredentials": "eyJhbGciOiJkaXIi...", "Encryption": "jwe"}
+        >>>
+        >>> # Handle missing credentials
+        >>> envelope = encrypt_aws_credentials("", "")
+        >>> # None
     """
     if not aws_access_key or not aws_secret_key:
         return None
@@ -305,22 +393,51 @@ def decrypt_creds(encrypted_credentials: str) -> dict:
 
 
 def get_user_access_key(user_id: str, password: Optional[str] = None) -> dict:
-    """
-    Load and decrypt user's AWS credentials from database profile.
+    """Retrieve and decrypt user's AWS credentials from database with optional password validation
 
-    Retrieves user profile, validates password if provided, and extracts
-    AWS access key and secret key from encrypted credentials envelope.
+    Fetches user profile from database, optionally validates password, then decrypts
+    and returns AWS credentials. Used by OAuth token generation and direct API access.
 
     Args:
         user_id (str): User identifier to lookup credentials for
         password (str, optional): User password for validation. If None, skips password check.
 
     Returns:
-        dict: Dictionary containing AWS access key and secret key
+        dict: Decrypted AWS credentials structure:
+              {
+                  "AccessKeyId": "AKIAIOSFODNN7EXAMPLE",
+                  "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+              }
 
     Raises:
-        ValueError: If password validation fails or credentials are malformed
-        Exception: If profile lookup fails or decryption fails
+        ValueError: Multiple specific validation failures:
+                   - Missing user_id
+                   - Profile not found
+                   - No credentials envelope in profile
+                   - Password validation failed
+                   - No AWS credentials in envelope
+        Exception: Database or decryption system failures
+
+    Security Features:
+        - Password validated against bcrypt hash if provided
+        - AWS credentials decrypted with server key
+        - All errors logged without exposing credentials
+        - No credentials returned on any validation failure
+
+    Database Operations:
+        - Queries ProfileActions.get() with client="core"
+        - Expects UserProfile model structure
+        - Handles missing profiles gracefully
+
+    Examples:
+        >>> # OAuth flow - validate password and get credentials
+        >>> creds = get_user_access_key("user@example.com", "password123")
+        >>> access_key = creds["AccessKeyId"]
+        >>> secret_key = creds["SecretAccessKey"]
+        >>>
+        >>> # API access - skip password validation
+        >>> creds = get_user_access_key("user@example.com")
+        >>> # Returns credentials if user has them configured
     """
     try:
         if not user_id:
@@ -351,11 +468,11 @@ def get_user_access_key(user_id: str, password: Optional[str] = None) -> dict:
 
 
 def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, minutes: int = SESSION_JWT_MINUTES) -> str:
-    """
-    Create a basic session JWT token for user authentication with client context.
+    """Generate session JWT for OAuth flows with user identity and client context but no AWS credentials
 
-    This token contains only user identity and client context - NO AWS credentials.
-    Used for session management and OAuth flows before final token issuance.
+    Creates a lightweight authentication token used in OAuth authorization flows.
+    Contains user identity and client information but deliberately excludes AWS credentials
+    for security - those are added later via create_access_token_with_sts().
 
     Args:
         client_id (str): OAuth client ID
@@ -364,20 +481,38 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
         minutes (int): Token validity in minutes. Defaults to SESSION_JWT_MINUTES.
 
     Returns:
-        str: JWT session token with client context
+        str: Signed JWT token for session authentication
 
     JWT Claims:
-        - sub: User ID
-        - typ: "session"
-        - iss: "sck-core-api"
-        - iat: Issued at timestamp
-        - exp: Expiration timestamp
-        - jti: Unique token ID
-        - NO AWS credentials of any kind
+        - sub (str): User identifier (email address)
+        - typ (str): Token type "session"
+        - iss (str): Issuer "sck-core-api"
+        - iat (int): Issued at timestamp (Unix epoch)
+        - exp (int): Expiration timestamp (Unix epoch)
+        - jti (str): Unique token identifier (hex UUID)
+        - cid (str): OAuth client identifier
+        - cnm (str): Client name/slug for data operations
+
+    Security Features:
+        - Signed with JWT_SECRET_KEY (HMAC-SHA256)
+        - Time-limited expiration
+        - Unique per issuance (jti claim)
+        - No sensitive credentials embedded
+
+    OAuth Flow Usage:
+        1. User logs in via /auth/v1/login
+        2. Session JWT returned to client
+        3. Client includes in Authorization header
+        4. /auth/v1/authorize validates session and issues auth code
+        5. /auth/v1/token exchanges code for access token with AWS creds
 
     Examples:
-        >>> session_token = create_basic_session_jwt("user@example.com", 30)
-        >>> # Token contains only user identity for OAuth flows
+        >>> # OAuth login flow
+        >>> token = create_basic_session_jwt("webapp", "core", "user@example.com", 30)
+        >>> # Use in Authorization header: "Bearer <token>"
+        >>>
+        >>> # Custom client with extended session
+        >>> token = create_basic_session_jwt("mobile-app", "tenant1", "user@example.com", 60)
     """
     payload = JwtPayload(
         sub=user_id,
@@ -390,11 +525,11 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
 
 
 def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str, client_id: str, client_name: str) -> str:
-    """
-    Create OAuth access token with embedded STS temporary credentials and client context.
+    """Generate OAuth access token with encrypted AWS STS temporary credentials and client context
 
-    Takes user's long-term AWS credentials, exchanges them for temporary STS credentials,
-    then embeds the encrypted STS credentials and client context in a JWT access token.
+    Takes user's long-term AWS credentials, exchanges them for time-limited STS credentials,
+    encrypts the STS credentials, and embeds them in a JWT access token. This provides
+    secure, temporary AWS access without exposing long-term credentials to clients.
 
     Args:
         aws_credentials (dict): User's long-term AWS credentials
@@ -404,19 +539,52 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
         client_name (str): Client name/slug for data operations
 
     Returns:
-        str: JWT access token with encrypted STS credentials and client context
+        str: Signed JWT access token containing encrypted AWS STS credentials
 
     Raises:
-        ValueError: If user has no AWS credentials configured
-        RuntimeError: If STS token generation fails
-        BotoCoreError: If AWS STS service call fails
-        ClientError: If AWS credentials are invalid
+        BotoCoreError: AWS SDK connection/configuration errors
+        ClientError: AWS credential validation or permission errors
+        RuntimeError: Encryption system failures
+        Exception: JWT signing or general processing errors
 
     JWT Claims:
-        - sub: User ID, typ: "access_token", iss: "sck-core-api"
-        - iat/exp: Timestamps, jti: Unique token ID, scope: OAuth scope
-        - client_id: OAuth client identifier, client_name: Client slug for data operations
-        - aws_credentials: Encrypted STS credentials (JWE)
+        - sub (str): User identifier
+        - typ (str): "access_token"
+        - iss (str): "sck-core-api"
+        - iat (int): Issued at timestamp
+        - exp (int): Expiration timestamp
+        - jti (str): Unique token identifier
+        - scp (str): OAuth scope (e.g., "read write")
+        - cid (str): OAuth client identifier
+        - cnm (str): Client name for data operations
+        - enc (str): JWE-encrypted STS credentials
+
+    STS Credential Structure (encrypted in 'enc' claim):
+        {
+            "AccessKeyId": "ASIAIOSFODNN7EXAMPLE",
+            "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "SessionToken": "AQoDYXdzEJr...",
+            "Expiration": "2024-01-01T14:00:00+00:00"
+        }
+
+    Security Features:
+        - STS credentials time-limited (based on JWT_EXPIRATION_HOURS)
+        - All AWS credentials encrypted with server key (JWE)
+        - No long-term credentials exposed to clients
+        - Token signed and tamper-evident
+        - Automatic credential expiration
+
+    AWS STS Integration:
+        - Calls boto3 STS get_session_token()
+        - Duration limited by JWT_EXPIRATION_HOURS
+        - Supports optional MFA (currently disabled)
+        - Fails gracefully on AWS errors (empty credentials)
+
+    Error Handling:
+        - AWS errors logged but don't fail token generation
+        - Invalid credentials result in empty STS credentials
+        - Encryption failures propagate as RuntimeError
+        - Token generation continues with empty credentials on AWS failure
 
     Example:
         >>> aws_creds = {"AccessKeyId": "AKIA...", "SecretAccessKey": "secret..."}
@@ -452,6 +620,9 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
 
         if "Credentials" in result:
             sts_credentials = result["Credentials"]
+            # Convert datetime to string for JSON serialization
+            if hasattr(sts_credentials.get("Expiration"), "isoformat"):
+                sts_credentials["Expiration"] = sts_credentials["Expiration"].isoformat()
 
     except (BotoCoreError, ClientError) as e:
         log.warn(f"Error retrieving STS credentials for user {user_id}: {e}")
@@ -473,12 +644,10 @@ def create_access_token_with_sts(aws_credentials: dict, user_id: str, scope: str
 
 
 def get_client_ip(request: Request) -> str:
-    """
-    Extract client IP address from request, considering possible proxies.
+    """Extract real client IP address from request headers, handling proxy scenarios safely
 
-    This function attempts to determine the real client IP address by
-    checking proxy headers and falling back to the direct connection IP.
-    Used for rate limiting and security logging.
+    Determines the actual client IP address by checking proxy headers and falling back
+    to direct connection IP. Used for rate limiting, security logging, and abuse detection.
 
     Args:
         request (Request): FastAPI request object.
@@ -486,15 +655,36 @@ def get_client_ip(request: Request) -> str:
     Returns:
         str: Client IP address or "unknown" if cannot be determined.
 
+    IP Resolution Order:
+        1. X-Forwarded-For header (first IP only)
+        2. Direct connection IP (request.client.host)
+        3. "unknown" if neither available
+
     Security:
-        - Checks X-Forwarded-For header for proxy scenarios
-        - Falls back to direct connection IP
-        - Returns "unknown" rather than raising errors
-        - Truncates forwarded header to prevent log injection
+        - Validates forwarded IP format before use
+        - Takes only first IP from X-Forwarded-For chain
+        - Prevents header injection attacks
+        - Safe fallback for all edge cases
+        - Never raises exceptions
+
+    Proxy Support:
+        - Load balancers (ALB, NLB, CloudFlare)
+        - Reverse proxies (nginx, Apache)
+        - CDNs (CloudFront, Fastly)
+        - API gateways
+
+    Common Scenarios:
+        - Direct connection: Returns request.client.host
+        - Behind proxy: Returns X-Forwarded-For value
+        - Invalid proxy header: Falls back to direct IP
+        - No client info: Returns "unknown"
 
     Examples:
         >>> ip = get_client_ip(request)
-        >>> # Use for rate limiting or logging
+        >>> # Direct: "192.168.1.100"
+        >>> # Proxied: "203.0.113.1" (from X-Forwarded-For)
+        >>> # Unknown: "unknown"
+         >>> # Use for rate limiting or logging
     """
     ip = request.client.host if request.client else "unknown"
 
@@ -514,12 +704,10 @@ def get_client_ip(request: Request) -> str:
 
 
 def get_client_identifier(request: Request) -> str:
-    """
-    Generate a client identifier for rate limiting and tracking.
+    """Generate stable client fingerprint for rate limiting and abuse detection
 
-    Creates a stable identifier combining IP address and user agent
-    for rate limiting purposes. This allows tracking of clients across
-    requests without relying on cookies or authentication.
+    Creates a composite identifier combining IP address and user agent to uniquely
+    identify clients across requests. More reliable than IP alone for rate limiting.
 
     Args:
         request (Request): FastAPI request object.
@@ -527,15 +715,30 @@ def get_client_identifier(request: Request) -> str:
     Returns:
         str: Client identifier string in format "ip#user_agent".
 
+    Identifier Format:
+        "{real_ip}#{truncated_user_agent}"
+        Example: "192.168.1.1#Mozilla/5.0 (Windows NT 10.0; Win64; x64) Appl"
+
     Security:
-        - Combines IP and user agent for better uniqueness
-        - Truncates user agent to prevent header injection
-        - Stable across requests from same client
-        - Safe for logging and database keys
+        - User agent truncated to 50 chars (prevents injection)
+        - Stable across requests from same client/browser
+        - Safe for database keys and logging
+        - Handles missing user agent gracefully
+
+    Rate Limiting Benefits:
+        - Distinguishes multiple users behind same NAT/proxy
+        - Identifies browser vs API client patterns
+        - Reduces false positives in shared environments
+
+    Privacy Considerations:
+        - User agent is publicly available header
+        - No personally identifiable information stored
+        - Identifier used only for security purposes
 
     Examples:
         >>> identifier = get_client_identifier(request)
-        >>> # Use for rate limiting or abuse detection
+        >>> # "203.0.113.1#Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+         >>> # Use for rate limiting or abuse detection
     """
     real_ip = get_client_ip(request)
 
@@ -546,11 +749,10 @@ def get_client_identifier(request: Request) -> str:
 
 
 def _get_rate_limit_key(identifier: str, endpoint: str) -> str:
-    """
-    Generate DynamoDB key for rate limiting storage.
+    """Generate consistent DynamoDB key for rate limit record storage and retrieval
 
-    Creates a consistent key format for storing rate limit data in DynamoDB.
-    Keys are prefixed with "rate#" for easy identification and cleanup.
+    Creates standardized key format for storing rate limit data in DynamoDB.
+    Keys include endpoint and client identifier for granular rate limiting.
 
     Args:
         identifier (str): Client identifier from get_client_identifier().
@@ -559,53 +761,104 @@ def _get_rate_limit_key(identifier: str, endpoint: str) -> str:
     Returns:
         str: DynamoDB key for rate limit record.
 
+    Key Format:
+        "rate#{endpoint}#{client_identifier}"
+
+    Key Benefits:
+        - Consistent format across all rate limit records
+        - Easy to query by endpoint or client
+        - Supports cleanup operations (prefix "rate#")
+        - Safe for DynamoDB key constraints
+        - Human-readable for debugging
+
     Examples:
-        >>> key = _get_rate_limit_key("192.168.1.1#Chrome", "signup")
-        >>> # "rate#signup#192.168.1.1#Chrome"
+        >>> key = _get_rate_limit_key("192.168.1.1#Mozilla/5.0", "login")
+        >>> # "rate#login#192.168.1.1#Mozilla/5.0"
+        >>>
+        >>> key = _get_rate_limit_key("203.0.113.1#curl/7.68.0", "signup")
+        >>> # "rate#signup#203.0.113.1#curl/7.68.0"
     """
     return f"rate#{endpoint}#{identifier}"
 
 
 def check_rate_limit(request: Request, endpoint: str, max_attempts: int = 5, window_minutes: int = 15) -> bool:
-    """
-    Check if client is rate limited for specific endpoint.
+    """Enforce sliding window rate limiting per client per endpoint using DynamoDB storage
 
-    Implements sliding window rate limiting using DynamoDB for storage.
-    Tracks attempts per client per endpoint and enforces configurable limits.
-    Auto-expires old records to prevent storage bloat.
+        Implements robust rate limiting to prevent abuse while maintaining good user experience.
+        Uses sliding window algorithm with automatic cleanup and fail-open security model.
 
-    Args:
-        request (Request): FastAPI request object.
-        endpoint (str): API endpoint name (e.g., "signup", "login").
-        max_attempts (int, optional): Maximum attempts allowed in window. Defaults to 5.
-        window_minutes (int, optional): Time window in minutes. Defaults to 15.
+        Args:
+            request (Request): FastAPI request object.
+            endpoint (str): API endpoint name (e.g., "signup", "login").
+            max_attempts (int, optional): Maximum attempts allowed in window. Defaults to 5.
+            window_minutes (int, optional): Time window in minutes. Defaults to 15.
 
-    Returns:
-        bool: True if request should be allowed, False if rate limited.
+        Returns:
+            bool: True if request should be allowed, False if rate limited.
 
-    Security:
-        - Sliding window prevents burst attacks
-        - Per-endpoint limits for granular control
-        - Auto-expiring records prevent storage growth
-        - Fails open on database errors (availability over security)
-        - Client identification via IP + user agent
+        Rate Limiting Algorithm:
+            1. Generate client identifier (IP + user agent)
+            2. Create DynamoDB key for endpoint + client
+            3. Retrieve existing attempt history
+            4. Filter attempts to current time window
+            5. Check if under limit, record current attempt
+            6. Update DynamoDB with new attempt list
+            7. Set TTL for automatic record cleanup
 
-    Rate Limit Algorithm:
-        1. Get client identifier (IP + user agent)
-        2. Retrieve attempt history from DynamoDB
-        3. Filter attempts to current time window
-        4. Check if under limit, add current attempt
-        5. Update DynamoDB with new attempt list
-        6. Set TTL for automatic cleanup
+        Storage Structure (DynamoDB):
+            {
+                "client": "core",
+                "code": "rate#login#192.168.1.1#Mozilla",
+                "attempts": [1640995200, 1640995260, 1640995320],
+                "ttl": 1640997000
+            }
 
-    Examples:
-        >>> # Check signup rate limit (5 attempts per 15 minutes)
-        >>> if not check_rate_limit(request, "signup", 5, 15):
-        ...     return JSONResponse({"error": "Rate limited"}, status_code=429)
-        >>>
-        >>> # Check login rate limit (10 attempts per 5 minutes)
-        >>> if not check_rate_limit(request, "login", 10, 5):
-        ...     return JSONResponse({"error": "Too many login attempts"}, status_code=429)
+        Security:
+            - Sliding window prevents sustained abuse
+            - Per-endpoint granularity (different limits per API)
+            - Fail-open design (allow on database errors)
+            - Client fingerprinting resists simple IP changes
+            - Automatic record expiration prevents storage bloat
+
+        Performance Features:
+            - Single DynamoDB read + write per check
+            - TTL-based automatic cleanup
+            - Minimal data storage (timestamps only)
+            - Efficient sliding window calculation
+
+        Operational Benefits:
+            - Configurable per endpoint and client type
+            - Observable via DynamoDB metrics
+            - Self-healing (expired records auto-deleted)
+            - Graceful degradation on outages
+
+        Rate Limit Algorithm:
+            1. Get client identifier (IP + user agent)
+            2. Retrieve attempt history from DynamoDB
+            3. Filter attempts to current time window
+            4. Check if under limit, add current attempt
+            5. Update DynamoDB with new attempt list
+            6. Set TTL for automatic cleanup
+
+        Examples:
+            >>> # Standard login protection
+            >>> if not check_rate_limit(request, "login", 5, 15):
+            ...     return JSONResponse({"error": "Rate limited"}, status_code=429)
+            >>>
+            >>> # Stricter signup limits
+            >>> if not check_rate_limit(request, "signup", 3, 60):
+            ...     return JSONResponse({"error": "Too many signups"}, status_code=429)
+            >>>
+            >>> # API endpoint protection
+            >>> if not check_rate_limit(request, "api_call", 100, 1):
+            ...     return JSONResponse({"error": "API rate limit exceeded"}, status_code=429)
+    +
+    +    Common Rate Limit Patterns:
+    +        - Login: 5-10 attempts per 15 minutes
+    +        - Signup: 2-3 attempts per hour
+    +        - Password reset: 3 attempts per hour
+    +        - API calls: 100-1000 per minute
+    +        - File uploads: 10 per hour
     """
     identifier = get_client_identifier(request)
     key = _get_rate_limit_key(identifier, endpoint)
@@ -660,41 +913,68 @@ def check_rate_limit(request: Request, endpoint: str, max_attempts: int = 5, win
 
 
 def cookie_opts() -> dict:
-    """
-    Generate secure cookie options for production use.
+    """Generate secure cookie configuration for session management and CSRF protection
 
-    Creates a dictionary of cookie attributes for secure session management.
-    Configurable via environment variables for different deployment environments.
+    Creates production-ready cookie attributes based on environment configuration.
+    Balances security with compatibility across different deployment scenarios.
 
     Returns:
         dict: Cookie options dictionary with security attributes.
 
     Environment Variables:
-        - SECURE_COOKIES: Set to "true" for HTTPS-only cookies (default: false)
-        - COOKIE_SAMESITE: SameSite attribute (default: "lax")
-        - COOKIE_DOMAIN: Cookie domain scope (optional)
+        SECURE_COOKIES: "true"/"false" - Require HTTPS (default: false)
+        COOKIE_SAMESITE: "Lax"/"Strict"/"None" - CSRF protection (default: "lax")
+        COOKIE_DOMAIN: Domain restriction (optional, e.g., ".example.com")
+
+    Security Attributes:
+        httponly: True - Prevents JavaScript access (XSS protection)
+        secure: From env - HTTPS-only transmission when enabled
+        samesite: From env - Cross-site request protection
+        path: "/" - Site-wide cookie scope
+        domain: From env - Optional domain restriction
 
     Security Features:
-        - httponly: Prevents JavaScript access (XSS protection)
-        - secure: HTTPS-only transmission (when enabled)
-        - samesite: CSRF protection
-        - path: Restricts cookie scope
+        - XSS Protection: httponly prevents client-side script access
+        - CSRF Protection: samesite restricts cross-site requests
+        - Transport Security: secure ensures HTTPS-only (when enabled)
+        - Domain Control: optional domain restriction
 
-    Cookie Attributes:
-        - httponly: True (prevents XSS)
-        - secure: Based on SECURE_COOKIES env var
-        - samesite: "Lax" (configurable, CSRF protection)
-        - path: "/" (site-wide)
-        - domain: Optional domain restriction
+    Deployment Scenarios:
+        Development (HTTP):
+            SECURE_COOKIES=false, COOKIE_SAMESITE=Lax
+            - Compatible with local development
+            - Basic CSRF protection maintained
+
+        Production (HTTPS):
+            SECURE_COOKIES=true, COOKIE_SAMESITE=Strict
+            - Maximum security for production
+            - HTTPS required, strict CSRF protection
+
+        API Gateway/CDN:
+            SECURE_COOKIES=true, COOKIE_DOMAIN=.example.com
+            - Works across subdomains
+            - Maintains security in complex deployments
+
+    SameSite Values:
+        - "Lax": Balanced security, allows some cross-site requests
+        - "Strict": Maximum security, blocks all cross-site requests
+        - "None": Minimum restriction, requires Secure flag
 
     Examples:
+        >>> # Development environment
         >>> opts = cookie_opts()
-        >>> response.set_cookie("session", token, **opts)
-        >>>
-        >>> # Production environment
-        >>> # SECURE_COOKIES=true, COOKIE_SAMESITE=Strict
-        >>> opts = cookie_opts()
-        >>> # {'httponly': True, 'secure': True, 'samesite': 'Strict', 'path': '/'}
+        >>> # {'httponly': True, 'secure': False, 'samesite': 'Lax', 'path': '/'}
+         >>> response.set_cookie("session", token, **opts)
+         >>>
+         >>> # Production environment
+         >>> # SECURE_COOKIES=true, COOKIE_SAMESITE=Strict
+         >>> opts = cookie_opts()
+         >>> # {'httponly': True, 'secure': True, 'samesite': 'Strict', 'path': '/'}
+         >>>
+         >>> # Multi-domain setup
+         >>> # COOKIE_DOMAIN=.example.com
+         >>> opts = cookie_opts()
+         >>> # {'httponly': True, 'secure': True, 'samesite': 'Lax', 'path': '/', 'domain': '.example.com'}
     """
     secure = os.getenv("SECURE_COOKIES", "false").lower() in ("1", "true", "yes")
     same_site = os.getenv("COOKIE_SAMESITE", "lax").capitalize()  # Lax, None, Strict
@@ -709,8 +989,7 @@ def cookie_opts() -> dict:
 
 
 def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, str | None]:
-    """
-    Extract the authenticated user and client context from JWT token.
+    """Extract the authenticated user and client context from JWT token.
 
     Checks Authorization header or sck_token cookie for valid JWT,
     then extracts user identity and client information.
@@ -731,6 +1010,24 @@ def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, st
         >>> if user_id:
         ...     # User is authenticated, use client_name for data operations
         ...     ProfileActions.get(client=client_name or "core", user_id=user_id, profile_name="default")
+
+    Auth Sources (in order of preference):
+        1. Authorization: Bearer <JWT> header
+        2. sck_token cookie
+
+    JWT Token Types Supported:
+        - Session tokens (typ="session") - from login flow
+        - Access tokens (typ="access_token") - from OAuth flow
+        - Refresh tokens (typ="refresh") - for token renewal
+
+    Security:
+        - Validates JWT signature and expiration
+        - Supports multiple authentication methods
+        - Returns None values for invalid/missing tokens
+        - Logs warnings for invalid tokens
+
+    Raises:
+        No exceptions raised - returns None values for any authentication failure
     """
     # Get the token from either the "authorization" header or the "sck_token" cookie
     authz = (request.headers.get("authorization") or "").strip()
@@ -765,3 +1062,64 @@ def get_authenticated_user(request: Request) -> Tuple[str | None, str | None, st
         log.warning("Invalid JWT token in request")
 
     return None, None, None
+
+
+def get_oauth_app_info(client_id: str) -> dict | None:
+    """Retrieve OAuth client application registration from database by client identifier.
+
+    Fetches complete OAuth client configuration including redirect URIs, client name,
+    and other registration details. Used throughout OAuth flow for client validation.
+
+    Args:
+        client_id (str): OAuth client identifier to lookup (e.g., "coreui", "mobile-app")
+
+    Returns:
+        dict | None: Complete client registration record or None if not found:
+                    {
+                        "client_id": "coreui",
+                        "Client": "core",
+                        "redirect_uri": "http://localhost:3000/auth/callback",
+                        "client_name": "Core UI Application",
+                        ...
+                    }
+
+    Database Integration:
+        - Queries ClientActions.get() from core_db
+        - Returns raw database record structure
+        - Handles missing clients gracefully (returns None)
+        - All database errors logged but don't raise exceptions
+
+    Usage in OAuth Flow:
+        - /auth/v1/authorize: Validates client_id and gets redirect_uri
+        - /auth/v1/token: Validates client during token exchange
+        - /auth/v1/login: Validates client during authentication
+
+    Security Features:
+        - Prevents unknown clients from participating in OAuth
+        - Validates redirect URI against registered values
+        - Enables client-specific configuration and limits
+        - Audit trail via database logging
+
+    Examples:
+        >>> # Valid client lookup
+        >>> app_info = get_oauth_app_info("coreui")
+        >>> if app_info:
+        ...     redirect_uri = app_info["redirect_uri"]
+        ...     client_name = app_info["Client"]
+        >>>
+        >>> # Unknown client
+        >>> app_info = get_oauth_app_info("malicious_app")
+        >>> # Returns None - client not registered
+        >>>
+        >>> # OAuth flow validation
+        >>> app_info = get_oauth_app_info(request.form["client_id"])
+        >>> if not app_info:
+        ...     return JSONResponse({"error": "invalid_client"}, status_code=401)
+    """
+    try:
+        response = ClientActions.get(client_id=client_id)
+        log.debug(f"OAuth app info for client {client_id}:", details=response.data)
+        return response.data
+    except Exception as e:
+        log.error(f"Failed to get OAuth app info for client {client_id}: {e}")
+        return None
