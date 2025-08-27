@@ -14,10 +14,10 @@ Example:
     Basic event processing::
 
         from core_api.request import ProxyEvent, RequestContext, CognitoIdentity
-        
+
         # Create event from AWS API Gateway data
         event = ProxyEvent(**aws_event_data)
-        
+
         # Access typed fields safely
         method = event.httpMethod  # "GET", "POST", etc.
         path = event.path         # "/api/v1/users/123"
@@ -28,10 +28,12 @@ Attributes:
     DOMAIN_PREFIX (str): Domain prefix for API Gateway endpoints.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from token import OP
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 from enum import Enum
 from datetime import datetime, timezone
 import json
+import uuid
 
 from pydantic import (
     BaseModel,
@@ -44,12 +46,12 @@ from pydantic import (
 )
 
 import core_framework as util
+
 from core_db.response import Response
 
+from .security import Permission, Role, SecurityContext
 from .actions import ApiActionsClass
-
-API_ID = "coreApiv1"
-DOMAIN_PREFIX = "core"  # e.g. core.execute-api.us-east-1.amazonaws.com
+from .constants import HDR_X_CORRELATION_ID, API_ID, DOMAIN_PREFIX
 
 
 class RequestMethod(Enum):
@@ -107,12 +109,15 @@ class RequestMethod(Enum):
         return f"{self.__class__.__name__}.{self.name}"
 
 
-class RequestType(Enum):
+class RequestType(str, Enum):
     """Types of resources that can be requested through the API.
 
     Defines all available resource types in the system, including both
     primary resources (portfolio, app, component) and registry resources
     for metadata and configuration management.
+
+    Inherits from str to allow direct string comparison and serialization
+    without requiring .value access.
 
     Attributes:
         PORTFOLIO: Portfolio management operations.
@@ -131,11 +136,21 @@ class RequestType(Enum):
         Registry resources (REG_*) use colon notation to indicate
         nested resource hierarchies within the registry subsystem.
 
+        As a str Enum, instances can be used directly in string operations:
+        - String concatenation: f"Action: {RequestType.PORTFOLIO}"
+        - Dictionary keys: {RequestType.PORTFOLIO: handler}
+        - Direct comparison: if resource_type == "portfolio"
+
     Example:
         .. code-block:: python
 
             resource_type = RequestType.PORTFOLIO
             print(resource_type)        # Output: "portfolio"
+            print(repr(resource_type))  # Output: "RequestType.PORTFOLIO"
+
+            # Direct string comparison (str Enum benefit)
+            if resource_type == "portfolio":
+                print("Portfolio resource detected")
 
             # Registry resources
             reg_type = RequestType.REG_CLIENT
@@ -144,6 +159,11 @@ class RequestType(Enum):
             # Use in action strings
             action = f"{resource_type}:{RequestMethod.CREATE}"
             print(action)              # Output: "portfolio:create"
+
+            # JSON serialization works automatically
+            import json
+            data = {"type": resource_type}
+            json_str = json.dumps(data)  # {"type": "portfolio"}
     """
 
     PORTFOLIO = "portfolio"
@@ -157,22 +177,6 @@ class RequestType(Enum):
     REG_PORTFOLIO = "registry:portfolio"
     REG_APP = "registry:app"
     REG_ZONE = "registry:zone"
-
-    def __str__(self) -> str:
-        """Return string representation of the enum value.
-
-        Returns:
-            str: The resource type identifier.
-        """
-        return self.value
-
-    def __repr__(self) -> str:
-        """Return detailed string representation of the enum.
-
-        Returns:
-            str: Full enum representation with class and member name.
-        """
-        return f"{self.__class__.__name__}.{self.name}"
 
 
 RequestRoutesType = Dict[RequestType, ApiActionsClass]
@@ -221,9 +225,7 @@ class Request(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    action: str = Field(
-        description="The action to perform in format 'type:method' (e.g., 'portfolio:create')"
-    )
+    action: str = Field(description="The action to perform in format 'type:method' (e.g., 'portfolio:create')")
     data: Dict[str, Any] = Field(
         description="The primary payload data for the action (equivalent to ProxyEvent.body)",
         default_factory=dict,
@@ -312,9 +314,7 @@ class Request(BaseModel):
             method = RequestMethod(parts[2])
             return f"{typ}:{method}"
         else:
-            raise ValueError(
-                f"Invalid action format: '{value}'. Expected 'type:method' or 'namespace:type:method'."
-            )
+            raise ValueError(f"Invalid action format: '{value}'. Expected 'type:method' or 'namespace:type:method'.")
 
     @model_validator(mode="before")
     @classmethod
@@ -334,9 +334,7 @@ class Request(BaseModel):
             typ = values.pop("typ", None)
             method = values.pop("method", None)
             if not typ or not method:
-                raise ValueError(
-                    "Either 'action' field or 'typ'+'method' fields are required"
-                )
+                raise ValueError("Either 'action' field or 'typ'+'method' fields are required")
             values["action"] = f"{typ}:{method}"
         return values
 
@@ -404,43 +402,21 @@ class CognitoIdentity(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    cognitoIdentityPoolId: Optional[str] = Field(
-        None, description="Cognito Identity Pool ID for federated identities"
-    )
-    accountId: Optional[str] = Field(
-        None, description="AWS account ID associated with the user"
-    )
-    cognitoIdentityId: Optional[str] = Field(
-        None, description="Unique identifier for the Cognito identity"
-    )
-    caller: Optional[str] = Field(
-        None, description="Identifier of the calling service or application"
-    )
-    sourceIp: Optional[str] = Field(
-        None, description="IP address from which the request originated"
-    )
-    principalOrgId: Optional[str] = Field(
-        None, description="AWS Organizations principal organization ID"
-    )
-    accessKey: Optional[str] = Field(
-        None, description="AWS access key for assumed role credentials"
-    )
+    cognitoIdentityPoolId: Optional[str] = Field(None, description="Cognito Identity Pool ID for federated identities")
+    accountId: Optional[str] = Field(None, description="AWS account ID associated with the user")
+    cognitoIdentityId: Optional[str] = Field(None, description="Unique identifier for the Cognito identity")
+    caller: Optional[str] = Field(None, description="Identifier of the calling service or application")
+    sourceIp: Optional[str] = Field(None, description="IP address from which the request originated")
+    principalOrgId: Optional[str] = Field(None, description="AWS Organizations principal organization ID")
+    accessKey: Optional[str] = Field(None, description="AWS access key for assumed role credentials")
     cognitoAuthenticationType: Optional[str] = Field(
         None,
         description="Type of Cognito authentication ('authenticated' or 'unauthenticated')",
     )
-    cognitoAuthenticationProvider: Optional[str] = Field(
-        None, description="Cognito authentication provider used for login"
-    )
-    userArn: Optional[str] = Field(
-        None, description="AWS ARN of the authenticated user"
-    )
-    userAgent: Optional[str] = Field(
-        None, description="HTTP User-Agent string from the client request"
-    )
-    user: Optional[str] = Field(
-        None, description="User identifier (username, email, or user ID)"
-    )
+    cognitoAuthenticationProvider: Optional[str] = Field(None, description="Cognito authentication provider used for login")
+    userArn: Optional[str] = Field(None, description="AWS ARN of the authenticated user")
+    userAgent: Optional[str] = Field(None, description="HTTP User-Agent string from the client request")
+    user: Optional[str] = Field(None, description="User identifier (username, email, or user ID)")
 
 
 class RequestContext(BaseModel):
@@ -497,49 +473,31 @@ class RequestContext(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     resourceId: str = Field(description="API Gateway resource identifier for routing")
-    resourcePath: str = Field(
-        description="Resource path template with parameter placeholders (e.g., '/users/{id}')"
-    )
-    httpMethod: str = Field(
-        description="HTTP method for the request (GET, POST, PUT, DELETE, etc.)"
-    )
-    extendedRequestId: Optional[str] = Field(
-        None, description="Extended request ID for detailed request tracing"
-    )
+    resourcePath: str = Field(description="Resource path template with parameter placeholders (e.g., '/users/{id}')")
+    httpMethod: str = Field(description="HTTP method for the request (GET, POST, PUT, DELETE, etc.)")
+    extendedRequestId: Optional[str] = Field(None, description="Extended request ID for detailed request tracing")
     requestTime: str = Field(
         description="Human-readable request timestamp in API Gateway format",
-        default_factory=lambda: datetime.now(timezone.utc).strftime(
-            "%d/%b/%Y:%H:%M:%S %z"
-        ),
+        default_factory=lambda: datetime.now(timezone.utc).strftime("%d/%b/%Y:%H:%M:%S %z"),
     )
-    path: str = Field(
-        description="Full request path including API Gateway stage prefix"
-    )
-    accountId: Optional[str] = Field(
-        None, description="AWS account ID that owns the API Gateway"
-    )
+    path: str = Field(description="Full request path including API Gateway stage prefix")
+    accountId: Optional[str] = Field(None, description="AWS account ID that owns the API Gateway")
     protocol: str = Field(description="HTTP protocol version", default="HTTP/1.1")
     stage: str = Field(
         description="API Gateway deployment stage name (prod, dev, etc.)",
         default_factory=util.get_environment,
     )
-    domainPrefix: str = Field(
-        description="Domain prefix for the API Gateway endpoint", default=DOMAIN_PREFIX
-    )
+    domainPrefix: str = Field(description="Domain prefix for the API Gateway endpoint", default=DOMAIN_PREFIX)
     requestTimeEpoch: int = Field(
         description="Request timestamp as Unix epoch time in milliseconds",
         default_factory=lambda: int(datetime.now(timezone.utc).timestamp() * 1000),
     )
-    requestId: str = Field(
-        description="Unique identifier for this specific API request"
-    )
+    requestId: str = Field(description="Unique identifier for this specific API request")
     domainName: str = Field(
         description="Full domain name of the API Gateway endpoint",
         default=f"{DOMAIN_PREFIX}.execute-api.us-east-1.amazonaws.com",
     )
-    identity: CognitoIdentity = Field(
-        description="Authentication and identity information for the request"
-    )
+    identity: CognitoIdentity = Field(description="Authentication and identity information for the request")
     apiId: str = Field(description="API Gateway API identifier", default=API_ID)
 
 
@@ -598,40 +556,29 @@ class ProxyEvent(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    httpMethod: str = Field(
-        description="HTTP method for the request (GET, POST, PUT, DELETE, etc.)"
-    )
-    resource: str = Field(
-        description="API resource path with parameter placeholders (e.g., '/users/{id}')"
-    )
+    httpMethod: str = Field(description="HTTP method for the request (GET, POST, PUT, DELETE, etc.)")
+    resource: str = Field(description="API resource path with parameter placeholders (e.g., '/users/{id}')")
     path: Optional[str] = Field(
         None,
         description="Actual request path with resolved parameters (e.g., '/users/123')",
     )
-    queryStringParameters: Dict[str, str] = Field(
-        description="Single-value query string parameters", default_factory=dict
-    )
+    queryStringParameters: Dict[str, str] = Field(description="Single-value query string parameters", default_factory=dict)
     multiValueQueryStringParameters: Dict[str, List[str]] = Field(
         description="Multi-value query string parameters (AWS API Gateway format)",
         default_factory=dict,
     )
-    pathParameters: Dict[str, str] = Field(
-        description="Path parameter values extracted from the URL", default_factory=dict
-    )
+    pathParameters: Dict[str, str] = Field(description="Path parameter values extracted from the URL", default_factory=dict)
     stageVariables: Dict[str, str] = Field(
         description="API Gateway stage variables for environment configuration",
         default_factory=dict,
     )
-    requestContext: RequestContext = Field(
-        description="Complete request context information from API Gateway"
-    )
-    headers: Dict[str, str] = Field(
-        description="Single-value HTTP request headers", default_factory=dict
-    )
+    requestContext: RequestContext = Field(description="Complete request context information from API Gateway")
+    headers: Dict[str, str] = Field(description="Single-value HTTP request headers", default_factory=dict)
     multiValueHeaders: Dict[str, List[str]] = Field(
         description="Multi-value HTTP headers (AWS API Gateway format)",
         default_factory=dict,
     )
+    cookies: Optional[Dict[str, str]] = Field(None, description="Parsed cookies from request (AWS API Gateway v2.0+ format)")
     isBase64Encoded: bool = Field(
         description="Whether the body content is base64 encoded (for binary data)",
         default=False,
@@ -640,6 +587,34 @@ class ProxyEvent(BaseModel):
         description="Request body content (automatically parsed from JSON string)",
         default_factory=dict,
     )
+
+    @property
+    def parsed_cookies(self) -> Dict[str, str]:
+        """Parse cookies from headers if not provided in cookies field.
+
+        Returns:
+            Dict[str, str]: Parsed cookie name-value pairs
+
+        Note:
+            AWS API Gateway v1.0 puts cookies in headers['Cookie']
+            AWS API Gateway v2.0+ puts them in the cookies field
+        """
+        # If API Gateway v2.0+ provided parsed cookies, use them
+        if self.cookies:
+            return self.cookies
+
+        # Otherwise parse from Cookie header (v1.0 format)
+        cookie_header = self.headers.get("Cookie", "")
+        if not cookie_header:
+            return {}
+
+        cookies = {}
+        for cookie_pair in cookie_header.split(";"):
+            if "=" in cookie_pair:
+                name, value = cookie_pair.strip().split("=", 1)
+                cookies[name] = value
+
+        return cookies
 
     @field_validator("body", mode="before")
     @classmethod
@@ -675,9 +650,7 @@ class ProxyEvent(BaseModel):
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON string for body: {e}") from e
         else:
-            raise ValueError(
-                f"Invalid body type: expected dict or str, got {type(body)}"
-            )
+            raise ValueError(f"Invalid body type: expected dict or str, got {type(body)}")
 
     @field_validator("httpMethod", mode="before")
     @classmethod
@@ -706,9 +679,334 @@ class ProxyEvent(BaseModel):
                 event = ProxyEvent(httpMethod="GET", resource="/users/{id}")
                 route = event.route_key  # Returns: "GET:/users/{id}"
         """
-        return f"{self.httpMethod}:{self.resource}"
+        method = self.httpMethod.upper()
+        return f"{method}:{self.resource}"
+
+    def get_header(self, name: str, default: Optional[str] = None) -> Optional[str]:
+        """Get header value case-insensitively.
+
+        Args:
+            name (str): Header name to retrieve.
+
+        Returns:
+            str: Header value or empty string if not found.
+        """
+        for k, v in self.headers.items():
+            if k.lower() == name.lower():
+                return k, v
+        return name, default or None
+
+
+class RouteEndpoint:
+
+    def __init__(self, method: Callable[..., Response], **kwargs):
+        self.handler = method
+        self.required_permissions: Set[Permission] = kwargs.get("required_permissions", set())
+        self.required_token_type: str = kwargs.get("required_token_type", "access")
+        self.allow_anonymous: bool = kwargs.get("allow_anonymous", False)
+        self.client_isolation: bool = kwargs.get("client_isolation", True)
 
 
 # Type aliases for handler function signatures
 ActionHandler = Callable[..., Response]
-ActionHandlerRoutes = Dict[str, ActionHandler]
+ActionHandlerRoutes = Dict[str, RouteEndpoint]
+
+
+def validate_client_access(security: SecurityContext, request: ProxyEvent) -> None:
+    """Validate client isolation for multi-tenant endpoints.
+
+    Checks for client identifier in multiple locations:
+    - Path parameters: {client} in URL path
+    - Query parameters: ?client=value or ?Client=value
+    - Request body: {"client": "value"} or {"Client": "value"}
+
+    Args:
+        security: Security context with user roles and permissions
+        request: API Gateway proxy event with parameters
+
+    Raises:
+        PermissionError: If user doesn't have access to the specified client
+    """
+
+    def extract_client_from_dict(data: dict) -> Optional[str]:
+        """Extract client value from dict, checking both cases."""
+        if not data:
+            return None
+        return data.get("client") or data.get("Client")
+
+    # Check all possible locations for client identifier
+    client_slug = None
+
+    # 1. Path parameters: /api/v1/registry/{client}/portfolios
+    if request.pathParameters:
+        client_slug = extract_client_from_dict(request.pathParameters)
+
+    # 2. Query parameters: ?client=mycompany or ?Client=mycompany
+    if not client_slug and request.queryStringParameters:
+        client_slug = extract_client_from_dict(request.queryStringParameters)
+
+    # 3. Request body: {"client": "mycompany"} or {"Client": "mycompany"}
+    if not client_slug and request.body:
+        try:
+            import json
+
+            body_dict = json.loads(request.body)
+            if isinstance(body_dict, dict):
+                client_slug = extract_client_from_dict(body_dict)
+        except (json.JSONDecodeError, TypeError):
+            # Body is not valid JSON or not a dict, skip body parsing
+            pass
+
+    # If no client found in any location, skip validation
+    if not client_slug:
+        log.debug("No client identifier found in request, skipping client isolation")
+        return
+
+    log.debug(f"Validating client access for '{client_slug}' by user {security.user_id}")
+
+    # Admins can access any client
+    if "admin" in security.roles:
+        log.debug(f"Admin user {security.user_id} granted access to client '{client_slug}'")
+        return
+
+    # Service accounts can access any client
+    if "service" in security.roles:
+        log.debug(f"Service account {security.user_id} granted access to client '{client_slug}'")
+        return
+
+    # Regular users: client slug must match their context (case-insensitive)
+    user_client_id = security.client_id.lower() if security.client_id else ""
+    user_client_name = security.client.lower() if security.client else ""
+    requested_client = client_slug.lower()
+
+    if requested_client not in [user_client_id, user_client_name]:
+        log.warning(
+            f"Client access denied for user {security.user_id}",
+            details={
+                "requested_client": client_slug,
+                "user_client": security.client,
+                "client_id": security.client_id,
+            },
+        )
+        raise PermissionError(f"Access denied to client '{client_slug}'. User belongs to '{security.client}'")
+
+    log.debug(f"Client access granted for user {security.user_id} to client '{client_slug}'")
+
+
+def extract_security_context(request: ProxyEvent) -> Optional[SecurityContext]:
+    """Extract security context from JWT token using OAuth scopes."""
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header[7:]
+
+    try:
+        jwt_payload = JwtPayload.decode(token)
+
+        if jwt_payload.typ != "access_token":
+            log.warning(f"Invalid token type for API: {jwt_payload.typ}")
+            return None
+
+        # USE OAUTH SCOPES instead of separate roles/permissions
+        scopes = jwt_payload.scp or ""
+        permissions = get_permissions_from_scopes(scopes)
+
+        # Derive roles from user attributes or permissions
+        roles = derive_roles_from_permissions(permissions)
+
+        return SecurityContext(
+            user_id=jwt_payload.sub,
+            client_id=jwt_payload.cid,
+            client=jwt_payload.cnm,
+            permissions=permissions,
+            roles=roles,
+            token_type=jwt_payload.typ,
+            custom_attributes={},
+            jwt_payload=jwt_payload,
+        )
+
+    except Exception as e:
+        log.warning(f"Failed to decode JWT token: {e}")
+        return None
+
+
+def get_permissions_from_scopes(scopes: str) -> Set[Permission]:
+    """Convert OAuth scopes to Permission enums."""
+    if not scopes:
+        return set()
+
+    scope_list = scopes.split()
+    permissions = set()
+
+    for scope in scope_list:
+        try:
+            # Direct mapping: scope "portfolio:read" -> Permission.PORTFOLIO_READ
+            perm_name = scope.upper().replace(":", "_")
+            permission = Permission(scope)  # Assuming your Permission enum uses scope values
+            permissions.add(permission)
+        except ValueError:
+            log.warning(f"Unknown scope in token: {scope}")
+
+    return permissions
+
+
+def derive_roles_from_permissions(permissions: Set[Permission]) -> Set[Role]:
+    """Derive user roles from their permissions (optional)."""
+    roles = {Role.USER}  # Default role
+
+    # Admin role if they have admin permissions
+    admin_perms = {Permission.USER_MANAGE, Permission.CLIENT_MANAGE}
+    if admin_perms.intersection(permissions):
+        roles.add(Role.ADMIN)
+
+    return roles
+
+
+def get_permissions_from_scopes(scopes: str) -> Set[Permission]:
+    """Convert OAuth scopes to Permission enums, supporting wildcard permissions."""
+    if not scopes:
+        return set()
+
+    scope_list = scopes.split()
+    permissions = set()
+    wildcard_permissions = set()
+
+    for scope in scope_list:
+        try:
+            if scope.startswith("*:"):
+                # Handle wildcard permissions: "*:read", "*:write", etc.
+                wildcard_action = scope[2:]  # Remove "*:" prefix
+                wildcard_permissions.add(wildcard_action)
+            else:
+                # Handle specific permissions: "registry:read", "aws:write", etc.
+                permission = Permission(scope)
+                permissions.add(permission)
+        except ValueError:
+            log.warning(f"Unknown scope in token: {scope}")
+
+    # If we have wildcard permissions, generate all possible permissions
+    if wildcard_permissions:
+        permissions.update(generate_wildcard_permissions(wildcard_permissions))
+
+    return permissions
+
+
+def generate_wildcard_permissions(wildcard_actions: Set[str]) -> Set[Permission]:
+    """Generate all possible permissions for wildcard actions.
+
+    Args:
+        wildcard_actions: Set of wildcard actions like {"read", "write", "admin"}
+
+    Returns:
+        Set of all Permission enums that match the wildcard pattern
+    """
+    all_permissions = set()
+
+    # Get all available Permission enum values
+    for permission in Permission:
+        permission_parts = permission.value.split(":")
+
+        if len(permission_parts) >= 2:
+            # Extract the action part (last part): "registry:read" -> "read"
+            action = permission_parts[-1]
+
+            # If this action is in wildcard permissions, include it
+            if action in wildcard_actions:
+                all_permissions.add(permission)
+
+    return all_permissions
+
+
+def has_permission_with_wildcard(user_permissions: Set[Permission], required_permission: Permission) -> bool:
+    """Check if user has required permission, considering wildcard permissions.
+
+    Args:
+        user_permissions: User's actual permissions from JWT token
+        required_permission: Required permission for the endpoint
+
+    Returns:
+        True if user has the required permission (directly or via wildcard)
+    """
+    # Direct permission match
+    if required_permission in user_permissions:
+        return True
+
+    # Check for wildcard match
+    permission_parts = required_permission.value.split(":")
+    if len(permission_parts) >= 2:
+        action = permission_parts[-1]  # Get action part
+
+        # Check if user has wildcard permission for this action
+        for user_perm in user_permissions:
+            if user_perm.value == f"*:{action}":
+                return True
+
+    return False
+
+
+def check_permissions_with_wildcard(user_permissions: Set[Permission], required_permissions: Set[Permission]) -> Set[Permission]:
+    """Check which required permissions are missing, considering wildcards.
+
+    Args:
+        user_permissions: User's permissions from JWT token
+        required_permissions: Required permissions for the endpoint
+
+    Returns:
+        Set of missing permissions (empty if all permissions are satisfied)
+    """
+    missing_permissions = set()
+
+    for required_perm in required_permissions:
+        if not has_permission_with_wildcard(user_permissions, required_perm):
+            missing_permissions.add(required_perm)
+
+    return missing_permissions
+
+
+def get_correlation_id(request: ProxyEvent) -> str:
+    """Extract or generate correlation ID for request tracing.
+
+    Attempts to extract correlation ID from request headers, falls back to
+    request ID from API Gateway context, or generates a new UUID if neither
+    is available. The correlation ID is added to request headers for
+    downstream services.
+
+    Args:
+        request (ProxyEvent): The API Gateway proxy event object.
+
+    Returns:
+        str: Correlation ID for this request (existing or newly generated).
+
+    Note:
+        The correlation ID is automatically added to the request headers
+        if it doesn't already exist, ensuring all downstream services
+        can participate in distributed tracing.
+
+    Example:
+        .. code-block:: python
+
+            correlation_id = get_correlation_id(proxy_event)
+
+            # Use in logging
+            log.info("Processing request", correlation_id=correlation_id)
+
+            # Pass to downstream services
+            headers = {"X-Correlation-Id": correlation_id}
+    """
+    # Check if correlation ID is already in headers
+    _, correlation_id = request.get_header(HDR_X_CORRELATION_ID)
+
+    if not correlation_id:
+        # Try to use API Gateway request ID
+        if request.requestContext and request.requestContext.requestId:
+            correlation_id = request.requestContext.requestId
+        else:
+            # Generate new correlation ID
+            correlation_id = str(uuid.uuid4())
+
+        # Add to request headers for downstream services
+        request.headers[HDR_X_CORRELATION_ID] = correlation_id
+
+    return correlation_id

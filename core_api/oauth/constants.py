@@ -3,7 +3,8 @@ from typing import Set
 
 
 # JWT Configuration
-# FIXED: More robust environment variable handling
+SCK_TOKEN_COOKIE_NAME = "sck_token"
+
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")
 SESSION_JWT_MINUTES = os.getenv("SESSION_JWT_MINUTES", "30")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

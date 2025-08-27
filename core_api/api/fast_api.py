@@ -25,38 +25,43 @@ Attributes:
         containing index.html and assets folder from npm run build.
 """
 
-import os
-import core_logging as log
-from contextlib import asynccontextmanager
 from typing import Optional
+import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv, find_dotenv
-
-load_dotenv(find_dotenv(), override=False)
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from ..oauth.auth_server import oauth_router
-from ..oauth.client_management import client_router
-from ..oauth.auth_direct import user_router
-from ..oauth.auth_github import github_router
-from .apis import get_api_router
-from .proxy_headers import SimpleProxyHeadersMiddleware
+import core_logging as log
+
+from .router import get_api_router
+from ..oauth.router import get_auth_router
+
+from .headers import SimpleProxyHeadersMiddleware
 
 # Static files are the built React application from npm run build
-STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "sck-core-ui", "dist"))
+
+
+def get_static_dir() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "sck-core-ui", "dist"))
+
+
 # Read allowed origins from env (comma-separated), fall back to known UI origins
-ORIGINS = [
-    o.strip()
-    for o in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8090,http://127.0.0.1:8090,https://monster-jj.jvj28.com:2200",
-    ).split(",")
-    if o.strip()
-]
+def get_origins() -> list[str]:
+
+    return [
+        o.strip()
+        for o in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8090,http://127.0.0.1:8090,https://monster-jj.jvj28.com:2200",
+        ).split(",")
+        if o.strip()
+    ]
+
 
 __app: Optional[FastAPI] = None
 __running: bool = False
@@ -154,6 +159,8 @@ def get_app() -> FastAPI:
     if __app is not None:
         return __app
 
+    load_dotenv(find_dotenv(), override=False)
+
     __app = FastAPI(
         title="SCK Core API",
         description="Simple Cloud Kit Core API",
@@ -166,7 +173,7 @@ def get_app() -> FastAPI:
 
     __app.add_middleware(
         CORSMiddleware,
-        allow_origins=ORIGINS,
+        allow_origins=get_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -174,12 +181,13 @@ def get_app() -> FastAPI:
         max_age=86400,
     )
 
-    # Include API routes with /api prefix (FIRST - highest priority)
+    # Include API routes with /api prefix (FIRST - highest priority). AWS API Gateway API proxy_forward to lambda handler
     __app.include_router(get_api_router(), prefix="/api", tags=["API"])
-    __app.include_router(oauth_router, prefix="/auth", tags=["OAuth"])
-    __app.include_router(client_router, prefix="/auth", tags=["Clients"])
-    __app.include_router(user_router, prefix="/auth", tags=["Users"])
-    __app.include_router(github_router, prefix="/auth", tags=["GitHub"])
+
+    # OAUTH server endpoints and authentication
+    __app.include_router(get_auth_router(), prefix="/auth", tags=["Login", "OAuth", "Github", "Users"])
+
+    static_dir = get_static_dir()
 
     # Health check endpoint (SECOND - before catch-all)
     @__app.get("/health", include_in_schema=False)
@@ -209,21 +217,21 @@ def get_app() -> FastAPI:
                     "assets_count": 3
                 }
         """
-        assets_dir = os.path.join(STATIC_DIR, "assets")
-        index_path = os.path.join(STATIC_DIR, "index.html")
+        assets_dir = os.path.join(static_dir, "assets")
+        index_path = os.path.join(static_dir, "index.html")
 
         return {
             "status": "healthy",
             "running": __running,
-            "react_build_exists": os.path.exists(STATIC_DIR),
+            "react_build_exists": os.path.exists(static_dir),
             "react_index_exists": os.path.exists(index_path),
             "react_assets_exists": os.path.exists(assets_dir),
-            "static_dir": STATIC_DIR,
+            "static_dir": static_dir,
             "assets_count": (len(os.listdir(assets_dir)) if os.path.exists(assets_dir) else 0),
         }
 
     # Mount React assets folder for JS, CSS, images (THIRD)
-    assets_dir = os.path.join(STATIC_DIR, "assets")
+    assets_dir = os.path.join(static_dir, "assets")
     if os.path.exists(assets_dir):
         log.info(f"Mounting React assets from: {assets_dir}")
         __app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -247,7 +255,7 @@ def get_app() -> FastAPI:
         # Let the catch-all route handle non-API 404s
         raise exc
 
-    log.info(f"Static files directory: {STATIC_DIR}")
+    log.info(f"Static files directory: {static_dir}")
 
     # Catch-all route for React SPA (MUST be last - lowest priority)
     @__app.get("/{full_path:path}", response_class=FileResponse, include_in_schema=False)
@@ -285,13 +293,13 @@ def get_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Asset not found")
 
         # Check for root-level files first (favicon.ico, robots.txt, etc.)
-        requested_file = os.path.join(STATIC_DIR, full_path)
+        requested_file = os.path.join(static_dir, full_path)
         if os.path.isfile(requested_file):
             log.debug(f"Serving static file: {full_path}")
             return FileResponse(requested_file)
 
         # For all other routes (including root /), serve React index.html for SPA routing
-        index_path = os.path.join(STATIC_DIR, "index.html")
+        index_path = os.path.join(static_dir, "index.html")
         if os.path.exists(index_path):
             log.debug(f"Serving React SPA for route: /{full_path}")
             return FileResponse(
@@ -299,11 +307,11 @@ def get_app() -> FastAPI:
                 media_type="text/html",
                 headers={"Cache-Control": "no-cache"},  # Prevent caching of SPA routes
             )
-        else:
-            log.error(f"React application not found at: {index_path}")
-            raise HTTPException(
-                status_code=404,
-                detail="React application not found. Run 'npm run build' in sck-core-ui first.",
-            )
+
+        log.error(f"React application not found at: {index_path}")
+        raise HTTPException(
+            status_code=404,
+            detail="React application not found. Run 'npm run build' in sck-core-ui first.",
+        )
 
     return __app

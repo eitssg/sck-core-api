@@ -1,4 +1,3 @@
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Scope, Receive, Send
 
 

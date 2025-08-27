@@ -81,3 +81,37 @@ moto = "^5.1.9"
 [tool.poetry.group.prod.dependencies]
 gunicorn = "^23.0.0"
 
+[tool.black]
+line-length = 132
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.direnv
+  | \.eggs
+  | \.git
+  | \.github
+  | \.hg
+  | \.mypy_cache
+  | \.nox
+  | \.pants.d
+  | \.pytype
+  | \.ruff_cache
+  | \.svn
+  | \.tox
+  | \.venv
+  | __pypackages__
+  | _build
+  | buck-out
+  | build
+  | dist
+  | node_modules
+  | venv
+)/
+'''
+
+# Optional: Other tools in same file
+[tool.isort]
+profile = "black"
+line_length = 132
+

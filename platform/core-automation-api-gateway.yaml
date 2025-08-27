@@ -1,0 +1,900 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway and Lambda functions for {{ context.Client | capitalize }} Automation API'
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+    Description: "Scope prefix for resource names"
+  
+  ZipFileName:
+    Type: String
+    Description: "Name of the ZIP file containing Lambda code"
+    Default: "core-automation-api-lambda.zip"
+
+Resources:
+  # CloudWatch Log Groups (create first to ensure proper permissions)
+  ApiLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}{{ context.Client }}-automation-api-lambda"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-logs"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  AuthLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}{{ context.Client }}-automation-auth-lambda"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-logs"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # Lambda Execution Roles (minimal permissions)
+  ApiLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "LambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt ApiLambdaLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-execution-role"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  AuthLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "LambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt AuthLambdaLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-execution-role"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # Lambda Functions
+  ApiLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ApiLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}{{ context.Client }}-automation-api-lambda"
+      Runtime: python3.11
+      Handler: core_api.api.handler:handler
+      Role: !GetAtt ApiLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: {{ context.FilesBucketName }}
+        S3Key: !Sub "{{ context.BuildFilesPrefix }}/${ZipFileName}"
+        {%- if context.S3ObjectVersion | default('') %}
+        S3ObjectVersion: {{ context.S3ObjectVersion }}
+        {%- endif %}
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: {{ context.Client }}
+          ENVIRONMENT: {{ context.Environment }}
+          PORTFOLIO: {{ context.Portfolio }}
+          APP: {{ context.App }}
+          BRANCH: {{ context.Branch }}
+          BUILD: {{ context.Build }}
+          LOG_LEVEL: INFO
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  AuthLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AuthLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda"
+      Runtime: python3.11
+      Handler: core_api.auth.handler:handler
+      Role: !GetAtt AuthLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: {{ context.FilesBucketName }}
+        S3Key: !Sub "{{ context.BuildFilesPrefix }}/${ZipFileName}"
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: {{ context.Client }}
+          ENVIRONMENT: {{ context.Environment }}
+          PORTFOLIO: {{ context.Portfolio }}
+          APP: {{ context.App }}
+          BRANCH: {{ context.Branch }}
+          BUILD: {{ context.Build }}
+          LOG_LEVEL: INFO
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${Scope}{{ context.Client }}-automation-api"
+      Description: "{{ context.Client | capitalize }} Automation API Gateway"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: execute-api:Invoke
+            Resource: "*"
+          - Effect: Deny
+            Principal: "*"
+            Action: execute-api:Invoke
+            Resource: "*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # API Gateway Resources
+  AuthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: auth
+
+  AuthV1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref AuthResource
+      PathPart: v1
+
+  AuthProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref AuthV1Resource
+      PathPart: "{proxy+}"
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: api
+
+  ApiV1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiResource
+      PathPart: v1
+
+  ApiProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiV1Resource
+      PathPart: "{proxy+}"
+
+  # API Gateway Methods
+  AuthProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref AuthProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  ApiProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # Lambda Permissions for API Gateway
+  AuthLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
+
+  ApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - AuthProxyMethod
+      - ApiProxyMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Description: "Initial deployment of {{ context.Client | capitalize }} Automation API"
+
+  # API Gateway Stage
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: {{ context.Environment }}
+      Description: "{{ context.Environment | capitalize }} stage for {{ context.Client | capitalize }} Automation API"
+      Variables:
+        SCOPE: !Ref Scope
+        CLIENT: {{ context.Client }}
+        ENVIRONMENT: {{ context.Environment }}
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+          ThrottlingRateLimit: 1000
+          ThrottlingBurstLimit: 2000
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-stage-{{ context.Environment }}"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # API Gateway CloudWatch Log Group
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${Scope}{{ context.Client }}-automation-api"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-gateway-logs"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # API Gateway Account (for CloudWatch logs)
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchRole.Arn
+
+  # CloudWatch Role for API Gateway
+  ApiGatewayCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}{{ context.Client }}-automation-api-gateway-cloudwatch-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-gateway-cloudwatch-role"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # SNS Topic for Alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${Scope}{{ context.Client }}-automation-api-alerts"
+      DisplayName: "{{ context.Client | capitalize }} Automation API Alerts"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-alerts"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # CloudWatch Alarms
+  ApiGateway5xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-api-5xx-errors"
+      AlarmDescription: "Alarm for API Gateway 5xx errors"
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api"
+        - Name: Stage
+          Value: {{ context.Environment }}
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-5xx-errors"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+
+  ApiGateway4xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-api-4xx-errors"
+      AlarmDescription: "Alarm for API Gateway 4xx errors (including 401 unauthorized)"
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 20
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api"
+        - Name: Stage
+          Value: {{ context.Environment }}
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-4xx-errors"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+
+  ApiGatewayHighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-api-high-latency"
+      AlarmDescription: "Alarm for API Gateway high latency"
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api"
+        - Name: Stage
+          Value: {{ context.Environment }}
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-high-latency"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+
+  ApiLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-errors"
+      AlarmDescription: "Alarm for API Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-errors"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+
+  AuthLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-errors"
+      AlarmDescription: "Alarm for Auth Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AuthLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-errors"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+
+  ApiLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-throttles"
+      AlarmDescription: "Alarm for API Lambda function throttles"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-throttles"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+
+  # CloudWatch Dashboard
+  ApiDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${Scope}{{ context.Client }}-automation-api-dashboard"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "${Scope}{{ context.Client }}-automation-api", "Stage", "{{ context.Environment }}" ],
+                  [ ".", "4XXError", ".", ".", ".", "." ],
+                  [ ".", "5XXError", ".", ".", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Request Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Latency", "ApiName", "${Scope}{{ context.Client }}-automation-api", "Stage", "{{ context.Environment }}" ],
+                  [ ".", "IntegrationLatency", ".", ".", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Latency",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${Scope}{{ context.Client }}-automation-api-lambda" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Lambda Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${Scope}{{ context.Client }}-automation-auth-lambda" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Auth Lambda Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 12,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/apigateway/${Scope}{{ context.Client }}-automation-api'\\n| fields @timestamp, status, httpMethod, resourcePath, responseLength, ip\\n| filter status >= 400\\n| sort @timestamp desc\\n| limit 100",
+                "region": "${AWS::Region}",
+                "title": "Recent API Errors (4xx/5xx)",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 18,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${Scope}{{ context.Client }}-automation-api-lambda'\\n| fields @timestamp, @message\\n| filter @message like /ERROR/\\n| sort @timestamp desc\\n| limit 50",
+                "region": "${AWS::Region}",
+                "title": "API Lambda Errors",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12,
+              "y": 18,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${Scope}{{ context.Client }}-automation-auth-lambda'\\n| fields @timestamp, @message\\n| filter @message like /ERROR/\\n| sort @timestamp desc\\n| limit 50",
+                "region": "${AWS::Region}",
+                "title": "Auth Lambda Errors",
+                "view": "table"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  # API Gateway Outputs
+  ApiGatewayId:
+    Description: "ID of the API Gateway"
+    Value: !Ref ApiGateway
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiGatewayId"
+
+  ApiGatewayUrl:
+    Description: "URL of the API Gateway"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/{{ context.Environment }}"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiGatewayUrl"
+
+  ApiGatewayStage:
+    Description: "Stage name of the API Gateway"
+    Value: !Ref ApiStage
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiGatewayStage"
+
+  # Monitoring Outputs
+  AlertTopicArn:
+    Description: "ARN of the SNS topic for alerts"
+    Value: !Ref AlertTopic
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiAlertTopicArn"
+
+  DashboardUrl:
+    Description: "URL of the CloudWatch Dashboard"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${Scope}{{ context.Client }}-automation-api-dashboard"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiDashboardUrl"
+
+  # Lambda Function Outputs
+  ApiLambdaFunctionArn:
+    Description: "ARN of the API Lambda function"
+    Value: !GetAtt ApiLambdaFunction.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaFunctionArn"
+
+  AuthLambdaFunctionArn:
+    Description: "ARN of the Auth Lambda function"
+    Value: !GetAtt AuthLambdaFunction.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationAuthLambdaFunctionArn"
+
+  ApiLambdaFunctionName:
+    Description: "Name of the API Lambda function"
+    Value: !Ref ApiLambdaFunction
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaFunctionName"
+
+  AuthLambdaFunctionName:
+    Description: "Name of the Auth Lambda function"
+    Value: !Ref AuthLambdaFunction
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationAuthLambdaFunctionName"
+
+  # Execution Role Outputs
+  ApiLambdaExecutionRoleArn:
+    Description: "ARN of the API Lambda execution role"
+    Value: !GetAtt ApiLambdaExecutionRole.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaExecutionRoleArn"
+
+  AuthLambdaExecutionRoleArn:
+    Description: "ARN of the Auth Lambda execution role"
+    Value: !GetAtt AuthLambdaExecutionRole.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationAuthLambdaExecutionRoleArn"
+
+  # Deployment Outputs
+  LambdaCodeS3Bucket:
+    Description: "S3 bucket containing Lambda code"
+    Value: {{ context.FilesBucketName }}
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaCodeS3Bucket"
+
+  LambdaCodeS3BucketRegion:
+    Description: "S3 bucket region containing Lambda code"
+    Value: {{ context.FilesBucketRegion }}
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaCodeS3BucketRegion"
+
+  LambdaCodeS3Key:
+    Description: "S3 key for Lambda code ZIP file"
+    Value: !Sub "{{ context.BuildFilesPrefix }}/${ZipFileName}"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaCodeS3Key"
+
+  LambdaCodeS3Url:
+    Description: "Full S3 URL for Lambda code"
+    Value: !Sub "s3://{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}/${ZipFileName}"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaCodeS3Url"
+
+  LambdaCodeHttpsUrl:
+    Description: "HTTPS URL for Lambda code (for cross-region access)"
+    Value: !Sub "https://s3.{{ context.FilesBucketRegion }}.amazonaws.com/{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}/${ZipFileName}"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationApiLambdaCodeHttpsUrl"

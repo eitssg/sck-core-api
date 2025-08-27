@@ -13,7 +13,7 @@ from core_db.registry.zone.models import ZoneFactsModel
 
 from core_api.api.fast_api import get_app
 
-from .test_facts_data import api_paths
+from .test_facts_data import api_endpoints
 
 from .bootstrap import *
 
@@ -64,7 +64,7 @@ def compare_dict(item1: dict, item2: dict):
             assert v == item2[k], f"Key: {k}, {item1}"
 
 
-@pytest.mark.parametrize("http_path,expected_result", api_paths)
+@pytest.mark.parametrize("http_path,expected_result", api_endpoints)
 def test_the_facts(http_path, expected_result, bootstrap_dynamo):  # noqa E302
 
     try:

@@ -74,6 +74,7 @@ uvicorn_args=(
     "--port" "$PORT"
     "--log-level" "$UV_LOG_LEVEL"
     "--proxy-headers"
+    "--workers=1"
     "--forwarded-allow-ips=*"
     "--access-log"
 )

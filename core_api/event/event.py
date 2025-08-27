@@ -1,13 +1,12 @@
+# pylint: disable=unused-argument
 from collections import ChainMap
-
-from ..constants import BODY_PARAMETER, PATH_PARAMETERS, QUERY_STRING_PARAMETERS
 
 
 from core_db.event.actions import EventActions
 from core_db.response import Response
 
 from ..actions import ApiActions
-from ..request import ActionHandlerRoutes
+from ..request import RouteEndpoint
 
 
 class ApiEventActions(ApiActions, EventActions):
@@ -15,7 +14,7 @@ class ApiEventActions(ApiActions, EventActions):
     pass
 
 
-def action_get_event_list(**kwargs) -> Response:
+def action_get_event_list(*, query_params: dict, path_params: dict, body: dict) -> Response:
     """
     returns the event for the given prn and timestamp.  Because you
     may leav timestamp blank, there may be more than one event for the prn,
@@ -40,13 +39,13 @@ def action_get_event_list(**kwargs) -> Response:
     Returns:
         SeccessResponse: a list of all the respones in the SuccessRepsonse body.
     """
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiEventActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def action_create_event(**kwargs) -> Response:
+def action_create_event(*, query_params: dict, path_params: dict, body: dict) -> Response:
     """
     creates a new event
 
@@ -64,13 +63,13 @@ def action_create_event(**kwargs) -> Response:
     Args:
         event (dict): The event to create from REST API
     """
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiEventActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def action_delete_event(**kwargs) -> Response:
+def action_delete_event(*, query_params: dict, path_params: dict, body: dict) -> Response:
     """
     deletes the event for the given prn in the parameters
 
@@ -82,16 +81,16 @@ def action_delete_event(**kwargs) -> Response:
         }
 
     Args:
-        eveng (dict): The lambda event
+        event (dict): The lambda event
     """
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiEventActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
-event_actions: ActionHandlerRoutes = {
-    "GET:/api/v1/events": action_get_event_list,
-    "PUT:/api/v1/event": action_create_event,
-    "DELETE:/api/v1/event": action_delete_event,
+event_actions: dict[str, RouteEndpoint] = {
+    "GET:/api/v1/events": RouteEndpoint(action_get_event_list, permissions=["read:events"]),
+    "PUT:/api/v1/event": RouteEndpoint(action_create_event, permissions=["create:event"]),
+    "DELETE:/api/v1/event": RouteEndpoint(action_delete_event, permissions=["delete:event"]),
 }

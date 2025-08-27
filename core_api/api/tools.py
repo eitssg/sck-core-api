@@ -37,9 +37,9 @@ Attributes:
     HDR_* (str): Standard HTTP header name constants.
 """
 
-from typing import Any, Dict, List, Optional, Union
-import sys
 import socket
+from typing import Any, Dict, Optional
+import sys
 import platform
 import locale
 import uuid
@@ -53,47 +53,18 @@ import core_framework as util
 import core_helper.aws as aws
 
 from core_api import __version__
-from core_api.request import ProxyEvent, RequestContext, CognitoIdentity
 
-API_LAMBDA_NAME = "core-automation-api-master"
-
-# Standard HTTP headers used in AWS API Gateway
-HDR_X_CORRELATION_ID = "X-Correlation-Id"
-HDR_X_FORWARDED_FOR = "X-Forwarded-For"
-HDR_X_FORWARDED_PROTO = "X-Forwarded-Proto"
-HDR_AUTHORIZATION = "Authorization"
-HDR_CONTENT_TYPE = "Content-Type"
-HDR_ACCEPT = "Accept"
-HDR_USER_AGENT = "User-Agent"
+from ..request import ProxyEvent, RequestContext, CognitoIdentity
+from ..constants import (
+    API_LAMBDA_NAME,
+    HDR_X_CORRELATION_ID,
+    HDR_X_FORWARDED_FOR,
+    HDR_X_FORWARDED_PROTO,
+    HDR_USER_AGENT,
+)
 
 
-def get_ip_address() -> str:
-    """Get the IP address of the current host.
-
-    Attempts to determine the local IP address by resolving the hostname.
-    This is used for X-Forwarded-For headers and source IP tracking.
-
-    Returns:
-        str: The IP address of the current host, or "127.0.0.1" if unable to determine.
-
-    Note:
-        This may return a private IP address in local development environments.
-
-    Example:
-        .. code-block:: python
-
-            ip = get_ip_address()
-            print(f"Host IP: {ip}")  # Output: "Host IP: 192.168.1.100"
-    """
-    try:
-        hostname = socket.gethostname()
-        ip_address = socket.gethostbyname(hostname)
-        return ip_address
-    except Exception:
-        return "127.0.0.1"
-
-
-def get_version_info() -> tuple[str, str, str]:
+def _get_version_info() -> tuple[str, str, str]:
     """Get system version information for User-Agent generation.
 
     Extracts operating system information including platform name, version,
@@ -120,7 +91,8 @@ def get_version_info() -> tuple[str, str, str]:
         version = platform.version()
         release = platform.release()
         return "Windows", f"Version {version}", f"Release: {release}"
-    elif system == "Linux":
+
+    if system == "Linux":
         try:
             with open("/etc/os-release", "r") as f:
                 lines = f.readlines()
@@ -134,14 +106,15 @@ def get_version_info() -> tuple[str, str, str]:
                 return f"Linux {name}", f"Version: {version}", ""
         except Exception:
             return "Linux", "Unknown Version", "Unknown Distribution"
+
     elif system == "Darwin":
         release, _, machine = platform.mac_ver()
         return "macOS", f"Version: {release} ({machine})", ""
-    else:
-        return "Unknown", "Unsupported Operating System", ""
+
+    return "Unknown", "Unsupported Operating System", ""
 
 
-def generate_user_agent(module_name: str, module_version: str) -> str:
+def _generate_user_agent(module_name: str, module_version: str) -> str:
     """Generate User-Agent string with system information.
 
     Creates a detailed User-Agent string that includes module information,
@@ -162,17 +135,13 @@ def generate_user_agent(module_name: str, module_version: str) -> str:
             print(ua)
             # Output: "core_api/1.0.0 (Python/3.11.5; Windows/Version 10.0.19041)"
     """
-    python_version = (
-        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    )
-    os_name, os_version, _ = get_version_info()
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    os_name, os_version, _ = _get_version_info()
     user_agent = f"{module_name}/{module_version} (Python/{python_version}; {os_name}/{os_version})"
     return user_agent
 
 
-def get_header(
-    headers: Dict[str, str], name: str, default: Optional[str] = None
-) -> tuple[str, str]:
+def get_header(headers: Dict[str, str], name: str, default: Optional[str] = None) -> tuple[str, str]:
     """Get header value with case-insensitive lookup.
 
     Performs case-insensitive header lookup to handle variations in header
@@ -207,7 +176,33 @@ def get_header(
     return name, default or ""
 
 
-def event_headers(headers: Dict[str, str]) -> Dict[str, str]:
+def get_ip_address() -> str:
+    """Get the IP address of the current host.
+
+    Attempts to determine the local IP address by resolving the hostname.
+    This is used for X-Forwarded-For headers and source IP tracking.
+
+    Returns:
+        str: The IP address of the current host, or "127.0.0.1" if unable to determine.
+
+    Note:
+        This may return a private IP address in local development environments.
+
+    Example:
+        .. code-block:: python
+
+            ip = get_ip_address()
+            print(f"Host IP: {ip}")  # Output: "Host IP: 192.168.1.100"
+    """
+    try:
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        return ip_address
+    except Exception:
+        return "127.0.0.1"
+
+
+def _event_headers(headers: Dict[str, str]) -> Dict[str, str]:
     """Generate proxy forward headers with AWS API Gateway additions.
 
     Processes and enhances HTTP headers to match AWS API Gateway behavior.
@@ -228,7 +223,7 @@ def event_headers(headers: Dict[str, str]) -> Dict[str, str]:
         .. code-block:: python
 
             original_headers = {"Authorization": "Bearer token"}
-            enhanced_headers = event_headers(original_headers)
+            enhanced_headers = _event_headers(original_headers)
 
             # Now includes:
             # - X-Correlation-Id: <uuid>
@@ -253,12 +248,12 @@ def event_headers(headers: Dict[str, str]) -> Dict[str, str]:
 
     ua_header, ua = get_header(headers, HDR_USER_AGENT)
     if not ua:
-        headers[ua_header] = generate_user_agent("core_api", __version__)
+        headers[ua_header] = _generate_user_agent("core_api", __version__)
 
     return headers
 
 
-def generate_resource_id(resource: str) -> str:
+def _generate_resource_id(resource: str) -> str:
     """Generate a consistent hash for the resource ID.
 
     Creates a deterministic resource identifier based on the resource path.
@@ -348,16 +343,14 @@ def generate_proxy_event(
             # event.requestContext.requestId == "<uuid>"
             # event.multiValueHeaders == {"Content-Type": ["application/json"]}
     """
-    headers = event_headers(headers or {})
+    headers = _event_headers(headers or {})
 
     # Generate multi-value versions (AWS API Gateway always includes these)
     multi_value_headers = {k: [v] for k, v in headers.items()}
-    multi_value_query_params = (
-        {k: [v] for k, v in query_params.items()} if query_params else {}
-    )
+    multi_value_query_params = {k: [v] for k, v in query_params.items()} if query_params else {}
 
     # Generate resource ID and request timing
-    resource_id = generate_resource_id(resource)
+    resource_id = _generate_resource_id(resource)
     request_time_epoch = int(time.time() * 1000)  # AWS uses milliseconds
 
     # Get correlation ID and extended request ID
@@ -379,9 +372,7 @@ def generate_proxy_event(
         protocol=f"{protocol}/1.1",  # AWS includes HTTP version
         requestId=request_id,
         extendedRequestId=extended_request_id,
-        requestTime=datetime.fromtimestamp(request_time_epoch / 1000).strftime(
-            "%d/%b/%Y:%H:%M:%S %z"
-        ),
+        requestTime=datetime.fromtimestamp(request_time_epoch / 1000).strftime("%d/%b/%Y:%H:%M:%S %z"),
         requestTimeEpoch=request_time_epoch,
         identity=identity,
         stage=stage,
@@ -408,62 +399,15 @@ def generate_proxy_event(
     return rv
 
 
-def get_user_information(
-    token: str, role: Optional[str] = None
-) -> Optional[CognitoIdentity]:
-    """Get user identity information from authentication token.
-
-    Validates the provided JWT token and retrieves user identity information
-    from AWS Cognito. Optionally assumes an IAM role for the operation.
-
-    Args:
-        token (str): JWT authentication token from client.
-        role (Optional[str]): IAM role ARN to assume for this operation.
-
-    Returns:
-        Optional[CognitoIdentity]: User identity information if token is valid,
-        None if authentication fails.
-
-    Raises:
-        ValueError: If token is invalid or user is not authorized.
-
-    Note:
-        The returned identity includes all fields required for AWS API Gateway
-        request context, including account ID, user ARN, and access credentials.
-
-    Example:
-        .. code-block:: python
-
-            # Basic usage
-            identity = get_user_information("eyJ0eXAiOiJKV1Qi...")
-            if identity:
-                print(f"User: {identity.user}")
-                print(f"Account: {identity.accountId}")
-
-            # With IAM role assumption
-            read_role = "arn:aws:iam::123456789012:role/ReadOnlyRole"
-            identity = get_user_information(token, read_role)
+def get_user_information(session_token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
     """
-    identity_data = aws.get_identity(token, role)
+    Get AWS User Information
+    """
 
-    if not identity_data:
-        return None
-
-    cognito_identity = CognitoIdentity(
-        accountId=identity_data.get("Account"),
-        user=identity_data.get("UserId"),
-        userArn=identity_data.get("Arn"),
-        caller=identity_data.get("caller", __name__),
-        sourceIp=get_ip_address(),
-        accessKey=identity_data.get("AccessKeyId"),
-        # Additional AWS Cognito fields
-        cognitoIdentityPoolId=identity_data.get("CognitoIdentityPoolId"),
-        cognitoIdentityId=identity_data.get("CognitoIdentityId"),
-        principalOrgId=identity_data.get("PrincipalOrgId"),
-        userAgent="",  # Will be set by generate_proxy_event
-    )
-
-    return cognito_identity
+    if role is None:
+        account = util.get_automation_account()
+        role = util.get_automation_api_role_arn(account)
+    return aws.get_identity(session_token, role)
 
 
 def get_locale() -> tuple[Optional[str], Optional[str]]:
@@ -522,22 +466,15 @@ class ProxyContext(BaseModel):
         and other standard context methods.
     """
 
-    function_name: str = Field(
-        default_factory=lambda: util.get_api_lambda_name() or API_LAMBDA_NAME
-    )
+    function_name: str = Field(default_factory=lambda: util.get_api_lambda_name() or API_LAMBDA_NAME)
     function_version: str = "$LATEST"
     invoked_function_arn: str = Field(
-        default_factory=lambda: util.get_api_lambda_arn()
-        or f"arn:aws:lambda:us-east-1:123456789012:function:{API_LAMBDA_NAME}"
+        default_factory=lambda: util.get_api_lambda_arn() or f"arn:aws:lambda:us-east-1:123456789012:function:{API_LAMBDA_NAME}"
     )
     memory_limit_in_mb: int = 512  # Realistic default
     aws_request_id: str
-    log_group_name: str = Field(
-        default_factory=lambda: f"/aws/lambda/{util.get_api_lambda_name() or API_LAMBDA_NAME}"
-    )
-    log_stream_name: str = Field(
-        default_factory=lambda: f"{datetime.now().strftime('%Y/%m/%d')}/[$LATEST]{uuid.uuid4().hex[:8]}"
-    )
+    log_group_name: str = Field(default_factory=lambda: f"/aws/lambda/{util.get_api_lambda_name() or API_LAMBDA_NAME}")
+    log_stream_name: str = Field(default_factory=lambda: f"{datetime.now().strftime('%Y/%m/%d')}/[$LATEST]{uuid.uuid4().hex[:8]}")
     identity: Optional[Dict[str, Any]] = None
     client_context: ClientContext = Field(
         default_factory=lambda: ClientContext(
@@ -549,8 +486,8 @@ class ProxyContext(BaseModel):
                 "app_package_name": "core_api.api",
             },
             environment={
-                "platform": get_version_info()[0],
-                "platform_version": get_version_info()[1],
+                "platform": _get_version_info()[0],
+                "platform_version": _get_version_info()[1],
                 "model": platform.machine(),
                 "make": "Python",
                 "locale": f"{get_locale()[0] or 'en_US'}.{get_locale()[1] or 'UTF-8'}",
@@ -618,10 +555,6 @@ def generate_proxy_context(event: ProxyEvent) -> ProxyContext:
             result = lambda_handler(event.model_dump(), context)
     """
     aws_request_id = event.requestContext.requestId
-    identity = (
-        event.requestContext.identity.model_dump()
-        if event.requestContext.identity
-        else None
-    )
+    identity = event.requestContext.identity.model_dump() if event.requestContext.identity else None
 
     return ProxyContext(aws_request_id=aws_request_id, identity=identity)

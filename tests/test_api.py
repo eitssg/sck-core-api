@@ -20,7 +20,7 @@ from core_api.api.fast_api import get_app
 from core_framework.models import TaskPayload, DeploymentDetails
 from core_helper.magic import MagicS3Client
 
-from .test_api_data import api_paths
+from .test_api_data import api_endpoints
 
 # Create a FastAPI test client the same that uvicorn will use
 client = TestClient(get_app())
@@ -45,9 +45,7 @@ def teardown_action(bootstrap_dynamo):
 
     task_payload = TaskPayload(
         task="teardown",  # Pydantic models use snake_case
-        deployment_details=DeploymentDetails(
-            portfolio="simple-cloud-kit", app="api", branch="main", build="1"
-        ),
+        deployment_details=DeploymentDetails(portfolio="simple-cloud-kit", app="api", branch="main", build="1"),
     )
 
     # Pydantic models use snake_case attributes
@@ -80,7 +78,7 @@ def teardown_action(bootstrap_dynamo):
     return action
 
 
-@pytest.mark.parametrize("http_path,expected_result", api_paths)
+@pytest.mark.parametrize("http_path,expected_result", api_endpoints)
 def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action):
     """Test API endpoints with various HTTP methods."""
     assert bootstrap_dynamo  # Fixed: ensure bootstrap completed

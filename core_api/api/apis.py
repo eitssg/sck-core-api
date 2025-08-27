@@ -21,71 +21,38 @@ Attributes:
     BODY (str): Key name for response body in Lambda responses.
 """
 
+from typing import Optional
+
 import base64
+import json
+
+from fastapi.responses import JSONResponse, RedirectResponse
 
 import core_logging as log
-import core_framework as util
-import core_helper.aws as aws
 
-from fastapi import Request, APIRouter
-from fastapi.responses import Response
+from fastapi import Request, Response
 from fastapi.routing import APIRoute
 
-from ..proxy import api_paths, handler
+from core_api.oauth.auth_creds import decrypt_creds
+
+from ..oauth.tools import get_authenticated_user
+
+from ..security import get_security_context
+
 from ..request import ProxyEvent
+
 from .tools import (
     ProxyContext,
     CognitoIdentity,
     generate_proxy_event,
     generate_proxy_context,
+    get_ip_address,
+    get_user_information,
 )
 
 MEDIA_TYPE = "application/json"
 STATUS_CODE = "statusCode"
 BODY = "body"
-
-
-_router: APIRouter | None = None
-
-
-def get_api_router() -> APIRouter:
-    """Get or create the FastAPI router instance.
-
-    Creates a new router if one doesn't exist, automatically adding all API routes
-    from the proxy configuration. Each route is configured to forward requests
-    to the ``proxy_forward`` endpoint.
-
-    Returns:
-        APIRouter: Singleton router instance with configured API routes.
-
-    Note:
-        Routes are created from ``api_paths`` keys in format "METHOD:resource",
-        where METHOD is the HTTP method and resource is the URL path.
-
-    Example:
-        .. code-block:: python
-
-            router = RouterSingleton.get_router()
-            # Subsequent calls return the same instance
-            same_router = RouterSingleton.get_router()
-            assert router is same_router  # True
-    """
-    global _router
-
-    if _router is None:
-        _router = APIRouter()
-        for method_resource in api_paths.keys():
-            method, resource = method_resource.split(":")
-            # strip "/api" prefix if present
-            if resource.startswith("/api"):
-                resource = resource[4:]
-            _router.add_api_route(
-                resource,
-                endpoint=proxy_forward,
-                methods=[method],
-                response_class=Response,
-            )
-    return _router
 
 
 async def authorize_request(request: Request, role: str) -> CognitoIdentity:
@@ -114,35 +81,48 @@ async def authorize_request(request: Request, role: str) -> CognitoIdentity:
             identity = await authorize_request(request, "arn:aws:iam::123:role/ReadRole")
             print(f"User: {identity.username}")
     """
-    return CognitoIdentity()
+    # Your OAuth-based authentication
+    jwt_token, _ = get_authenticated_user(request.cookies, request.headers)
+    security_context = await get_security_context(request)
 
-    # headers = request.headers
-    # _, bearer = get_header(headers, "Authorization")
+    if not security_context:
+        raise ValueError("Authentication required")
 
-    # if bearer:
-    #     if not bearer.startswith("Bearer"):
-    #         raise ValueError("Authorization header is not in the correct format")
-    #     parts = bearer.split(" ")
-    #     if len(parts) != 2:
-    #         raise ValueError("Authorization header is not in the correct format")
-    #     token = parts[1]
-    # else:
-    #     token = None
+    aws_credentials = decrypt_creds(jwt_token)
 
-    # if not token:
-    #     raise ValueError("No Authorization token provided")
+    identity = get_user_information(aws_credentials["SessionToken"], role)
 
-    # identity = get_user_information(token, role)
+    if not identity:
+        raise ValueError("User is not authorized")
 
-    # if not identity:
-    #     raise ValueError("User is not authorized")
-
-    # return identity
+    return identity
 
 
-async def generate_event_context(
-    request: Request, identity: CognitoIdentity
-) -> tuple[ProxyEvent, ProxyContext]:
+def get_cognito_identity(session_token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
+    """
+    Get AWS Cognito Identity
+    """
+
+    identity_data = get_user_information(session_token, role)
+
+    cognito_identity = CognitoIdentity(
+        accountId=identity_data.get("Account"),
+        user=identity_data.get("UserId"),
+        userArn=identity_data.get("Arn"),
+        caller=identity_data.get("caller", __name__),
+        sourceIp=get_ip_address(),
+        accessKey=identity_data.get("AccessKeyId"),
+        # Additional AWS Cognito fields
+        cognitoIdentityPoolId=identity_data.get("CognitoIdentityPoolId"),
+        cognitoIdentityId=identity_data.get("CognitoIdentityId"),
+        principalOrgId=identity_data.get("PrincipalOrgId"),
+        userAgent="",  # Will be set by generate_proxy_event
+    )
+
+    return cognito_identity
+
+
+async def generate_event_context(request: Request, identity: CognitoIdentity) -> tuple[ProxyEvent, ProxyContext]:
     """Generate Lambda event and context from FastAPI request.
 
     Converts a FastAPI request into AWS Lambda proxy event and context objects
@@ -206,161 +186,259 @@ async def generate_event_context(
 
 
 async def generate_response_from_lambda(result: dict) -> Response:
-    """Convert Lambda response to FastAPI Response object.
+    """Convert AWS Lambda proxy response to appropriate FastAPI Response object.
 
-    Transforms the AWS Lambda proxy response format into a FastAPI Response
-    with appropriate status code, body content, and media type.
+    This function emulates AWS API Gateway's response processing, converting the
+    standardized Lambda proxy integration response format into the correct FastAPI
+    Response type. It handles all AWS API Gateway response behaviors including
+    redirects, JSON responses, error codes, cookies, and multi-value headers.
 
-    Args:
-        result (dict): The response object from Lambda function with structure:
+    AWS API Gateway Lambda Proxy Integration Response Format:
+        The Lambda function must return a response in this exact format:
 
-            .. code-block:: python
-
-                {
-                    "isBase64Encoded": False,
-                    "statusCode": 200,
-                    "headers": {
-                        "Content-Type": "application/json"
-                    },
-                    "body": '{"key": "value"}'  # JSON string
-                }
-
-    Returns:
-        Response: FastAPI Response object with extracted content and status.
-
-    Note:
-        The response body is assumed to be a JSON string and is set directly
-        as the response content with "application/json" media type.
-
-    Example:
         .. code-block:: python
 
-            lambda_result = {
-                "statusCode": 201,
-                "body": '{"id": 123, "name": "John"}'
+            {
+                "isBase64Encoded": false,
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-cache"
+                },
+                "multiValueHeaders": {
+                    "Set-Cookie": [
+                        "session_id=abc123; Path=/; HttpOnly",
+                        "csrf_token=xyz789; Path=/; Secure"
+                    ]
+                },
+                "body": '{"message": "Success"}'
             }
-            response = await generate_response_from_lambda(lambda_result)
-            # response.status_code == 201
-            # response.body == b'{"id": 123, "name": "John"}'
+
+    Args:
+        result (dict): AWS Lambda proxy integration response containing:
+
+            - **statusCode** (int): HTTP status code (200, 302, 404, etc.)
+            - **body** (str): Response body content (JSON string, HTML, etc.)
+            - **headers** (dict, optional): Single-value HTTP headers
+            - **multiValueHeaders** (dict, optional): Multi-value HTTP headers (like Set-Cookie)
+            - **isBase64Encoded** (bool, optional): Whether body is base64 encoded
+
+    Returns:
+        Response: Appropriate FastAPI Response subclass:
+
+            - **RedirectResponse**: For 3xx status codes with Location header
+            - **JSONResponse**: For application/json content type or valid JSON body
+            - **Response**: For all other content types (HTML, text, binary, etc.)
+
+    Response Type Selection Logic:
+        1. **Redirect (3xx + Location)**: Creates RedirectResponse with proper status code
+        2. **JSON Content**: Creates JSONResponse when Content-Type is application/json OR body is valid JSON
+        3. **Generic Content**: Creates basic Response for HTML, text, binary, or invalid JSON
+
+    AWS API Gateway Behaviors Emulated:
+        - **Multi-value headers**: Properly handles multiple Set-Cookie headers
+        - **Header case sensitivity**: Preserves original header case from Lambda
+        - **Base64 decoding**: Automatically decodes base64-encoded binary content
+        - **Content-Type detection**: Uses Lambda headers or defaults to application/json
+        - **Cookie handling**: Preserves all Set-Cookie values without merging
+
+    Example Lambda Responses:
+
+        **OAuth Redirect Response**:
+
+        .. code-block:: python
+
+            # Lambda returns
+            {
+                "statusCode": 302,
+                "headers": {
+                    "Location": "/auth/v1/authorize?client_id=app&state=xyz123"
+                },
+                "multiValueHeaders": {
+                    "Set-Cookie": [
+                        "github_oauth_state=abc123; Max-Age=600; HttpOnly; SameSite=Lax",
+                        "github_return_to=/dashboard; Max-Age=600; HttpOnly"
+                    ]
+                },
+                "body": ""
+            }
+            # Returns: RedirectResponse with cookies preserved
+
+        **API Success Response**:
+
+        .. code-block:: python
+
+            # Lambda returns
+            {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "X-Total-Count": "25",
+                    "Cache-Control": "max-age=300"
+                },
+                "body": '{"portfolios": [{"id": 1, "name": "My Portfolio"}], "total": 25}'
+            }
+            # Returns: JSONResponse with parsed JSON content
+
+        **Error Response**:
+
+        .. code-block:: python
+
+            # Lambda returns
+            {
+                "statusCode": 403,
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "body": '{"error": "insufficient_permissions", "error_description": "Missing portfolio:write permission"}'
+            }
+            # Returns: JSONResponse with error details
+
+        **Binary File Response**:
+
+        .. code-block:: python
+
+            # Lambda returns
+            {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/pdf",
+                    "Content-Disposition": "attachment; filename=report.pdf"
+                },
+                "body": "JVBERi0xLjQKJeLjz9MKM...",  # base64 encoded PDF
+                "isBase64Encoded": true
+            }
+            # Returns: Response with decoded binary content
+
+    Note:
+        This function ensures development behavior matches production AWS API Gateway
+        exactly, providing consistent response handling across environments.
+
+    Raises:
+        json.JSONDecodeError: If body appears to be JSON but is malformed (gracefully handled)
     """
     status_code = result.get(STATUS_CODE, 200)
-    body = result.get(BODY, "{}")
+    body = result.get(BODY, "")
     headers = result.get("headers", {})
     multi_value_headers = result.get("multiValueHeaders", {})
     is_base64 = result.get("isBase64Encoded", False)
 
-    # Handle base64 encoded responses (like binary files)
-    if is_base64:
-        content = base64.b64decode(body)
+    # Handle base64 encoded responses (binary files, images, etc.)
+    if is_base64 and body:
+        try:
+            content = base64.b64decode(body)
+            body_text = content.decode("utf-8", errors="ignore")
+        except Exception as e:
+            log.warning(f"Failed to decode base64 content: {e}")
+            content = body.encode("utf-8")
+            body_text = body
     else:
         content = body.encode("utf-8") if isinstance(body, str) else (body or b"")
+        body_text = body if isinstance(body, str) else ""
 
     # Merge headers (multi-value headers take precedence)
     final_headers = {}
     final_headers.update(headers)
 
-    # Handle multi-value headers (combine with commas like HTTP spec)
+    # Handle multi-value headers (AWS API Gateway behavior)
+    cookies = []
     for key, values in multi_value_headers.items():
-        if isinstance(values, list):
+        if key.lower() == "set-cookie":
+            # Set-Cookie headers are special - never combine with commas
+            cookies.extend(values if isinstance(values, list) else [values])
+        elif isinstance(values, list):
+            # Other multi-value headers are combined with commas (HTTP standard)
             final_headers[key] = ", ".join(str(v) for v in values)
         else:
             final_headers[key] = str(values)
 
-    # Determine media type from headers or default
-    media_type = final_headers.get("content-type", MEDIA_TYPE)
+    # Determine content type (AWS API Gateway default behavior)
+    content_type = final_headers.get("content-type", final_headers.get("Content-Type", MEDIA_TYPE))
 
     log.debug(
-        "Response from Lambda:",
-        details={"status": status_code, "headers": final_headers, "body": body},
+        "Processing Lambda response:",
+        details={
+            "status": status_code,
+            "content_type": content_type,
+            "headers_count": len(final_headers),
+            "cookies_count": len(cookies),
+            "body_length": len(body_text) if body_text else 0,
+            "is_base64": is_base64,
+        },
     )
 
-    return Response(
+    # AWS API Gateway Response Type Selection Logic
+
+    # 1. REDIRECT RESPONSES (3xx status + Location header)
+    if 300 <= status_code < 400:
+        location = None
+        for key, value in final_headers.items():
+            if key.lower() == "location":
+                location = value
+                break
+
+        if location:
+            log.debug(f"Creating RedirectResponse to: {location}")
+            redirect_response = RedirectResponse(url=location, status_code=status_code)
+
+            # Add all headers except Location (RedirectResponse handles it)
+            for key, value in final_headers.items():
+                if key.lower() != "location":
+                    redirect_response.headers[key] = value
+
+            # Add Set-Cookie headers individually (AWS API Gateway behavior)
+            for cookie in cookies:
+                redirect_response.headers.append("Set-Cookie", cookie)
+
+            return redirect_response
+
+    # 2. JSON RESPONSES (Content-Type or valid JSON detection)
+    is_json_content_type = content_type.lower().startswith("application/json")
+    is_valid_json_body = body_text and _is_valid_json(body_text)
+
+    if is_json_content_type or is_valid_json_body:
+        try:
+            # Parse and validate JSON content
+            json_data = json.loads(body_text) if body_text else {}
+
+            log.debug(f"Creating JSONResponse with {len(str(json_data))} characters")
+            json_response = JSONResponse(content=json_data, status_code=status_code)
+
+            # Add custom headers (JSONResponse automatically sets Content-Type and Content-Length)
+            for key, value in final_headers.items():
+                if key.lower() not in ["content-type", "content-length"]:
+                    json_response.headers[key] = value
+
+            # Add Set-Cookie headers individually
+            for cookie in cookies:
+                json_response.headers.append("Set-Cookie", cookie)
+
+            return json_response
+
+        except json.JSONDecodeError as e:
+            # Body looks like JSON but is malformed - log and fall through to generic response
+            log.warning(f"Malformed JSON in response body: {e}. Body preview: {body_text[:100]}...")
+
+    # 3. GENERIC RESPONSE (HTML, text, binary, malformed JSON)
+    log.debug(f"Creating generic Response with content-type: {content_type}")
+    response = Response(
         content=content,
         status_code=status_code,
         headers=final_headers,
-        media_type=media_type,
+        media_type=content_type,
     )
 
+    # Add Set-Cookie headers individually (maintains AWS API Gateway behavior)
+    for cookie in cookies:
+        response.headers.append("Set-Cookie", cookie)
 
-async def proxy_forward(request: Request) -> Response:
-    """Forward API requests to AWS Lambda function or local handler.
+    return response
 
-    This is the main request processing function that handles authentication,
-    event generation, and forwarding to either a local handler or AWS Lambda
-    function based on the environment configuration.
 
-    Args:
-        request (Request): FastAPI request object containing all request data.
-
-    Returns:
-        Response: Lambda function response wrapped in FastAPI Response object.
-
-    Raises:
-        ValueError: If automation account not configured or authorization fails.
-        HTTPException: If Lambda invocation fails or other processing errors occur.
-
-    Note:
-        - Read operations (GET) use read-only IAM roles
-        - Write operations (POST, PUT, DELETE, PATCH) use write IAM roles
-        - Local mode invokes handlers directly without AWS Lambda
-        - Remote mode invokes AWS Lambda functions with proper IAM roles
-
-    Example:
-        This function is typically not called directly but registered as an endpoint:
-
-        .. code-block:: python
-
-            router.add_api_route("/users", proxy_forward, methods=["GET"])
-            # Handles: GET /users -> Lambda function or local handler
-    """
+def _is_valid_json(text: str) -> bool:
+    """Check if text is valid JSON without raising exceptions."""
     try:
-        # Lambda functions are in the automation account
-        account = util.get_automation_account()
-        log.debug("Using Automation Account: %s", account)
-
-        if not account:
-            raise ValueError("No Automation Account specified in the environment")
-
-        # Read role for "get", Write role for other methods
-        is_write_operation = request.method.lower() != "get"
-        role = util.get_automation_api_role_arn(account, is_write_operation)
-
-        log.debug("Using IAM Role for operation: %s", role)
-
-        # Authorize the user for this operation
-
-        identity = await authorize_request(request, role)
-
-        # Generate Lambda event and context
-        lambda_event, context = await generate_event_context(request, identity)
-
-        # Convert event to dict for Lambda invocation
-        event = lambda_event.model_dump(exclude_none=True)
-
-        # Execute in local mode or invoke AWS Lambda
-        if util.is_local_mode():
-            # Local mode: invoke handler directly
-            result = handler(event, context)
-        else:
-            # Remote mode: invoke AWS Lambda function
-            arn = util.get_api_lambda_arn()
-            result = aws.invoke_lambda(arn, event, role=role)
-
-        return await generate_response_from_lambda(result)
-
-    except ValueError as e:
-        # Authorization errors (401)
-        return Response(
-            content=util.to_json({"message": str(e)}),
-            status_code=401,
-            media_type=MEDIA_TYPE,
-        )
-    except Exception as e:
-        # Internal server errors (500)
-        error_response = {
-            "message": "Internal server error",
-            "error": str(e) if util.is_debug_mode() else "An error occurred",
-        }
-        return Response(
-            content=util.to_json(error_response), status_code=500, media_type=MEDIA_TYPE
-        )
+        json.loads(text)
+        return True
+    except (json.JSONDecodeError, TypeError):
+        return False

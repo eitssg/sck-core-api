@@ -264,6 +264,31 @@ dev_app_facts = [
     },
 ]
 
+administrator = {
+    "user_id": "admin@example.com",
+    "profile_name": "default",
+    "display_name": "Administrator",
+    "email": "admin@example.com",
+    "timezone": "GMT+8",
+    "language": "en",
+    "theme": "dark",
+    "notifications_enabled": True,
+    "preferred_region": "en",
+    "permissions": {
+        "*": ["read", "write", "delete", "admin"],
+        "aws": [
+            "credentials:read",
+            "credentials:write",
+            "resources:read",
+            "resources:write",
+        ],
+        "billing": ["read", "write", "admin"],
+        "admin": ["user:manage", "client:manage", "system:config"],
+        "features": ["dashboard:advanced", "analytics", "billing:module"],
+    },
+    "is_active": True,
+}
+
 
 def test_seed_data(bootstrap_dynamo):
     # Create test data for clients

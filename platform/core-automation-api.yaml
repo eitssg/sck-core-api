@@ -1,0 +1,1396 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS::DynamoDB::Table - core-automation-api-app - resources
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+
+Resources:
+  DummyResource:
+    Type: AWS::CloudFormation::WaitConditionHandle
+    DeletionPolicy: Delete
+    Metadata:
+      Build: {{ context.Build }}
+
+  # S3 Buckets
+  {% if context.FilesBucketName == context.ArtefactsBucketName %}
+  # Single bucket for both files and artifacts
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: {{ context.FilesBucketName }}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: OptimizeStorageCosts
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+              - TransitionInDays: 180
+                StorageClass: DEEP_ARCHIVE
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 365
+      Tags:
+        - Key: Name
+          Value: {{ context.FilesBucketName }}
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+        - Key: Purpose
+          Value: "Files and Artifacts Storage"
+        - Key: CostOptimization
+          Value: "IA after 30 days, Glacier after 90 days"
+        - Key: Region
+          Value: {{ context.FilesBucketRegion }}
+        - Key: Compliance
+          Value: "Encrypted-at-rest-and-in-transit"
+
+  FilesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FilesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt FilesBucket.Arn
+              - !Sub "${FilesBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+          - Sid: EnforceEncryptionInTransit
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:PutObject"
+            Resource: !Sub "${FilesBucket.Arn}/*"
+            Condition:
+              StringNotEquals:
+                "s3:x-amz-server-side-encryption": "AES256"
+          - Sid: AllowAutomationApiAccess
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiReadRole"
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiWriteRole"
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/${Scope}{{ context.Client }}-simple-cloud-kit-api-server"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+              - "s3:GetObjectVersion"
+              - "s3:PutObjectAcl"
+              - "s3:GetObjectAcl"
+              - "s3:AbortMultipartUpload"
+              - "s3:ListMultipartUploadParts"
+            Resource:
+              - !GetAtt FilesBucket.Arn
+              - !Sub "${FilesBucket.Arn}/*"
+
+  {% else %}
+  # Separate buckets for files and artifacts
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: {{ context.FilesBucketName }}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: OptimizeStorageCosts
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+              - TransitionInDays: 180
+                StorageClass: DEEP_ARCHIVE
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 365
+      Tags:
+        - Key: Name
+          Value: {{ context.FilesBucketName }}
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+        - Key: Purpose
+          Value: "Files Storage"
+        - Key: CostOptimization
+          Value: "IA after 30 days, Glacier after 90 days"
+        - Key: Region
+          Value: {{ context.FilesBucketRegion }}
+        - Key: Compliance
+          Value: "Encrypted-at-rest-and-in-transit"
+
+  FilesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FilesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt FilesBucket.Arn
+              - !Sub "${FilesBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+          - Sid: EnforceEncryptionInTransit
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:PutObject"
+            Resource: !Sub "${FilesBucket.Arn}/*"
+            Condition:
+              StringNotEquals:
+                "s3:x-amz-server-side-encryption": "AES256"
+          - Sid: AllowAutomationApiAccess
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiReadRole"
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiWriteRole"
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/${Scope}{{ context.Client }}-simple-cloud-kit-api-server"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+              - "s3:GetObjectVersion"
+              - "s3:PutObjectAcl"
+              - "s3:GetObjectAcl"
+              - "s3:AbortMultipartUpload"
+              - "s3:ListMultipartUploadParts"
+            Resource:
+              - !GetAtt FilesBucket.Arn
+              - !Sub "${FilesBucket.Arn}/*"
+
+  ArtefactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: {{ context.ArtefactsBucketName }}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: OptimizeStorageCosts
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+              - TransitionInDays: 180
+                StorageClass: DEEP_ARCHIVE
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 365
+      Tags:
+        - Key: Name
+          Value: {{ context.ArtefactsBucketName }}
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+        - Key: Purpose
+          Value: "Artifacts Storage"
+        - Key: CostOptimization
+          Value: "IA after 30 days, Glacier after 90 days"
+        - Key: Region
+          Value: {{ context.ArtefactsBucketRegion }}
+        - Key: Compliance
+          Value: "Encrypted-at-rest-and-in-transit"
+
+  ArtefactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtefactsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ArtefactsBucket.Arn
+              - !Sub "${ArtefactsBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+          - Sid: EnforceEncryptionInTransit
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:PutObject"
+            Resource: !Sub "${ArtefactsBucket.Arn}/*"
+            Condition:
+              StringNotEquals:
+                "s3:x-amz-server-side-encryption": "AES256"
+          - Sid: AllowAutomationApiAccess
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiReadRole"
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiWriteRole"
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/${Scope}{{ context.Client }}-simple-cloud-kit-api-server"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+              - "s3:GetObjectVersion"
+              - "s3:PutObjectAcl"
+              - "s3:GetObjectAcl"
+              - "s3:AbortMultipartUpload"
+              - "s3:ListMultipartUploadParts"
+            Resource:
+              - !GetAtt ArtefactsBucket.Arn
+              - !Sub "${ArtefactsBucket.Arn}/*"
+  {% endif %}
+
+  # DynamoDB Tables (existing content)
+  ItemsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: parent_prn
+          AttributeType: S
+        - AttributeName: prn
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: parent_prn
+          KeyType: HASH
+        - AttributeName: prn
+          KeyType: RANGE
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-items"
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      GlobalSecondaryIndexes:
+        - IndexName: parent-created_at-index
+          KeySchema:
+            - AttributeName: parent_prn
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-items"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: parent_prn
+          AttributeType: S
+        - AttributeName: prn
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: parent_prn
+          KeyType: HASH
+        - AttributeName: prn
+          KeyType: RANGE
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-events"
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-events"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ProfilesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: UserId
+          AttributeType: S
+        - AttributeName: ProfileName
+          AttributeType: S
+        - AttributeName: Email
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: UserId
+          KeyType: HASH
+        - AttributeName: ProfileName
+          KeyType: RANGE
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-profiles"
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: Email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-profiles"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  OAuthTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Code
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Code
+          KeyType: HASH
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-oauth"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-oauth"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  AppsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Portfolio
+          AttributeType: S
+        - AttributeName: AppRegex
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Portfolio
+          KeyType: HASH
+        - AttributeName: AppRegex
+          KeyType: RANGE
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-apps"
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-apps"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ClientsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Client
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Client
+          KeyType: HASH
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-clients"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-clients"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  PortfoliosTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Portfolio
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Portfolio
+          KeyType: HASH
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-portfolios"
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-portfolios"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ZonesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Zone
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Zone
+          KeyType: HASH
+      TableName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-zones"
+      StreamSpecification:
+        StreamViewType: OLD_IMAGE
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-zones"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangePortfoliosLogGroup:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-portfolios-lambda"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-portfolios-lambda"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeAppsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName:
+        Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-apps-lambda"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-apps-lambda"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeZonesLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName:
+        Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-zones-lambda"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-zones-lambda"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  FactsLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+      - ChangePortfoliosLogGroup
+      - ChangeAppsLogGroup
+      - ChangeZonesLogGroup
+    Properties:
+      RoleName:
+        Fn::Sub: "${Scope}{{ context.Client | capitalize }}AutomationFactsLambdaExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBStreamPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:DescribeStream
+                  - dynamodb:ListStreams
+                Resource:
+                  - Fn::GetAtt:
+                      - PortfoliosTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - AppsTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - ZonesTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - ItemsTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - PortfoliosTable
+                      - StreamArn
+                  - Fn::GetAtt:
+                      - AppsTable
+                      - StreamArn
+                  - Fn::GetAtt:
+                      - ZonesTable
+                      - StreamArn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Scope}{{ context.Client }}-automation-change-portfolios-lambda:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Scope}{{ context.Client }}-automation-change-apps-lambda:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Scope}{{ context.Client }}-automation-change-zones-lambda:*'
+      Path: /
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client | capitalize }}AutomationFactsLambdaExecutionRole"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangePortfoliosLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - ChangePortfoliosLogGroup
+    Properties:
+      FunctionName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-change-portfolios-lambda"
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - FactsLambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          {{ "files/portfolio_lambda.py" | read_file | indent(10) }}
+      Runtime: python3.12
+      Timeout: 900
+      Environment:
+        Variables:
+          APPS_TABLE:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-apps"
+          ITEMS_TABLE:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-items"
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup:
+          Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-portfolios-lambda"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-portfolios-lambda"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeAppsLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - ChangeAppsLogGroup
+    Properties:
+      FunctionName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-change-apps-lambda"
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - FactsLambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          {{ "files/apps_lambda.py" | read_file | indent(10) }}
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup:
+          Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-apps-lambda"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-apps-lambda"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeZonesLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - ChangeZonesLogGroup
+    Properties:
+      FunctionName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-change-zones-lambda"
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - FactsLambdaExecutionRole
+          - Arn
+      Runtime: python3.12
+      Code:
+        ZipFile: |
+          {{ "files/zones_lambda.py" | read_file | indent(10) }}
+      Timeout: 30
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup:
+          Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-zones-lambda"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-zones-lambda"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  PortfoliosTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - PortfoliosTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangePortfoliosLambda
+          - Arn
+      StartingPosition: LATEST
+
+  AppsTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - AppsTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeAppsLambda
+          - Arn
+      StartingPosition: LATEST
+
+  ZonesTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - ZonesTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeZonesLambda
+          - Arn
+      StartingPosition: LATEST
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    DependsOn: ChangeEventsLogGroup
+    Properties:
+      RoleName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-api-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBStreamPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:DescribeStream
+                  - dynamodb:ListStreams
+                Resource:
+                  - Fn::GetAtt:
+                      - ItemsTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - ItemsTable
+                      - StreamArn
+                  - Fn::GetAtt:
+                      - EventsTable
+                      - Arn
+                  - Fn::GetAtt:
+                      - EventsTable
+                      - StreamArn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Scope}{{ context.Client }}-automation-change-events-lambda:*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Scope}{{ context.Client }}-automation-change-items-lambda:*'
+      Path: /
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-api-lambda-execution-role"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeEventsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName:
+        Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-events-lambda"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-events-lambda-log-group"
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeItemsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName:
+        Fn::Sub: '/aws/lambda/${Scope}{{ context.Client }}-automation-change-items-lambda'
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: '${Scope}{{ context.Client }}-automation-change-items-lambda-log-group'
+        - Key: Scope
+          Value: !Ref Scope
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeItemsLambda:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    DependsOn:
+      - ChangeItemsLogGroup
+    Properties:
+      FunctionName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-change-items-lambda"
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - LambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          {{ "files/items_lambda.py" | read_file | indent(10) }}
+      Runtime: python3.12
+      Environment:
+        Variables:
+          EVENTS_TABLE:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-events"
+          LOG_LEVEL: INFO
+          LOG_ALL_DELETE_EVENTS: 'true'
+      LoggingConfig:
+        LogGroup:
+          Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-items-lambda"
+        LogFormat: Text
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-items-lambda"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ChangeEventsLambda:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    DependsOn:
+      - ChangeEventsLogGroup
+    Properties:
+      FunctionName:
+        Fn::Sub: "${Scope}{{ context.Client }}-automation-change-events-lambda"
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - LambdaExecutionRole
+          - Arn
+      Code:
+        ZipFile: |
+          {{ "files/events_lambda.py" | read_file | indent(10) }}
+      Runtime: python3.12
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+      LoggingConfig:
+        LogGroup:
+          Fn::Sub: "/aws/lambda/${Scope}{{ context.Client }}-automation-change-events-lambda"
+        LogFormat: Text
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-automation-change-events-lambda"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ItemsTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    DeletionPolicy: Delete
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - ItemsTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeItemsLambda
+          - Arn
+      StartingPosition: LATEST
+
+  EventsTableStream:
+    Type: AWS::Lambda::EventSourceMapping
+    DeletionPolicy: Delete
+    Properties:
+      BatchSize: 100
+      EventSourceArn:
+        Fn::GetAtt:
+          - EventsTable
+          - StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - ChangeEventsLambda
+          - Arn
+      StartingPosition: LATEST
+
+Outputs:
+  # S3 Bucket Outputs
+  {% if context.FilesBucketName == context.ArtefactsBucketName %}
+  # Same bucket - output both sets with same values
+  FilesBucketName:
+    Description: "Name of the Files bucket"
+    Value: !Ref FilesBucket
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationFilesBucketName"
+  
+  FilesBucketArn:
+    Description: "ARN of the Files bucket"
+    Value: !GetAtt FilesBucket.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationFilesBucketArn"
+  
+  FilesBucketDomainName:
+    Description: "Domain name of the Files bucket"
+    Value: !GetAtt FilesBucket.DomainName
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationFilesBucketDomainName"
+  
+  ArtefactsBucketName:
+    Description: "Name of the Artifacts bucket (same as Files bucket)"
+    Value: !Ref FilesBucket
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationArtefactsBucketName"
+  
+  ArtefactsBucketArn:
+    Description: "ARN of the Artifacts bucket (same as Files bucket)"
+    Value: !GetAtt FilesBucket.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationArtefactsBucketArn"
+  
+  ArtefactsBucketDomainName:
+    Description: "Domain name of the Artifacts bucket (same as Files bucket)"
+    Value: !GetAtt FilesBucket.DomainName
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationArtefactsBucketDomainName"
+  {% else %}
+  # Different buckets - output separate values
+  FilesBucketName:
+    Description: "Name of the Files bucket"
+    Value: !Ref FilesBucket
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationFilesBucketName"
+  
+  FilesBucketArn:
+    Description: "ARN of the Files bucket"
+    Value: !GetAtt FilesBucket.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationFilesBucketArn"
+  
+  FilesBucketDomainName:
+    Description: "Domain name of the Files bucket"
+    Value: !GetAtt FilesBucket.DomainName
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationFilesBucketDomainName"
+  
+  ArtefactsBucketName:
+    Description: "Name of the Artifacts bucket"
+    Value: !Ref ArtefactsBucket
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationArtefactsBucketName"
+  
+  ArtefactsBucketArn:
+    Description: "ARN of the Artifacts bucket"
+    Value: !GetAtt ArtefactsBucket.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationArtefactsBucketArn"
+  
+  ArtefactsBucketDomainName:
+    Description: "Domain name of the Artifacts bucket"
+    Value: !GetAtt ArtefactsBucket.DomainName
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationArtefactsBucketDomainName"
+  {% endif %}
+
+  # DynamoDB Table Outputs (existing)
+  ItemsTableArn:
+    Value:
+      Fn::GetAtt:
+        - ItemsTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationItemsTableArn"
+  ItemsTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-items"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationItemsTableName"
+  EventsTableArn:
+    Value:
+      Fn::GetAtt:
+        - EventsTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationEventsTableArn"
+  EventsTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-events"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationEventsTableName"
+  ProfilesTableArn:
+    Value:
+      Fn::GetAtt:
+        - ProfilesTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationProfilesTableArn"
+  ProfilesTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-profiles"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationProfilesTableName"
+  OAuthTableArn:
+    Value:
+      Fn::GetAtt:
+        - OAuthTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationOAuthTableArn"
+  OAuthTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-oauth"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationOAuthTableName"
+  AppsTableArn:
+    Value:
+      Fn::GetAtt:
+        - AppsTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationAppsTableArn"
+  AppsTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-apps"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationAppsTableName"
+  ClientsTableArn:
+    Value:
+      Fn::GetAtt:
+        - ClientsTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationClientsTableArn"
+  ClientsTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-clients"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationClientsTableName"
+  PortfoliosTableArn:
+    Value:
+      Fn::GetAtt:
+        - PortfoliosTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationPortfoliosTableArn"
+  PortfoliosTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-portfolios"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationPortfoliosTableName"
+  ZonesTableArn:
+    Value:
+      Fn::GetAtt:
+        - ZonesTable
+        - Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationZonesTableArn"
+  ZonesTableName:
+    Value:
+      Fn::Sub: "${Scope}{{ context.Client }}-automation-zones"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationZonesTableName"

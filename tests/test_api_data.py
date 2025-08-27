@@ -1,4 +1,4 @@
-api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
+api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     # Events
     # Case 0
     (
@@ -1032,9 +1032,7 @@ api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                         },
                     },
                     "Client": "eits",
-                    "RegionFacts": {
-                        "sin": {"AwsRegion": "ap-southeast-1", "AzCount": 3}
-                    },
+                    "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1", "AzCount": 3}},
                     "Zone": "simple-cloud-kit-api-production",
                 },
             },

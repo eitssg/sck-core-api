@@ -1,0 +1,16 @@
+[MESSAGES CONTROL]
+disable = unused-argument
+
+[FORMAT]
+# Set maximum line length to 132 characters
+max-line-length = 132
+
+[BASIC]
+# Allow common short variable names used in your codebase
+good-names = i,j,k,ex,Run,_,id,pp,qsp,e
+
+[DESIGN]
+# Reasonable limits for your API handlers
+max-args = 10
+max-locals = 20
+max-attributes = 15

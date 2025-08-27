@@ -6,12 +6,7 @@ from collections import ChainMap
 from core_db.response import Response
 from core_db.item.portfolio.actions import PortfolioActions
 
-from ..constants import (
-    QUERY_STRING_PARAMETERS,
-    PATH_PARAMETERS,
-    BODY_PARAMETER,
-)
-from ..request import ActionHandlerRoutes
+from ..request import RouteEndpoint
 
 from ..actions import ApiActions
 
@@ -20,46 +15,46 @@ class ApiPortfolioActions(ApiActions, PortfolioActions):
     pass
 
 
-def get_portfolio_list_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def get_portfolio_list_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiPortfolioActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def get_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiPortfolioActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def update_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiPortfolioActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def create_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiPortfolioActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def delete_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiPortfolioActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 # API Gateway Lambda Proxy Integration routes
-item_portfolio_actions: ActionHandlerRoutes = {
-    "GET:/api/v1/item/portfolios": get_portfolio_list_action,
-    "GET:/api/v1/item/portfolio": get_portfolio_action,
-    "PUT:/api/v1/item/portfolio": update_portfolio_action,
-    "POST:/api/v1/item/portfolio": create_portfolio_action,
-    "DELETE:/api/v1/item/portfolio": delete_portfolio_action,
+item_portfolio_actions: dict[str, RouteEndpoint] = {
+    "GET:/api/v1/item/portfolios": RouteEndpoint(get_portfolio_list_action, permissions=["read:portfolios"]),
+    "GET:/api/v1/item/portfolio": RouteEndpoint(get_portfolio_action, permissions=["read:portfolio"]),
+    "PUT:/api/v1/item/portfolio": RouteEndpoint(update_portfolio_action, permissions=["update:portfolio"]),
+    "POST:/api/v1/item/portfolio": RouteEndpoint(create_portfolio_action, permissions=["create:portfolio"]),
+    "DELETE:/api/v1/item/portfolio": RouteEndpoint(delete_portfolio_action, permissions=["delete:portfolio"]),
 }

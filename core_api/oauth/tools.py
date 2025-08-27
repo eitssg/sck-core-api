@@ -1,3 +1,4 @@
+from math import perm
 from typing import Optional, Dict, Tuple
 import time
 import base64
@@ -8,7 +9,6 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 
 from core_db.registry import ClientFact
-from fastapi import Request
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -34,22 +34,37 @@ from .constants import (
     REFRESH_MIN_INTERVAL_SECONDS,
     SESSION_JWT_MINUTES,
     JWT_EXPIRATION_HOURS,
+    SCK_TOKEN_COOKIE_NAME,
 )
 
 
 class JwtPayload(BaseModel):
-    sub: str = Field(...)
+    sub: str = Field(..., description="Subject (user identifier, e.g. email)")
+    cid: str = Field(..., description="Client ID")
+
     iat: int | None = Field(None, description="Issued at time as UNIX timestamp")
     exp: int | None = Field(None, description="Expiration time as UNIX timestamp")
     typ: str | None = Field(None, description="Token type")
     iss: str | None = Field(None, description="Issuer")
     jti: str | None = Field(None, description="Unique token identifier")
     ttl: int | None = Field(None, description="Token time-to-live in minutes")
-    cid: str | None = Field(None, description="Client ID")
-    cnm: str | None = Field(None, description="Client Name")
+    cnm: str | None = Field(None, description="Client URL slug associated with Client ID")
     scp: str | None = Field(None, description="Scope of the Access token")
     enc: str | None = Field(None, description="Encrypted AWS STS temporary credentials (JWE)")
     nbf: int | None = Field(None, description="Not before time as UNIX timestamp")
+
+    # OAuth Flow Parameters
+    rty: str | None = Field(None, description="Response type (code, token)")
+    rdu: str | None = Field(None, description="Redirect URI for OAuth callback")
+    sid: str | None = Field(None, description="State parameter for OAuth flow")
+    ccm: str | None = Field(None, description="Code challenge method (S256, plain)")
+    cch: str | None = Field(None, description="Code challenge for PKCE")
+
+    # Optional OAuth Extensions
+    aud: str | None = Field(None, description="Intended audience")
+    nonce: str | None = Field(None, description="OpenID Connect nonce")
+    prompt: str | None = Field(None, description="Authentication prompt parameter")
+    max_age: int | None = Field(None, description="Maximum authentication age")
 
     def is_expired(self) -> bool:
         """Check if the token is expired."""
@@ -105,6 +120,16 @@ class JwtPayload(BaseModel):
 
     @model_validator(mode="before")
     def validate_fields(cls, values: dict) -> dict:
+
+        if "cid" not in values:
+            raise ValueError("Client ID (cid) is required")
+
+        cnm = values.get("cnm")
+        if not cnm:
+            raise ValueError("Client Name (cnm) is required")
+        cnm = cnm.lower()
+        values["cnm"] = cnm
+
         typ = values.get("typ")
         if not typ:
             typ = "access"
@@ -200,7 +225,11 @@ def is_password_compliant(password: str) -> bool:
     return True
 
 
-def encrypt_credentials(aws_access_key: str | None = None, aws_secret_key: str | None = None, password: str | None = None) -> dict:
+def encrypt_credentials(
+    aws_access_key: str | None = None,
+    aws_secret_key: str | None = None,
+    password: str | None = None,
+) -> dict:
     """Create encrypted credential envelope for secure storage in user profiles
 
     Combines password hashing (bcrypt) and AWS credential encryption (JWE) into a single
@@ -438,7 +467,7 @@ def decrypt_creds(encrypted_credentials: str) -> dict:
     Decrypt JWE-encrypted credentials back to dictionary.
 
     Args:
-        encrypted_credentials (str): JWE-encrypted credential string
+        encrypted_credentials (str): JWE-encrypted credential string.  JwtPayload.enc field.
 
     Returns:
         dict: Decrypted credentials dictionary
@@ -462,21 +491,29 @@ def decrypt_creds(encrypted_credentials: str) -> dict:
         raise ValueError("Failed to decrypt credentials")
 
 
-def get_user_access_key(user_id: str, password: Optional[str] = None) -> dict:
+def get_user_access_key(client: str, user_id: str, password: Optional[str] = None) -> Tuple[dict, dict]:
     """Retrieve and decrypt user's AWS credentials from database with optional password validation
 
     Fetches user profile from database, optionally validates password, then decrypts
     and returns AWS credentials. Used by OAuth token generation and direct API access.
 
     Args:
+        client (str): Client name for the profile
         user_id (str): User identifier to lookup credentials for
         password (str, optional): User password for validation. If None, skips password check.
 
     Returns:
-        dict: Decrypted AWS credentials structure:
+        tuple[dict, dict]: Decrypted AWS credentials structure:
               {
                   "AccessKeyId": "AKIAIOSFODNN7EXAMPLE",
                   "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+              },
+              {
+                  "Profiles": [
+                      "read",
+                      "write",
+                      "admin",
+                  ]
               }
 
     Raises:
@@ -501,25 +538,26 @@ def get_user_access_key(user_id: str, password: Optional[str] = None) -> dict:
 
     Examples:
         >>> # OAuth flow - validate password and get credentials
-        >>> creds = get_user_access_key("user@example.com", "password123")
+        >>> creds, permissions = get_user_access_key("acme", "user@example.com", "password123")
         >>> access_key = creds["AccessKeyId"]
         >>> secret_key = creds["SecretAccessKey"]
         >>>
         >>> # API access - skip password validation
-        >>> creds = get_user_access_key("user@example.com")
+        >>> creds, permissions = get_user_access_key("acme", "user@example.com")
         >>> # Returns credentials if user has them configured
     """
     try:
         if not user_id:
             raise ValueError("User ID is required for validation.")
 
-        response: SuccessResponse = ProfileActions.get(client="core", user_id=user_id, profile_name="default")
+        response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
         profile = UserProfile(**response.data)
 
         if not profile.credentials:
             raise ValueError("No credentials envelope found")
 
         credentials = profile.credentials
+        permissions = profile.permissions
 
         if password:
             stored_hash = credentials.get("Password") or credentials.get("password")
@@ -530,7 +568,7 @@ def get_user_access_key(user_id: str, password: Optional[str] = None) -> dict:
         if not jwe_creds:
             raise ValueError("No credentials found in envelope")
 
-        return decrypt_creds(jwe_creds)
+        return decrypt_creds(jwe_creds), permissions
 
     except Exception as e:
         log.debug(f"Error retrieving credentials for user {user_id}: {e}")
@@ -594,7 +632,7 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
     return payload.encode()
 
 
-def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload) -> str:
+def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload, permissions: dict) -> str:
     """Generate OAuth access token with encrypted AWS STS temporary credentials and client context
 
     Takes user's long-term AWS credentials, exchanges them for time-limited STS credentials,
@@ -604,6 +642,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload)
     Args:
         aws_credentials (dict): User's long-term AWS credentials
         jwt_payload (JwtPayload): JWT payload containing user and client information
+        permissions (dict): User's permissions for the session
 
     Returns:
         str: Signed JWT access token containing encrypted AWS STS credentials
@@ -661,6 +700,13 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload)
         >>> # Token contains encrypted STS credentials for API access
     """
 
+    # Convert user permissions to OAuth scope string
+    user_scope = _generate_scope_from_permissions(permissions)
+
+    # Merge with any application-level scope from session token
+    session_scope = jwt_payload.scp or ""
+    combined_scope = _combine_scopes(session_scope, user_scope)
+
     # Use provided duration or default
     duration_seconds = 3600 * JWT_EXPIRATION_HOURS
 
@@ -684,7 +730,9 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload)
 
         if mfa_device_id and mfa_token_code:
             result = sts_client.get_session_token(
-                DurationSeconds=duration_seconds, SerialNumber=mfa_device_id, TokenCode=mfa_token_code
+                DurationSeconds=duration_seconds,
+                SerialNumber=mfa_device_id,
+                TokenCode=mfa_token_code,
             )
         else:
             result = sts_client.get_session_token(DurationSeconds=duration_seconds)
@@ -706,14 +754,72 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload)
         sub=jwt_payload.sub,
         cid=jwt_payload.cid,
         cnm=jwt_payload.cnm,
-        scp=jwt_payload.scp,
+        scp=combined_scope,
         enc=creds_enc,
         ttl=minutes,
     )
     return payload.encode()
 
 
-def get_client_ip(request: Request) -> str:
+def _generate_scope_from_permissions(permissions: dict) -> str:
+    """Convert user permissions dictionary to OAuth scope string.
+
+    Args:
+        permissions (dict): User permissions from UserProfile
+
+    Returns:
+        str: Space-separated OAuth scope string
+
+    Examples:
+        >>> permissions = {
+        ...     "registry": ["read", "write"],
+        ...     "aws": ["credentials:read"],
+        ...     "admin": ["user:manage"]
+        ... }
+        >>> scope = generate_scope_from_permissions(permissions)
+        >>> # "registry:read registry:write aws:credentials:read admin:user:manage"
+    """
+    if not permissions or not isinstance(permissions, dict):
+        return ""
+
+    scopes = []
+
+    for category, perms in permissions.items():
+        if not isinstance(perms, list):
+            continue
+
+        for perm in perms:
+            if isinstance(perm, str) and perm.strip():
+                if category == "*":
+                    # Wildcard permission: "*" -> "*:read", "*:write"
+                    scope = f"*:{perm.strip()}"
+                else:
+                    # Regular permission: "registry" -> "registry:read"
+                    scope = f"{category}:{perm.strip()}"
+                scopes.append(scope)
+
+    return " ".join(sorted(scopes))
+
+
+def _combine_scopes(app_scope: str, user_scope: str) -> str:
+    """Combine application and user scopes, removing duplicates.
+
+    Args:
+        app_scope (str): Application-level scope from session token
+        user_scope (str): User-level scope from permissions
+
+    Returns:
+        str: Combined scope string
+    """
+    app_scopes = set(app_scope.split()) if app_scope else set()
+    user_scopes = set(user_scope.split()) if user_scope else set()
+
+    # Combine and sort for consistency
+    combined = app_scopes.union(user_scopes)
+    return " ".join(sorted(combined))
+
+
+def get_client_ip(headers: dict) -> str:
     """Extract real client IP address from request headers, handling proxy scenarios safely
 
     Determines the actual client IP address by checking proxy headers and falling back
@@ -756,10 +862,9 @@ def get_client_ip(request: Request) -> str:
         >>> # Unknown: "unknown"
         >>> # Use for rate limiting or logging
     """
-    ip = request.client.host if request.client else "unknown"
 
     # Check forwarded IP if behind proxy (take first IP only)
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    forwarded = headers.get("x-forwarded-for", "").split(",")[0].strip()
     if forwarded and forwarded != ip:
         # Basic validation of forwarded IP
         try:
@@ -773,7 +878,7 @@ def get_client_ip(request: Request) -> str:
     return ip
 
 
-def get_client_identifier(request: Request) -> str:
+def get_client_identifier(headers: dict) -> str:
     """Generate stable client fingerprint for rate limiting and abuse detection
 
     Creates a composite identifier combining IP address and user agent to uniquely
@@ -810,10 +915,10 @@ def get_client_identifier(request: Request) -> str:
         >>> # "203.0.113.1#Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
         >>> # Use for rate limiting or abuse detection
     """
-    real_ip = get_client_ip(request)
+    real_ip = get_client_ip(headers)
 
     # Include user agent for fingerprinting (truncated for safety)
-    ua = request.headers.get("user-agent", "unknown")[:50]
+    ua = headers.get("user-agent", "unknown")[:50]
 
     return f"{real_ip}#{ua}"
 
@@ -851,7 +956,7 @@ def _get_rate_limit_key(identifier: str, endpoint: str) -> str:
     return f"rate#{endpoint}#{identifier}"
 
 
-def check_rate_limit(request: Request, endpoint: str, max_attempts: int = 5, window_minutes: int = 15) -> bool:
+def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window_minutes: int = 15) -> bool:
     """Enforce sliding window rate limiting per client per endpoint using DynamoDB storage
 
     Implements robust rate limiting to prevent abuse while maintaining good user experience.
@@ -931,7 +1036,7 @@ def check_rate_limit(request: Request, endpoint: str, max_attempts: int = 5, win
         - File uploads: 10 per hour
 
     """
-    identifier = get_client_identifier(request)
+    identifier = get_client_identifier(headers)
     key = _get_rate_limit_key(identifier, endpoint)
     now = int(time.time())
     window_start = now - (window_minutes * 60)
@@ -1062,7 +1167,7 @@ def cookie_opts() -> dict:
     return opts
 
 
-def get_authenticated_user(request: Request) -> Tuple[JwtPayload | None, str | None]:
+def get_authenticated_user(cookies: dict, headers: dict) -> Tuple[JwtPayload | None, str | None]:
     """Extract the authenticated user and client context from JWT token.
 
     Checks Authorization header or sck_token cookie for valid JWT,
@@ -1105,12 +1210,12 @@ def get_authenticated_user(request: Request) -> Tuple[JwtPayload | None, str | N
         No exceptions raised - returns None values for any authentication failure
     """
     # Get the token from either the "authorization" header or the "sck_token" cookie
-    authz = (request.headers.get("authorization") or "").strip()
+    authz = (headers.get("authorization") or "").strip()
     token = None
     if authz.lower().startswith("bearer "):
         token = authz.split(" ", 1)[1].strip()
-    elif "sck_token" in request.cookies:
-        token = request.cookies["sck_token"]
+    elif SCK_TOKEN_COOKIE_NAME in cookies:
+        token = cookies[SCK_TOKEN_COOKIE_NAME]
 
     if not token:
         return None, None

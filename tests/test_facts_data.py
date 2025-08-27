@@ -1,4 +1,4 @@
-api_paths: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
+api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     # Registry of Clients
     # Case 0
     (

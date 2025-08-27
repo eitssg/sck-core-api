@@ -8,7 +8,11 @@ from core_framework.constants import (
     CORE_AUTOMATION_API_WRITE_ROLE,
 )
 
-from .tools import get_user_information
+
+from ..request import ProxyEvent
+
+from ..oauth.tools import get_authenticated_user
+from ..api.tools import get_user_information
 
 
 def lambda_handler(event, context):  # noqa: C901
@@ -21,15 +25,14 @@ def lambda_handler(event, context):  # noqa: C901
     Returns:
         dict: IAM policy document determining access
     """
-    # Extract the session token from the event
-    token = event["headers"].get("Authorization", "").split(" ")[1] if "Authorization" in event["headers"] else None
 
-    if not token:
-        return generate_policy(None, "Deny", event["methodArn"], "No token provided")
+    request = ProxyEvent(**event)
+
+    jwt_payload, _ = get_authenticated_user(request.cookies, request.headers)
 
     try:
 
-        assumed_role = get_user_information(token)
+        assumed_role = get_user_information(jwt_payload, roles=None)
 
         # account_id = assumed_role["Account"]
         user_arn = assumed_role["Arn"]
@@ -73,13 +76,13 @@ def lambda_handler(event, context):  # noqa: C901
         # Determine if the user has both roles
         if has_read_role and has_write_role:
             return generate_policy(user_arn, "Allow", event["methodArn"], "User has both roles")
-        else:
-            return generate_policy(
-                user_arn,
-                "Deny",
-                event["methodArn"],
-                "User does not have required roles",
-            )
+
+        return generate_policy(
+            user_arn,
+            "Deny",
+            event["methodArn"],
+            "User does not have required roles",
+        )
 
     except ClientError as e:
         return generate_policy(None, "Deny", event["methodArn"], f"Error validating token: {str(e)}")

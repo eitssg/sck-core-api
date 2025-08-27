@@ -10,9 +10,7 @@ from collections import ChainMap
 from core_db.facter.actions import FactsActions
 from core_db.response import Response
 
-from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
-
-from ..request import ActionHandlerRoutes
+from ..request import RouteEndpoint
 
 from ..actions import ApiActions
 
@@ -21,7 +19,7 @@ class ApiFactsActions(ApiActions, FactsActions):
     pass
 
 
-def get_facts_action(**kwargs) -> Response:
+def get_facts_action(*, query_params: dict = None, path_params: dict = None, body: dict = None) -> Response:
     """
     API Documentation:
     ----------------
@@ -71,11 +69,13 @@ def get_facts_action(**kwargs) -> Response:
                 "error": "Facts not found for given PRN"
             }
     """
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiFactsActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
 # Define API Gateway routes
-facts_actions: ActionHandlerRoutes = {"GET:/api/v1/facts/{client}": get_facts_action}
+facts_actions: dict[str, RouteEndpoint] = {
+    "GET:/api/v1/facts/{client}": RouteEndpoint(get_facts_action, permissions=["read:facts"]),
+}

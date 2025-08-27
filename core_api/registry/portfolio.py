@@ -15,9 +15,9 @@ from collections import ChainMap
 from core_db.response import Response
 from core_db.registry.portfolio.actions import PortfolioActions
 
-from ..constants import PATH_PARAMETERS, QUERY_STRING_PARAMETERS, BODY_PARAMETER
+from ..security import Permission
 
-from ..request import ActionHandlerRoutes
+from ..request import ActionHandlerRoutes, RouteEndpoint
 
 from ..actions import ApiActions
 
@@ -26,7 +26,7 @@ class ApiRegPortfolioActions(ApiActions, PortfolioActions):
     pass
 
 
-def list_portfolios_action(**kwargs) -> Response:
+def list_portfolios_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
     """
     Returns a list of all portfolios for the client.
 
@@ -47,55 +47,65 @@ def list_portfolios_action(**kwargs) -> Response:
     Returns:
         Response: AWS Api Gateway Response
     """
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiRegPortfolioActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_portfolio_action(**kwargs) -> Response:
+def get_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
     """
     Returns a portfolio for the client.
     """
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiRegPortfolioActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def create_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiRegPortfolioActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def update_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiRegPortfolioActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def patch_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def patch_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiRegPortfolioActions.patch(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_portfolio_action(**kwargs) -> Response:
-    qsp = kwargs.get(QUERY_STRING_PARAMETERS, None) or {}
-    pp = kwargs.get(PATH_PARAMETERS, None) or {}
-    body = kwargs.get(BODY_PARAMETER, None) or {}
+def delete_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+    qsp = query_params or {}
+    pp = path_params or {}
+    body = body or {}
     return ApiRegPortfolioActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
 registry_portfolio_actions: ActionHandlerRoutes = {
-    "GET:/api/v1/registry/{client}/portfolios": list_portfolios_action,
-    "POST:/api/v1/registry/{client}/portfolios": create_portfolio_action,
-    "GET:/api/v1/registry/{client}/portfolio/{portfolio}": get_portfolio_action,
-    "PUT:/api/v1/registry/{client}/portfolio/{portfolio}": update_portfolio_action,
-    "DELETE:/api/v1/registry/{client}/portfolio/{portfolio}": delete_portfolio_action,
-    "PATCH:/api/v1/registry/{client}/portfolio/{portfolio}": patch_portfolio_action,
+    "GET:/api/v1/registry/{client}/portfolios": RouteEndpoint(list_portfolios_action, required_permissions={Permission.DATA_READ}),
+    "POST:/api/v1/registry/{client}/portfolios": RouteEndpoint(
+        create_portfolio_action, required_permissions={Permission.DATA_WRITE}
+    ),
+    "GET:/api/v1/registry/{client}/portfolio/{portfolio}": RouteEndpoint(
+        get_portfolio_action, required_permissions={Permission.DATA_READ}
+    ),
+    "PUT:/api/v1/registry/{client}/portfolio/{portfolio}": RouteEndpoint(
+        update_portfolio_action, required_permissions={Permission.DATA_WRITE}
+    ),
+    "DELETE:/api/v1/registry/{client}/portfolio/{portfolio}": RouteEndpoint(
+        delete_portfolio_action, required_permissions={Permission.DATA_WRITE}
+    ),
+    "PATCH:/api/v1/registry/{client}/portfolio/{portfolio}": RouteEndpoint(
+        patch_portfolio_action, required_permissions={Permission.DATA_WRITE}
+    ),
 }

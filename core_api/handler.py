@@ -1,238 +1,207 @@
-"""Main Lambda function handler with intelligent request routing.
+"""Direct request handler for core API actions.
 
-This module provides the primary entry point for AWS Lambda function execution,
-automatically detecting the request source and routing to the appropriate handler
-based on the event structure. It supports both API Gateway proxy integration
-and direct Lambda invocation patterns.
-
-The handler implements a dual-mode architecture:
-
-1. **API Gateway Mode**: For HTTP requests via AWS API Gateway or local emulator
-2. **Direct Invocation Mode**: For CLI tools, scheduled tasks, and other Lambda invocations
-
-Example:
-    AWS Lambda deployment::
-
-        # serverless.yml or SAM template
-        Functions:
-          CoreAPI:
-            Handler: core_api.handler.handler
-            Runtime: python3.11
-
-    Local testing::
-
-        from core_api.handler import handler
-
-        # API Gateway event
-        api_event = {
-            "resource": "/users/{id}",
-            "httpMethod": "GET",
-            "pathParameters": {"id": "123"}
-        }
-        response = handler(api_event, context)
-
-        # Direct invocation event
-        direct_event = {
-            "action": "portfolio:create",
-            "data": {"name": "My Portfolio"}
-        }
-        response = handler(direct_event, context)
+Processes API requests by routing them to appropriate action handlers based on request type.
+Handles authentication, authorization, and request/response processing.
 """
 
-from typing import Any
+from typing import Any, Callable
 
 import core_logging as log
-import core_framework as util
 
-from .direct import handler as direct_handler
-from .proxy import handler as proxy_handler
+import core_framework.common as util
+
+from core_db.response import ErrorResponse, Response
+from core_db.exceptions import BadRequestException, UnauthorizedException
+
+from .api.tools import get_user_information
+
+# Actions to track all deployments and PRN data
+from .item.portfolio import ApiPortfolioActions
+from .item.app import ApiAppActions
+from .item.branch import ApiBranchActions
+from .item.build import ApiBuildActions
+from .item.component import ApiComponentActions
+
+# Event actions and routes (status events and other log messages in dynamodb)
+from .event.event import ApiEventActions
+
+# Registry facts actions and routes
+from .registry.client import ApiRegClientActions
+from .registry.portfolio import ApiRegPortfolioActions
+from .registry.app import ApiRegAppActions
+from .registry.zone import ApiRegZoneActions
+
+# Facter actions - Get the facts.  Nothing but the facts.
+from .facts.facter import ApiFactsActions
+
+from .request import (
+    Request,
+    RequestType,
+    RequestRoutesType,
+)
+
+# TODO: CLI does not have any permissions matrix around the action endpoint
+actions_routes: RequestRoutesType = {
+    RequestType.PORTFOLIO: ApiPortfolioActions,
+    RequestType.APP: ApiAppActions,
+    RequestType.BRANCH: ApiBranchActions,
+    RequestType.BUILD: ApiBuildActions,
+    RequestType.COMPONENT: ApiComponentActions,
+    RequestType.EVENT: ApiEventActions,
+    RequestType.FACTS: ApiFactsActions,
+    RequestType.REG_CLIENT: ApiRegClientActions,
+    RequestType.REG_PORTFOLIO: ApiRegPortfolioActions,
+    RequestType.REG_APP: ApiRegAppActions,
+    RequestType.REG_ZONE: ApiRegZoneActions,
+}
 
 
-def handler(event: Any, context: Any | None = None) -> dict:
-    """Main Lambda function handler with intelligent request routing.
-
-    This is the primary entry point for all Lambda function invocations. It analyzes
-    the incoming event structure to determine the request source and routes to the
-    appropriate specialized handler for processing.
-
-    **Request Source Detection:**
-
-    The handler uses event structure analysis to determine routing:
-
-    - **API Gateway Events**: Contain ``resource`` and ``httpMethod`` fields
-    - **Direct Invocation Events**: Contain ``action`` field for command routing
-    - **Invalid Events**: Missing required fields or wrong data types
-
-    **Method 1 - Direct Lambda Invocation**
-
-    Used by CLI tools, scheduled tasks, and other AWS services that invoke
-    Lambda functions directly. The event follows a simplified action-based format:
-
-    .. code-block:: python
-
-        # Direct invocation event structure
-        event = {
-            "action": "portfolio:create",
-            "data": {
-                "name": "My Portfolio",
-                "description": "Portfolio description"
-            },
-            "auth": {
-                "user_id": "123",
-                "role": "admin"
-            }
-        }
-
-    Direct invocation responses use a standardized format:
-
-    .. code-block:: python
-
-        # Direct invocation response structure
-        response = {
-            "status": "ok",           # "ok" or "error"
-            "code": 200,              # HTTP status code
-            "data": {                 # Response payload
-                "id": "portfolio-123",
-                "name": "My Portfolio"
-            },
-            "message": "Portfolio created successfully",
-            "timestamp": "2024-01-01T00:00:00Z"
-        }
-
-    **Method 2 - API Gateway Proxy Integration**
-
-    Used when requests come through AWS API Gateway or the local API Gateway
-    emulator. Events follow the AWS API Gateway proxy integration format:
-
-    .. code-block:: python
-
-        # API Gateway proxy event structure
-        event = {
-            "resource": "/api/v1/portfolios/{id}",
-            "httpMethod": "GET",
-            "path": "/api/v1/portfolios/123",
-            "pathParameters": {
-                "id": "123"
-            },
-            "queryStringParameters": {
-                "include": "apps"
-            },
-            "headers": {
-                "Authorization": "Bearer eyJ0eXAi...",
-                "Content-Type": "application/json"
-            },
-            "body": "{\"name\": \"Updated Portfolio\"}",
-            "requestContext": {
-                "requestId": "550e8400-e29b-41d4-a716-446655440000",
-                "identity": {...}
-            }
-        }
-
-    API Gateway responses follow AWS Lambda proxy integration format:
-
-    .. code-block:: python
-
-        # API Gateway proxy response structure
-        response = {
-            "isBase64Encoded": False,
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "multiValueHeaders": {},
-            "body": "{\"id\": \"123\", \"name\": \"My Portfolio\"}"
-        }
+def __get_action_handler(action: str) -> Callable:
+    """Get the appropriate handler function for the requested action.
 
     Args:
-        event (Any): Event data from AWS Lambda runtime. Structure varies by source:
-
-            - Dict with "action" key for direct invocations
-            - Dict with "resource" + "httpMethod" keys for API Gateway
-            - Must be a dictionary type for valid processing
-
-        context (Any, optional): AWS Lambda context object with runtime information.
-            Contains execution metadata like request ID, remaining time, etc.
-            Defaults to None for local testing environments.
+        action: Action string in format "type:method" or "type:subtype:method"
 
     Returns:
-        Dict[str, Any]: Response dictionary with format determined by event source:
-
-            - **Direct invocation**: ``{status, code, data, message, timestamp}``
-            - **API Gateway**: ``{statusCode, headers, body, isBase64Encoded}``
-            - **Error response**: ``{statusCode, body}`` with error details
+        Callable: Handler function for the action
 
     Raises:
-        TypeError: If event is not a dictionary (handled gracefully with error response).
-        KeyError: If required event fields are missing (handled gracefully).
-        Exception: Any handler-specific exceptions are caught and logged.
+        BadRequestException: If action is not supported
+    """
+    # if action is "module:class:method" then we only want the module and cleass for the key.
+    # but if in the form of "class:mothod" then we only want the class for the key.
+    parts = action.split(":")
+    action_key = parts[0] if len(parts) <= 2 else ":".join(parts[:-1])
+    method = parts[-1]
 
-    Note:
-        - The function is designed to never raise exceptions, always returning
-          a valid response dictionary suitable for AWS Lambda runtime
-        - All errors are logged for debugging while returning user-friendly responses
-        - Context object is optional for compatibility with local testing
+    # Convert action_key to RequestType enum if possible
+    try:
+        action_key_enum = RequestType(action_key)
+    except ValueError as e:
+        raise BadRequestException(f"Unsupported action '{action}'") from e
 
-    Example:
-        Direct invocation usage::
+    result = getattr(actions_routes.get(action_key_enum, None), method, None)
+    if result:
+        return result
 
-            # CLI tool invocation
-            event = {
-                "action": "facts:list",
-                "data": {"environment": "prod"}
-            }
-            response = handler(event, lambda_context)
+    raise BadRequestException(f"Unsupported action '{action}'")
 
-            if response["status"] == "ok":
-                facts = response["data"]
-                print(f"Found {len(facts)} facts")
 
-        API Gateway usage::
+def check_if_user_authorized(auth: dict | None, action: str):
+    """Check if user is authorized to perform the requested action.
 
-            # HTTP API request
-            event = {
-                "resource": "/portfolios",
-                "httpMethod": "POST",
-                "body": "{\"name\": \"New Portfolio\"}"
-            }
-            response = handler(event, lambda_context)
+    Args:
+        auth: Authentication information containing session token, or None
+        action: Action being requested
 
-            if response["statusCode"] == 201:
-                print("Portfolio created successfully")
+    Returns:
+        CognitoIdentity: Identity information if authorized
 
-        Error handling::
+    Raises:
+        UnauthorizedException: If auth is None, missing token, or user not authorized
+    """
+    if not auth:
+        raise UnauthorizedException("No authorizatoin information provided")
 
-            # Invalid event type
-            response = handler("not-a-dict", lambda_context)
-            # Returns: {"statusCode": 400, "body": "{\"message\": \"...\"}"}
+    session_token = auth.get("sessionToken", auth.get("session_token", None))
+    if not session_token:
+        raise UnauthorizedException("No session token specified")
 
-            # Missing required fields
-            response = handler({}, lambda_context)
-            # Returns: {"statusCode": 400, "body": "{\"message\": \"...\"}"}
+    account = util.get_automation_account()
+
+    if not account:
+        raise UnauthorizedException("Automation Account is not specified in the environment")
+
+    role = util.get_automation_api_role_arn(account, not action.endswith("get"))
+
+    # Assume the role
+    identity = get_user_information(session_token, role)
+
+    if not identity:
+        raise UnauthorizedException("User is not authorized")
+
+    return identity
+
+
+def process_request(request: Request) -> Response:
+    """Process a request and return a response.
+
+    Args:
+        request: The validated request object
+
+    Returns:
+        Response: The response object
+
+    Raises:
+        UnauthorizedException: If user is not authorized
+        BadRequestException: If action is not supported
+    """
+    data = request.data
+    auth = request.auth
+    action = request.action
+
+    log.info(
+        "Executing action",
+        details={"action": action, "data": data, "auth": auth},
+    )
+
+    if not check_if_user_authorized(auth, action):
+        raise UnauthorizedException("User is not authorised to perform this action")
+
+    # Get the action handler or raise an exception
+    action_handler = __get_action_handler(action)
+
+    # Call the handler
+    response = action_handler(**data)
+
+    return response
+
+
+# This is the geneeric lamda handler that will be used to route all requests to the appropriate action
+def handler(event: dict, context: Any | None = None) -> dict:
+    """
+    This is the legacy action handler.  It's a custom core-automation API
+
+    event: {
+        'action': 'portfolio:create',
+        'data': {
+            'name': 'example'
+        },
+        'auth': {
+            'user': 'example'
+        }
+    }
+
+    Returns whatever the handling function returns
+
+    Returns:
+        dict: A dictionary with the response.  There is no JSON encoding here.
     """
     try:
-        if not isinstance(event, dict):
-            return {
-                "statusCode": 400,
-                "body": util.to_json({"message": "Event must be a dictionary"}),
-            }
+        log.set_identity("core_api_handler_direct")
 
-        if "action" in event:
-            return direct_handler(event, context)
+        # At the moment this really doesn't do anything except validate the event
+        request = Request(**event)
 
-        elif "resource" in event and "httpMethod" in event:
-            return proxy_handler(event, context)
+        response = process_request(request)
 
-        else:
-            log.error("Unsupported event structure", details={"event": event})
-            return {
-                "statusCode": 400,
-                "body": util.to_json({"message": "Unsupported event", "event": event}),
-            }
+        if not isinstance(response, Response):
+            raise TypeError(f"Handler returned type {type(response)}, expected Response object")
+
+        # We expect a "Response" object to be returned, we simply need to dump it
+        lambda_response = response.model_dump()
+
+        log.info(
+            "Action complete",
+            details={
+                "action": request.action,
+                "data": request.data,
+                "auth": request.auth,
+                "result": lambda_response,
+            },
+        )
+
+        return lambda_response
 
     except Exception as e:
-        log.error("Handler error", details={"error": str(e), "event": event})
-        return {
-            "statusCode": 500,
-            "body": util.to_json({"message": "Internal server error", "error": str(e)}),
-        }
+        return ErrorResponse(exception=e).model_dump()

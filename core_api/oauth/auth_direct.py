@@ -6,20 +6,19 @@ import bcrypt
 from datetime import timedelta
 from core_db.registry import ClientFact
 import httpx
-from fastapi import Request, APIRouter
-from fastapi.responses import JSONResponse
 
 import jwt
 
 import core_logging as log
 
-from core_db.response import SuccessResponse
+from core_db.response import ErrorResponse, Response, SuccessResponse
 from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
 
+from core_api.request import RouteEndpoint
+
 from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES
 from .tools import (
-    JwtPayload,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
@@ -30,10 +29,8 @@ from .tools import (
     is_password_compliant,
 )
 
-user_router = APIRouter()
 
-
-def _read_identity_cookie(cookies) -> Optional[dict]:
+def _read_identity_cookie(cookies: dict) -> Optional[dict]:
     """Read and validate the sck_identity cookie set by OAuth callbacks.
 
     Args:
@@ -73,7 +70,7 @@ def _profile_exists(user_id: str, profile_name: str = "default") -> bool:
         return False
 
 
-async def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
+def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
     """
     Verify CAPTCHA using Cloudflare Turnstile or Google reCAPTCHA v2/v3.
     Uses the first configured provider.
@@ -99,16 +96,16 @@ async def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
         return False
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        with httpx.AsyncClient(timeout=10) as client:
             if ts_secret:
-                r = await client.post(
+                r = client.post(
                     "https://challenges.cloudflare.com/turnstile/v0/siteverify",
                     data={"secret": ts_secret, "response": token, "remoteip": ip or ""},
                 )
                 data = r.json()
                 return bool(data.get("success"))
             else:
-                r = await client.post(
+                r = client.post(
                     "https://www.google.com/recaptcha/api/siteverify",
                     data={"secret": rc_secret, "response": token, "remoteip": ip or ""},
                 )
@@ -119,8 +116,7 @@ async def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
         return False
 
 
-@user_router.post("/v1/signup")
-async def oauth_signup(request: Request) -> JSONResponse:
+def oauth_signup(*, cookies: dict, headers: dict, body: dict) -> Response:
     """Create or update the default profile, then return a session token.
 
     Route:
@@ -149,16 +145,9 @@ async def oauth_signup(request: Request) -> JSONResponse:
         - No cookies are set here. The session token is used with Authorization: Bearer
           when calling /auth/v1/authorize → /auth/v1/token or /auth/v1/refresh.
     """
-    try:
-        body = await request.json()
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
-        )
 
-    if not check_rate_limit(request, "oauth_signup", max_attempts=10, window_minutes=15):
-        return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
+    if not check_rate_limit(headers, "oauth_signup", max_attempts=10, window_minutes=15):
+        return Response(status="error", code=429, message="rate_limited")
 
     # Common input
     first_name = body.get("first_name", "")
@@ -169,16 +158,16 @@ async def oauth_signup(request: Request) -> JSONResponse:
     aws_secret_key = body.get("aws_secret_key", "")
 
     if not client_id:
-        return JSONResponse(status_code=400, content={"error": "client_id is required", "code": 400})
+        return Response(status="error", code=400, message="client_id is required")
 
     app_info: ClientFact = get_oauth_app_info(client_id=client_id)
     if not app_info:
-        return JSONResponse(status_code=400, content={"error": "invalid_client", "code": 400})
+        return Response(status="error", code=400, message="invalid_client")
 
     client = app_info.client
 
     # Determine mode (SSO Sign-In-With-Github or Sign-In-With-Email)
-    ident = _read_identity_cookie(request.cookies)
+    ident = _read_identity_cookie(cookies)
 
     if ident:
         # SSO path: use identity cookie for user_id; encrypt with server key
@@ -193,20 +182,17 @@ async def oauth_signup(request: Request) -> JSONResponse:
         password = body.get("password")
 
         if not user_id or not password:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Email and password are required", "code": 400},
-            )
+            return Response(status="error", code=400, message="Email and password are required")
 
         # Validate password strength
         if not is_password_compliant(password):
-            return JSONResponse(status_code=400, content={"error": "password_does_not_meet_requirements", "code": 400})
+            return Response(status="error", code=400, message="password_does_not_meet_requirements")
 
         captcha_token = body.get("captcha_token")
 
-        ok = await _verify_captcha(captcha_token, get_client_ip(request))
+        ok = _verify_captcha(captcha_token, get_client_ip(headers))
         if not ok:
-            return JSONResponse(status_code=400, content={"error": "Invalid captcha", "code": 400})
+            return Response(status="error", code=400, message="Invalid captcha")
 
     # During sign-up, there may or may not be aws credentials.
     # If there are not credentials, we'll safe the password, and we'll add
@@ -215,7 +201,7 @@ async def oauth_signup(request: Request) -> JSONResponse:
         encrypted_credentials = encrypt_credentials(aws_access_key, aws_secret_key, password)
     except Exception as e:
         log.warning(f"Failed to encrypt credentials (such as bad password validation): {e}")
-        return JSONResponse(status_code=500, content={"error": "Failed to encrypt credentials", "code": 500})
+        return ErrorResponse(status="error", code=500, message="Failed to encrypt credentials", exception=e)
 
     try:
         # Load in UserProfile for validation with Pydantic (includes email validation)
@@ -234,10 +220,7 @@ async def oauth_signup(request: Request) -> JSONResponse:
         if "email" in error_msg.lower():
             error_msg = "Invalid email format"
 
-        return JSONResponse(
-            status_code=400,
-            content={"error": error_msg, "code": 400},
-        )
+        return Response(status="error", code=400, message=error_msg)
 
     exists = _profile_exists(user_id=user_id, profile_name="default")
 
@@ -256,26 +239,17 @@ async def oauth_signup(request: Request) -> JSONResponse:
 
             # Signup via email/password: creation only; reject if exists
             if exists:
-                return JSONResponse(
-                    status_code=409,
-                    content={"error": f"User '{user_id}' already exists", "code": 409},
-                )
+                return Response(status="error", code=409, message=f"User '{user_id}' already exists")
 
             log.debug(f"Creating new profile for email/password user: {user_id}")
             response: SuccessResponse = ProfileActions.create(client=client, **data)
             if not response:
-                return JSONResponse(
-                    status_code=500,
-                    content={"error": "Profile creation failed", "code": 500},
-                )
+                return Response(status="error", code=500, message="Profile creation failed")
             if response.code != 200:
-                return JSONResponse(
-                    status_code=response.code,
-                    content={"error": "Profile creation failed", "code": response.code},
-                )
+                return Response(status="error", code=response.code, message="Profile creation failed")
 
-    except Exception:
-        return JSONResponse(status_code=500, content={"error": "Profile update failed", "code": 500})
+    except Exception as e:
+        return ErrorResponse(status="error", code=500, message="Profile update failed", exception=e)
 
     try:
 
@@ -284,26 +258,22 @@ async def oauth_signup(request: Request) -> JSONResponse:
         jwt_token = create_basic_session_jwt(client_id, client, user_id, minutes)
 
         # Return a short-lived session token (no cookies) so SPA can call /authorize → /token
-        payload = {
-            "code": 201,
-            "data": {
+        return Response(
+            status="ok",
+            code=201,
+            data={
                 "user_id": user_id,
                 "profile_name": "default",
                 "token": jwt_token,
                 "token_type": "Bearer",
             },
-        }
-        return JSONResponse(status_code=201, content=payload)
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Issuing session failed: {str(e)}", "code": 500},
         )
 
+    except Exception as e:
+        return ErrorResponse(status="error", code=500, message="Issuing session failed", exception=e)
 
-@user_router.put("/v1/users/me")
-async def update_user(request: Request) -> JSONResponse:
+
+def update_user(*, cookies: dict, headers: dict, body: dict) -> Response:
     """Update user profile fields including AWS credentials.
 
     Route:
@@ -324,24 +294,17 @@ async def update_user(request: Request) -> JSONResponse:
         - Requires valid Authorization: Bearer token
     """
     # Get authenticated user first
-    jwt_payload, _ = get_authenticated_user(request)
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
     if jwt_payload is None:
-        return JSONResponse(status_code=401, content={"error": "Unauthorized", "code": 401})
+        return Response(status="error", code=401, message="Unauthorized")
 
-    if not check_rate_limit(request, "update_user", max_attempts=20, window_minutes=1):
+    if not check_rate_limit(headers, "update_user", max_attempts=20, window_minutes=1):
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /v1/users/me")
-        return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
-
-    try:
-        body = await request.json()
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
-        )
+        return Response(status="error", code=429, message="rate_limited")
 
     log.debug(
-        f"Updating user {jwt_payload.sub} from client '{jwt_payload.cid}' for '{jwt_payload.cnm}' with data:", details=dict(body)
+        f"Updating user {jwt_payload.sub} from client '{jwt_payload.cid}' for '{jwt_payload.cnm}' with data:",
+        details=dict(body),
     )
 
     # Extract update fields
@@ -361,7 +324,7 @@ async def update_user(request: Request) -> JSONResponse:
         current_data = UserProfile(**response.data)
     except Exception as e:
         log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
-        return JSONResponse(status_code=500, content={"error": "Failed to retrieve user profile", "code": 500})
+        return ErrorResponse(status="error", code=500, message="Failed to retrieve user profile", exception=e)
 
     # Prepare update data (only include fields that are provided)
     update_data = {"user_id": jwt_payload.sub, "profile_name": "default"}
@@ -392,30 +355,29 @@ async def update_user(request: Request) -> JSONResponse:
 
         except Exception as e:
             log.error(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
-            return JSONResponse(status_code=500, content={"error": "Failed to encrypt AWS credentials", "code": 500})
+            return ErrorResponse(status="error", code=500, message="Failed to encrypt AWS credentials", exception=e)
 
     # Perform the update
     try:
         ProfileActions.patch(client=jwt_payload.cnm, **update_data)
 
-        response_data = {"message": "User updated successfully", "updated_fields": list(update_data.keys())}
+        response_data = {
+            "message": "User updated successfully",
+            "updated_fields": list(update_data.keys()),
+        }
 
         # Include AWS credential status in response
         if "Credentials" in update_data:
             response_data["has_aws_credentials"] = True
 
-        return JSONResponse(
-            status_code=200,
-            content={"data": response_data, "code": 200},
-        )
+        return Response(status="ok", code=200, data=response_data)
 
     except Exception as e:
         log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
-        return JSONResponse(status_code=500, content={"error": "Failed to update user profile", "code": 500})
+        return ErrorResponse(status="error", code=500, message="Failed to update user profile", exception=e)
 
 
-@user_router.post("/v1/login")
-async def user_login(request: Request) -> JSONResponse:
+def user_login(*, headers: dict, body: dict) -> Response:
     """
     Authenticate with email/password and return a basic session JWT with client context.
 
@@ -495,40 +457,24 @@ async def user_login(request: Request) -> JSONResponse:
         ...   "client_id": "mobile_app"
         ... }
     """
-    try:
-        body = await request.json()
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": f"Invalid JSON body: {str(e)}", "code": 400},
-        )
 
     try:
         user_id = body.get("email")
         password = body.get("password")
         if not user_id or not password:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "email_and_password_required", "code": 400},
-            )
+            return Response(status="error", code=400, message="email_and_password_required")
 
         client_id = body.get("client_id")
         if not client_id:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "The field client_id is required", "code": 400},
-            )
+            return Response(status="error", code=400, message="The field client_id is required")
 
-        if not check_rate_limit(request, "oauth_login", max_attempts=10, window_minutes=15):
+        if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
-            return JSONResponse(status_code=429, content={"error": "rate_limited", "code": 429})
+            return Response(status="error", code=429, message="rate_limited")
 
         app_info: ClientFact = get_oauth_app_info(client_id)
         if not app_info:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "invalid_client", "code": 400},
-            )
+            return Response(status="error", code=400, message="invalid_client")
 
         client = app_info.client
         returnTo = body.get("returnTo")
@@ -543,28 +489,19 @@ async def user_login(request: Request) -> JSONResponse:
             profile_data = UserProfile(**response.data)
         except Exception as e:
             log.debug(f"Profile not found for user {user_id}: {e}")
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authorization Failed", "code": 401},
-            )
+            return Response(status="error", code=401, message="Authorization Failed")
 
         # Check if user has a password (some SSO users might not)
         credentials = profile_data.credentials or {}
         stored_hash = credentials.get("Password") or credentials.get("password")
         if not stored_hash:
             log.debug(f"No password found for user {user_id}")
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authorization Failed", "code": 401},
-            )
+            return Response(status="error", code=401, message="Authorization Failed")
 
         # Validate password against stored hash
         if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
             log.debug(f"Password validation failed for user {user_id}")
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authorization Failed", "code": 401},
-            )
+            return Response(status="error", code=401, message="Authorization Failed")
 
         minutes = int(SESSION_JWT_MINUTES)
 
@@ -580,18 +517,15 @@ async def user_login(request: Request) -> JSONResponse:
         if returnTo:
             resp_data["returnTo"] = returnTo
 
-        resp = JSONResponse(
-            status_code=200,
-            content={
-                "data": resp_data,
-                "code": 200,
-            },
-        )
-        return resp
+        return Response(status="ok", code=200, data=resp_data)
 
     except Exception as e:
         log.error(f"Login error for {user_id}: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Authentication processing error", "code": 500},
-        )
+        return ErrorResponse(status="error", code=500, message="Authentication processing error", exception=e)
+
+
+auth_direct_endpoints: dict[str, RouteEndpoint] = {
+    "POST:/auth/v1/signup": RouteEndpoint(oauth_signup, permissions=["user:signup"]),
+    "PUT:/auth/v1/users/me": RouteEndpoint(update_user, permissions=["user:update"]),
+    "POST:/auth/v1/login": RouteEndpoint(user_login, permissions=["user:login"]),
+}

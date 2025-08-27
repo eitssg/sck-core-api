@@ -29,9 +29,7 @@ def generate_templates(table_name, table_description):
     # Extract the necessary information
     attribute_definitions = table_description["AttributeDefinitions"]
     key_schema = table_description["KeySchema"]
-    billing_mode = table_description.get("BillingModeSummary", {}).get(
-        "BillingMode", "PAY_PER_REQUEST"
-    )
+    billing_mode = table_description.get("BillingModeSummary", {}).get("BillingMode", "PAY_PER_REQUEST")
     global_secondary_indexes = table_description.get("GlobalSecondaryIndexes", [])
 
     table_name = table_name + "Table"
@@ -75,9 +73,7 @@ def generate_templates(table_name, table_description):
                                 ),
                                 OrderedDict({"Key": "App", "Value": "api"}),
                                 OrderedDict({"Key": "Branch", "Value": "core-app"}),
-                                OrderedDict(
-                                    {"Key": "Build", "Value": {"Ref": "Build"}}
-                                ),
+                                OrderedDict({"Key": "Build", "Value": {"Ref": "Build"}}),
                             ],
                         }
                     ),

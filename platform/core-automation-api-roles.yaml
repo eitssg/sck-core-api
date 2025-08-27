@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create Core Automation API roles and service account
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+
+Resources:
+  SimpleCloudKitApiServerUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName:
+        Fn::Sub: "${Scope}{{ context.Client }}-simple-cloud-kit-api-server"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client }}-simple-cloud-kit-api-server"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+        - Key: Purpose
+          Value: FastAPI server service account
+ 
+  SimpleCloudKitApiServerAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref SimpleCloudKitApiServerUser
+      Status: Active
+
+  SimpleCloudKitApiServerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName:
+        Fn::Sub: "${Scope}{{ context.Client }}-simple-cloud-kit-api-server-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "lambda:InvokeFunction"
+            Resource:
+              - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}{{ context.Client }}-automation-invoker-lambda"
+          - Effect: "Allow"
+            Action:
+              - "dynamodb:BatchGetItem"
+              - "dynamodb:ConditionCheckItem"
+              - "dynamodb:PutItem"
+              - "dynamodb:DeleteItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
+              - "dynamodb:UpdateItem"
+              - "dynamodb:DescribeTimeToLive"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:GetShardIterator"
+              - "dynamodb:GetItem"
+              - "dynamodb:GetRecords"
+            Resource:
+              - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Scope}{{ context.Client }}-automation-*"
+              - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Scope}{{ context.Client }}-automation-*/index/*"
+          - Effect: "Allow"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+              - "s3:GetObjectVersion"
+              - "s3:PutObjectAcl"
+              - "s3:GetObjectAcl"
+              - "s3:AbortMultipartUpload"
+              - "s3:ListMultipartUploadParts"
+            Resource:
+              {% if context.FilesBucketName == context.ArtefactsBucketName %}
+              - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}"
+              - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/*"
+              {% else %}
+              - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}"
+              - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/*"
+              - !Sub "arn:${AWS::Partition}:s3:::{{ context.ArtefactsBucketName }}"
+              - !Sub "arn:${AWS::Partition}:s3:::{{ context.ArtefactsBucketName }}/*"
+              {% endif %}
+          - Effect: "Allow"
+            Action:
+              - "sts:AssumeRole"
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiReadRole"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}{{ context.Client | capitalize }}AutomationApiWriteRole"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*sck-user-*"
+      Users:
+        - !Ref SimpleCloudKitApiServerUser
+
+  ClientAutomationApiReadRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName:
+        Fn::Sub: "${Scope}{{ context.Client | capitalize }}AutomationApiReadRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS: !GetAtt SimpleCloudKitApiServerUser.Arn
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "AutomationApiReadPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:ConditionCheckItem"
+                  - "dynamodb:DescribeTimeToLive"
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:GetShardIterator"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:GetRecords"
+                  - "dynamodb:Query"
+                  - "dynamodb:Scan"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Scope}{{ context.Client }}-automation-*"
+                  - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Scope}{{ context.Client }}-automation-*/index/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetObjectAcl"
+                Resource:
+                  {% if context.FilesBucketName == context.ArtefactsBucketName %}
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/*"
+                  {% else %}
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.ArtefactsBucketName }}"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.ArtefactsBucketName }}/*"
+                  {% endif %}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client | capitalize }}AutomationApiReadRole"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  ClientAutomationApiWriteRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName:
+        Fn::Sub: "${Scope}{{ context.Client | capitalize }}AutomationApiWriteRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS: !GetAtt SimpleCloudKitApiServerUser.Arn
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "AutomationApiWritePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:BatchWriteItem"
+                  - "dynamodb:ConditionCheckItem"
+                  - "dynamodb:PutItem"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:Scan"
+                  - "dynamodb:Query"
+                  - "dynamodb:UpdateItem"
+                  - "dynamodb:DescribeTimeToLive"
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:GetShardIterator"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:GetRecords"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Scope}{{ context.Client }}-automation-*"
+                  - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Scope}{{ context.Client }}-automation-*/index/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                  - "s3:ListBucket"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObjectAcl"
+                  - "s3:GetObjectAcl"
+                  - "s3:AbortMultipartUpload"
+                  - "s3:ListMultipartUploadParts"
+                Resource:
+                  {% if context.FilesBucketName == context.ArtefactsBucketName %}
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/*"
+                  {% else %}
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.ArtefactsBucketName }}"
+                  - !Sub "arn:${AWS::Partition}:s3:::{{ context.ArtefactsBucketName }}/*"
+                  {% endif %}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${Scope}{{ context.Client | capitalize }}AutomationApiWriteRole"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+Outputs:
+  SimpleCloudKitApiServerUserArn:
+    Description: "ARN of the Simple Cloud Kit API Server service account"
+    Value: !GetAtt SimpleCloudKitApiServerUser.Arn
+    Export:
+      Name:
+        Fn::Sub: "${Scope}{{ context.Client }}-SimpleCloudKitApiServerUserArn"
+
+  SimpleCloudKitApiServerAccessKeyId:
+    Description: "Access Key ID for the Simple Cloud Kit API Server"
+    Value: !Ref SimpleCloudKitApiServerAccessKey
+    Export:
+      Name:
+        Fn::Sub: "${Scope}{{ context.Client }}-SimpleCloudKitApiServerAccessKeyId"
+
+  SimpleCloudKitApiServerSecretAccessKey:
+    Description: "Secret Access Key for the Simple Cloud Kit API Server"
+    Value: !GetAtt SimpleCloudKitApiServerAccessKey.SecretAccessKey
+    Export:
+      Name:
+        Fn::Sub: "${Scope}{{ context.Client }}-SimpleCloudKitApiServerSecretAccessKey"
+
+  ClientAutomationApiReadRoleArn:
+    Description: "ARN of the AutomationApiReadRole"
+    Value: !GetAtt ClientAutomationApiReadRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${Scope}{{ context.Client }}-AutomationApiReadRoleArn"
+
+  ClientAutomationApiWriteRoleArn:
+    Description: "ARN of the AutomationApiWriteRole"
+    Value: !GetAtt ClientAutomationApiWriteRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${Scope}{{ context.Client }}-AutomationApiWriteRoleArn"

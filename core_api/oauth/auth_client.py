@@ -7,35 +7,27 @@ import uuid
 from datetime import datetime, timezone
 import secrets
 
-from fastapi import Request, APIRouter, Response
-from fastapi.responses import JSONResponse
 
 import core_logging as log
 
+from core_db.response import Response, SuccessResponse, CreatedResponse
+from core_db.exceptions import BadRequestException, UnknownException, NotFoundException
 from core_db.registry.client.actions import ClientActions
 
 from core_api.item.build import SuccessResponse
+from core_api.request import RouteEndpoint
 
-client_router = APIRouter()
 
-
-@client_router.post("/v1/register")
-async def register_client(request: Request) -> Response:
+def register_client(*, body: dict) -> Response:
     """Register a new OAuth client."""
-
-    log.debug("Registering new client")
-    try:
-        body = await request.json()
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"error": "Invalid JSON payload"})
 
     client = body.get("client")
     if not client:
-        return JSONResponse(status_code=400, content={"error": "Missing client name"})
+        raise BadRequestException(message={"error": "Missing client name"})
 
     redirect_uris = body.get("redirect_uris")
     if not redirect_uris:
-        return JSONResponse(status_code=400, content={"error": "Missing redirect_uris"})
+        raise BadRequestException(message={"error": "Missing redirect_uris"})
 
     if isinstance(redirect_uris, str):
         redirect_uris = [redirect_uris]
@@ -67,24 +59,21 @@ async def register_client(request: Request) -> Response:
         ClientActions.create(**client_data)
     except Exception as e:
         log.error(f"Error creating client: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise UnknownException(message={"error": str(e)})
 
     response = {"client": client, "client_id": client_id}
     if client_secret:
         response["client_secret"] = client_secret
 
-    return JSONResponse(status_code=201, content=response)
+    return CreatedResponse(data=response)
 
 
-@client_router.put("/v1/clients/{client}")
-async def update_client(client: str, request: Request) -> Response:
+def update_client(*, query_params: dict, body: dict) -> Response:
     """Update an existing OAuth client."""
 
+    client = query_params.get("client")
+
     log.debug(f"Updating client: {client}")
-    try:
-        body = await request.json()
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"error": "Invalid JSON payload"})
 
     # Fetch existing client data
     try:
@@ -92,7 +81,7 @@ async def update_client(client: str, request: Request) -> Response:
         data = existing_client.data
     except Exception as e:
         log.info(f"Client Not Found: {client}: {str(e)}")
-        return JSONResponse(status_code=404, content={"error": "Client not found"})
+        raise NotFoundException(message={"error": "Client not found"})
 
     client_id = data.get("ClientId")
     if not client_id:
@@ -110,17 +99,22 @@ async def update_client(client: str, request: Request) -> Response:
         data["client_redirect_uris"] = redirect_uris
 
     # Update client data
-    log.debug(f"Updating client data:", details=data)
+    log.debug("Updating client data:", details=data)
     try:
         ClientActions.update(**data)
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise UnknownException(message={"error": str(e)})
 
-    return JSONResponse(
-        status_code=200,
-        content={
+    return SuccessResponse(
+        data={
             "client": client,
             "client_id": client_id,
             "client_secret": client_secret,
-        },
+        }
     )
+
+
+auth_client_endpoints: dict[str, RouteEndpoint] = {
+    "POST:/v1/clients": register_client,
+    "PUT:/v1/clients/{client}": update_client,
+}

@@ -58,3 +58,17 @@ DATA_PAGINATOR = "data_paginator"
 SORT = "sort"
 LIMIT = "limit"
 ASCENDING = "ascending"
+
+API_ID = "coreApiv1"
+DOMAIN_PREFIX = "core"  # e.g. core.execute-api.us-east-1.amazonaws.com
+
+API_LAMBDA_NAME = "core-automation-api-master"
+
+# Standard HTTP headers used in AWS API Gateway
+HDR_X_CORRELATION_ID = "X-Correlation-Id"
+HDR_X_FORWARDED_FOR = "X-Forwarded-For"
+HDR_X_FORWARDED_PROTO = "X-Forwarded-Proto"
+HDR_AUTHORIZATION = "Authorization"
+HDR_CONTENT_TYPE = "Content-Type"
+HDR_ACCEPT = "Accept"
+HDR_USER_AGENT = "User-Agent"

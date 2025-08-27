@@ -3,7 +3,10 @@ from core_api.oauth.tools import encrypt_creds, decrypt_creds
 
 # Add this test function temporarily to verify
 def test_encrypt_decrypt_roundtrip():
-    test_creds = {"AccessKeyId": "AKIATEST123456789", "SecretAccessKey": "test-secret-key-12345"}
+    test_creds = {
+        "AccessKeyId": "AKIATEST123456789",
+        "SecretAccessKey": "test-secret-key-12345",
+    }
 
     try:
         # Test encrypt
