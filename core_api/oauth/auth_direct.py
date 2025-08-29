@@ -147,7 +147,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
     """
 
     if not check_rate_limit(headers, "oauth_signup", max_attempts=10, window_minutes=15):
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     # Common input
     first_name = body.get("first_name", "")
@@ -158,11 +158,11 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
     aws_secret_key = body.get("aws_secret_key", "")
 
     if not client_id:
-        return Response(status="error", code=400, message="client_id is required")
+        return ErrorResponse(status="error", code=400, message="client_id is required")
 
     app_info: ClientFact = get_oauth_app_info(client_id=client_id)
     if not app_info:
-        return Response(status="error", code=400, message="invalid_client")
+        return ErrorResponse(status="error", code=400, message="invalid_client")
 
     client = app_info.client
 
@@ -182,17 +182,17 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
         password = body.get("password")
 
         if not user_id or not password:
-            return Response(status="error", code=400, message="Email and password are required")
+            return ErrorResponse(status="error", code=400, message="Email and password are required")
 
         # Validate password strength
         if not is_password_compliant(password):
-            return Response(status="error", code=400, message="password_does_not_meet_requirements")
+            return ErrorResponse(status="error", code=400, message="Password does not meet requirements")
 
         captcha_token = body.get("captcha_token")
 
         ok = _verify_captcha(captcha_token, get_client_ip(headers))
         if not ok:
-            return Response(status="error", code=400, message="Invalid captcha")
+            return ErrorResponse(status="error", code=400, message="Invalid captcha")
 
     # During sign-up, there may or may not be aws credentials.
     # If there are not credentials, we'll safe the password, and we'll add
@@ -220,7 +220,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
         if "email" in error_msg.lower():
             error_msg = "Invalid email format"
 
-        return Response(status="error", code=400, message=error_msg)
+        return ErrorResponse(code=400, message=error_msg)
 
     exists = _profile_exists(user_id=user_id, profile_name="default")
 
@@ -239,14 +239,14 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
 
             # Signup via email/password: creation only; reject if exists
             if exists:
-                return Response(status="error", code=409, message=f"User '{user_id}' already exists")
+                return ErrorResponse(code=409, message=f"User '{user_id}' already exists")
 
             log.debug(f"Creating new profile for email/password user: {user_id}")
             response: SuccessResponse = ProfileActions.create(client=client, **data)
             if not response:
-                return Response(status="error", code=500, message="Profile creation failed")
+                return ErrorResponse(code=500, message="Profile creation failed")
             if response.code != 200:
-                return Response(status="error", code=response.code, message="Profile creation failed")
+                return ErrorResponse(code=response.code, message="Profile creation failed")
 
     except Exception as e:
         return ErrorResponse(status="error", code=500, message="Profile update failed", exception=e)
@@ -296,11 +296,11 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     # Get authenticated user first
     jwt_payload, _ = get_authenticated_user(cookies, headers)
     if jwt_payload is None:
-        return Response(status="error", code=401, message="Unauthorized")
+        return ErrorResponse(code=401, message="Unauthorized")
 
     if not check_rate_limit(headers, "update_user", max_attempts=20, window_minutes=1):
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /v1/users/me")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     log.debug(
         f"Updating user {jwt_payload.sub} from client '{jwt_payload.cid}' for '{jwt_payload.cnm}' with data:",
@@ -313,6 +313,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     first_name = body.get("first_name")
     last_name = body.get("last_name")
     email = body.get("email")
+    profile = body.get("profile_name", "default")
 
     # Get current profile
     try:
@@ -327,7 +328,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
         return ErrorResponse(status="error", code=500, message="Failed to retrieve user profile", exception=e)
 
     # Prepare update data (only include fields that are provided)
-    update_data = {"user_id": jwt_payload.sub, "profile_name": "default"}
+    update_data = {"user_id": jwt_payload.sub, "profile_name": profile}
 
     # Update basic profile fields if provided
     if first_name is not None:
@@ -372,7 +373,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
         if "Credentials" in update_data:
             response_data["has_aws_credentials"] = True
 
-        return Response(status="ok", code=200, data=response_data)
+        return SuccessResponse(data=response_data)
 
     except Exception as e:
         log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
@@ -485,19 +486,19 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         user_id = body.get("email")
         password = body.get("password")
         if not user_id or not password:
-            return Response(status="error", code=400, message="email_and_password_required")
+            return ErrorResponse(code=400, message="email_and_password_required")
 
         client_id = body.get("client_id")
         if not client_id:
-            return Response(status="error", code=400, message="The field client_id is required")
+            return ErrorResponse(code=400, message="The field client_id is required")
 
         if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
-            return Response(status="error", code=429, message="rate_limited")
+            return ErrorResponse(code=429, message="rate_limited")
 
         app_info: ClientFact = get_oauth_app_info(client_id)
         if not app_info:
-            return Response(status="error", code=400, message="invalid_client")
+            return ErrorResponse(code=400, message="invalid_client")
 
         client = app_info.client
         returnTo = body.get("returnTo")
@@ -512,19 +513,19 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
             profile_data = UserProfile(**response.data)
         except Exception as e:
             log.debug(f"Profile not found for user {user_id}: {e}")
-            return Response(status="error", code=401, message="Authorization Failed")
+            return ErrorResponse(code=401, message="Authorization Failed", exception=e)
 
         # Check if user has a password (some SSO users might not)
         credentials = profile_data.credentials or {}
         stored_hash = credentials.get("Password") or credentials.get("password")
         if not stored_hash:
             log.debug(f"No password found for user {user_id}")
-            return Response(status="error", code=401, message="Authorization Failed")
+            return ErrorResponse(code=401, message="Authorization Failed")
 
         # Validate password against stored hash
         if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
             log.debug(f"Password validation failed for user {user_id}")
-            return Response(status="error", code=401, message="Authorization Failed")
+            return ErrorResponse(code=401, message="Authorization Failed")
 
         minutes = int(SESSION_JWT_MINUTES)
 
@@ -540,15 +541,29 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         if returnTo:
             resp_data["returnTo"] = returnTo
 
-        return Response(status="ok", code=200, data=resp_data)
+        return SuccessResponse(data=resp_data)
 
     except Exception as e:
         log.error(f"Login error for {user_id}: {e}")
-        return ErrorResponse(status="error", code=500, message="Authentication processing error", exception=e)
+        return ErrorResponse(code=500, message="Authentication processing error", exception=e)
 
 
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
-    "POST:/auth/v1/signup": RouteEndpoint(oauth_signup, permissions=["user:signup"]),
-    "PUT:/auth/v1/users/me": RouteEndpoint(update_user, permissions=["user:update"]),
-    "POST:/auth/v1/login": RouteEndpoint(user_login, permissions=["user:login"]),
+    "POST:/auth/v1/signup": RouteEndpoint(
+        oauth_signup,
+        permissions=["user:signup"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "PUT:/auth/v1/users/me": RouteEndpoint(
+        update_user,
+        permissions=["user:update"],
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/login": RouteEndpoint(
+        user_login,
+        permissions=["user:login"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
 }

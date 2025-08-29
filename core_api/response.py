@@ -494,7 +494,7 @@ def get_proxy_response(response: Response) -> ProxyResponse:
 
     # Handle all other responses (1xx, 2xx, 4xx, 5xx) as JSON
     return ProxyResponse.json(
-        data=response.data,
+        data=response.model_dump(),
         status_code=response.code,
         cookies=response.cookies,  # Use cookies directly from Response
     )

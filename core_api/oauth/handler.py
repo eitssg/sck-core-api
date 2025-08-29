@@ -4,7 +4,7 @@ import core_logging as log
 
 from ..api.handler import ProxyEvent
 from ..response import get_proxy_error_response, get_proxy_response
-from ..request import RouteEndpoint
+from ..request import RouteEndpoint, get_correlation_id
 
 from core_db.response import ErrorResponse, Response
 from core_db.exceptions import (
@@ -221,6 +221,18 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
     try:
         # Parse and validate AWS API Gateway event
         request = ProxyEvent(**event)
+
+        correlation_id = get_correlation_id(request)
+
+        log.info(
+            "Processing API Gateway request",
+            details={
+                "method": request.httpMethod,
+                "resource": request.resource,
+                "correlation_id": correlation_id,
+            },
+        )
+
         route_key = request.route_key
 
         # Check if route exists

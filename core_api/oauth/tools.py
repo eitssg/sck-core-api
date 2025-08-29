@@ -220,7 +220,7 @@ def is_password_compliant(password: str) -> bool:
         return False
     if not any(char.islower() for char in password):
         return False
-    if not any(char in "!@#$%^&*()-+" for char in password):
+    if not any(char in "!@#$%^&*()-+_" for char in password):
         return False
     return True
 
@@ -462,7 +462,7 @@ def encrypt_creds(credentials: dict) -> str:
     return jwe_creds.serialize(compact=True)
 
 
-def decrypt_creds(encrypted_credentials: str) -> dict:
+def decrypt_creds(encrypted_credentials: str | None) -> dict:
     """
     Decrypt JWE-encrypted credentials back to dictionary.
 
@@ -470,12 +470,15 @@ def decrypt_creds(encrypted_credentials: str) -> dict:
         encrypted_credentials (str): JWE-encrypted credential string.  JwtPayload.enc field.
 
     Returns:
-        dict: Decrypted credentials dictionary
+        dict: Decrypted credentials dictionary.  Will return {} if JwtPayload.enc is Empty
 
     Raises:
         ValueError: If encrypted string is malformed or cannot be decrypted
         Exception: If decryption key is invalid
     """
+    if not encrypted_credentials:
+        return {}
+
     enc_key = get_encryption_key()
 
     if not enc_key:
@@ -560,13 +563,13 @@ def get_user_access_key(client: str, user_id: str, password: Optional[str] = Non
         permissions = profile.permissions
 
         if password:
-            stored_hash = credentials.get("Password") or credentials.get("password")
+            stored_hash = credentials.get("Password")
             if not stored_hash or not bcrypt.checkpw(password.encode("utf-8"), stored_hash):
                 raise ValueError("Password validation failed. Bad password.")
 
-        jwe_creds = credentials.get("AwsCredentials") or credentials.get("aws_credentials")
+        jwe_creds = credentials.get("AwsCredentials")
         if not jwe_creds:
-            raise ValueError("No credentials found in envelope")
+            return {}, permissions
 
         return decrypt_creds(jwe_creds), permissions
 
@@ -624,6 +627,7 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
     """
     payload = JwtPayload(
         sub=user_id,
+        typ="session",
         cid=client_id,
         cnm=client_name,
         ttl=minutes,
@@ -717,36 +721,39 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
         "Expiration": "",
     }
 
-    mfa_device_id = None
-    mfa_token_code = None
+    if len(aws_credentials) != 0:
+        mfa_device_id = None
+        mfa_token_code = None
 
-    try:
-        # Get the AWS credentials (stored on your user profile)
-        access_key = aws_credentials.get("AccessKeyId")
-        secret_key = aws_credentials.get("SecretAccessKey")
+        try:
+            # Get the AWS credentials (stored on your user profile)
+            access_key = aws_credentials.get("AccessKeyId")
+            secret_key = aws_credentials.get("SecretAccessKey")
 
-        # Create STS client and get temporary credentials for the API
-        sts_client = boto3.client("sts", aws_access_key_id=access_key, aws_secret_access_key=secret_key)
+            # Create STS client and get temporary credentials for the API
+            sts_client = boto3.client("sts", aws_access_key_id=access_key, aws_secret_access_key=secret_key)
 
-        if mfa_device_id and mfa_token_code:
-            result = sts_client.get_session_token(
-                DurationSeconds=duration_seconds,
-                SerialNumber=mfa_device_id,
-                TokenCode=mfa_token_code,
-            )
-        else:
-            result = sts_client.get_session_token(DurationSeconds=duration_seconds)
+            if mfa_device_id and mfa_token_code:
+                result = sts_client.get_session_token(
+                    DurationSeconds=duration_seconds,
+                    SerialNumber=mfa_device_id,
+                    TokenCode=mfa_token_code,
+                )
+            else:
+                result = sts_client.get_session_token(DurationSeconds=duration_seconds)
 
-        if "Credentials" in result:
-            sts_credentials = result["Credentials"]
-            # Convert datetime to string for JSON serialization
-            if hasattr(sts_credentials.get("Expiration"), "isoformat"):
-                sts_credentials["Expiration"] = sts_credentials["Expiration"].isoformat()
+            if "Credentials" in result:
+                sts_credentials = result["Credentials"]
+                # Convert datetime to string for JSON serialization
+                if hasattr(sts_credentials.get("Expiration"), "isoformat"):
+                    sts_credentials["Expiration"] = sts_credentials["Expiration"].isoformat()
 
-    except (BotoCoreError, ClientError) as e:
-        log.warn(f"Error retrieving STS credentials for user {jwt_payload.sub}: {e}")
+        except (BotoCoreError, ClientError) as e:
+            log.warn(f"Error retrieving STS credentials for user {jwt_payload.sub}: {e}")
 
-    creds_enc = encrypt_creds(sts_credentials)
+        creds_enc = encrypt_creds(sts_credentials)
+    else:
+        creds_enc = None
 
     minutes = 60 * JWT_EXPIRATION_HOURS
 

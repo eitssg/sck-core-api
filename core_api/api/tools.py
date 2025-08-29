@@ -233,18 +233,10 @@ def _event_headers(headers: Dict[str, str]) -> Dict[str, str]:
     """
     # Append the ip_address to X_FORWARDED_FOR
     ip_address = get_ip_address()
-    k, v = get_header(headers, HDR_X_FORWARDED_FOR, ip_address)
+
+    k, v = get_header(headers, HDR_X_FORWARDED_FOR.lower())
     if ip_address not in v:
-        headers[k] = f"{v},{ip_address}" if v and v != ip_address else ip_address
-
-    # Add headers if they don't exist
-    correlation_id_header, correlation_id = get_header(headers, HDR_X_CORRELATION_ID)
-    if not correlation_id:
-        headers[correlation_id_header] = str(uuid.uuid4())
-
-    proto_header, proto = get_header(headers, HDR_X_FORWARDED_PROTO)
-    if not proto:
-        headers[proto_header] = "https"
+        headers[k] = ",".join([v, ip_address])
 
     ua_header, ua = get_header(headers, "user-agent")
     if not ua:
@@ -289,7 +281,6 @@ def generate_proxy_event(
     headers: Dict[str, str],
     is_base64_encoded: bool = False,
     stage: str = "local",
-    source_ip: Optional[str] = None,
 ) -> ProxyEvent:
     """Generate AWS API Gateway proxy event with complete AWS-compatible structure.
 
@@ -309,7 +300,6 @@ def generate_proxy_event(
         headers (Dict[str, str]): HTTP request headers.
         is_base64_encoded (bool, optional): Whether body is base64 encoded. Defaults to False.
         stage (str, optional): API Gateway stage name. Defaults to "local".
-        source_ip (Optional[str], optional): Client IP address. Auto-detected if None.
 
     Returns:
         ProxyEvent: Complete AWS API Gateway proxy event object.
@@ -357,11 +347,6 @@ def generate_proxy_event(
     _, request_id = get_header(headers, HDR_X_CORRELATION_ID)
     extended_request_id = f"{request_id}={uuid.uuid4().hex}"
 
-    # Get User-Agent and update identity
-    _, user_agent = get_header(headers, HDR_USER_AGENT)
-    identity.userAgent = user_agent
-    identity.sourceIp = source_ip or get_ip_address()
-
     # Create complete RequestContext matching AWS format
     request_context = RequestContext(
         resourceId=resource_id,
@@ -377,7 +362,7 @@ def generate_proxy_event(
         identity=identity,
         stage=stage,
         domainName="localhost" if stage == "local" else "api.example.com",
-        apiId="local" if stage == "local" else util.get_api_gateway_id(),
+        apiId="local",
     )
 
     # Create complete ProxyEvent
@@ -390,7 +375,7 @@ def generate_proxy_event(
         queryStringParameters=query_params,
         multiValueQueryStringParameters=multi_value_query_params,
         pathParameters=path_params,
-        stageVariables={},  # Usually empty in development
+        stageVariables={},
         requestContext=request_context,
         body=body,
         isBase64Encoded=is_base64_encoded,

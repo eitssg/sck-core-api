@@ -193,7 +193,7 @@ def get_cred_enc_key(**kwargs) -> Response:
     key_bytes = secrets.token_bytes(32)
     key_b64url = base64.urlsafe_b64encode(key_bytes).decode().rstrip("=")
 
-    return Response(status="ok", code=200, data={"cred_enc_key": key_b64url})
+    return SuccessResponse(data={"cred_enc_key": key_b64url})
 
 
 def oauth_authorize(
@@ -230,25 +230,25 @@ def oauth_authorize(
 
     # 1) Validate ALL required parameters BEFORE rate limiting or DB calls
     if not client_id:
-        return Response(status="error", code=400, message="invalid_request: Missing required parameter: client_id")
+        return ErrorResponse(code=400, message="invalid_request: Missing required parameter: client_id")
 
     if not response_type:
-        return Response(status="error", code=400, message="invalid_request: Missing required parameter: response_type")
+        return ErrorResponse(code=400, message="invalid_request: Missing required parameter: response_type")
 
     if response_type != "code":
-        return Response(status="error", code=400, message="unsupported_response_type: Only response_type=code is supported")
+        return ErrorResponse(code=400, message="unsupported_response_type: Only response_type=code is supported")
 
     if not redirect_uri:
-        return Response(status="error", code=400, message="invalid_request: Missing required parameter: redirect_uri")
+        return ErrorResponse(code=400, message="invalid_request: Missing required parameter: redirect_uri")
 
     # Optional: Validate state parameter format if present
     if state and (len(state) > 512 or "\n" in state or "\r" in state):
-        return Response(status="error", code=400, message="invalid_request: Invalid state parameter format")
+        return ErrorResponse(code=400, message="invalid_request: Invalid state parameter format")
 
     # 2) Now check rate limiting (only for valid requests)
     if not check_rate_limit(query_params, "oauth_authorize", max_attempts=10, window_minutes=15):
         log.warning(f"Rate limit exceeded for client {client_id} on /auth/v1/authorize")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     # 3) Require authenticated user with valid session token
     jwt_payload, jwt_signature = get_authenticated_user(cookies, headers)
@@ -380,13 +380,13 @@ def authorization_code_grant(
 
     if not code or not redirect_uri:
         log.info(f"Missing code or redirect_uri for client {app_info.client_id}")
-        return Response(status="error", code=400, message="invalid_request: code and redirect_uri required")
+        return ErrorResponse(code=400, message="invalid_request: code and redirect_uri required")
 
     # Validate redirect_uri matches client registration (reuse app_info)
     registered_uris = app_info.client_redirect_urls or []
     if redirect_uri not in [uri for uri in registered_uris if uri]:
         log.info(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
-        return Response(status="error", code=400, message="invalid_request: redirect_uri not registered for this client")
+        return ErrorResponse(code=400, message="invalid_request: redirect_uri not registered for this client")
 
     # Load authorization code record
     try:
@@ -394,26 +394,26 @@ def authorization_code_grant(
         authz = Authorizations(**rec.data)
     except Exception:
         log.info(f"Failed to retrieve authorization code for client {app_info.client_id}: {code}")
-        return Response(status="error", code=401, message=f"invalid_grant: code '{code}' not found")
+        return ErrorResponse(code=401, message=f"invalid_grant: code '{code}' not found")
 
     # Validate code record
     code_challenge_method = (authz.code_challenge_method or "S256") if authz.code_challenge else None
 
     if authz.used:
         log.info(f"Authorization code already used for client {app_info.client_id}: {code}")
-        return Response(status="error", code=401, message="invalid_grant: code already used")
+        return ErrorResponse(code=401, message="invalid_grant: code already used")
 
     if jwt_signature != authz.jwt_signature:
         log.info(f"Token signature mismatch for client {app_info.client_id}: {code}")
-        return Response(status="error", code=401, message="invalid_grant: token signature mismatch")
+        return ErrorResponse(code=401, message="invalid_grant: token signature mismatch")
 
     if jwt_payload.cid != authz.client_id:
         log.info(f"Code client mismatch for client {app_info.client_id}: {code}")
-        return Response(status="error", code=401, message="invalid_grant: code client mismatch")
+        return ErrorResponse(code=401, message="invalid_grant: code client mismatch")
 
     if redirect_uri != authz.redirect_url:
         log.info(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
-        return Response(status="error", code=401, message="invalid_grant: redirect_uri does not match code")
+        return ErrorResponse(code=401, message="invalid_grant: redirect_uri does not match code")
 
     if authz.expires_at is not None:
         expires_dt = authz.expires_at
@@ -421,30 +421,29 @@ def authorization_code_grant(
         expires_dt = None
     if not expires_dt or datetime.now(timezone.utc) > expires_dt.astimezone(timezone.utc):
         log.info(f"Authorization code expired for client {app_info.client_id}: {code}")
-        return Response(status="error", code=401, message="invalid_grant: code expired")
+        return ErrorResponse(status="error", code=401, message="invalid_grant: code expired")
 
     # PKCE verification for public clients
     if app_info.client_type and app_info.client_type == "confidential":
         if not authz.code_challenge:
             log.info(f"Missing code_challenge for client {app_info.client_id}: {code}")
-            return Response(status="error", code=400, message="invalid_request: pkce required for public client")
+            return ErrorResponse(code=400, message="invalid_request: pkce required for public client")
         if not code_verifier:
             log.info(f"Missing code_verifier for client {app_info.client_id}: {code}")
-            return Response(status="error", code=400, message="invalid_request: code_verifier required")
+            return ErrorResponse(code=400, message="invalid_request: code_verifier required")
         try:
             expected = _pkce_calc_challenge(code_verifier, code_challenge_method or "S256")
         except Exception:
             log.info(f"Failed to calculate PKCE challenge for client {app_info.client_id}: {code}")
-            return Response(status="error", code=400, message="invalid_request: invalid code_verifier/method")
+            return ErrorResponse(code=400, message="invalid_request: invalid code_verifier/method")
         if expected != authz.code_challenge:
             log.info(f"PKCE verification failed for client {app_info.client_id}: {code}")
-            return Response(status="error", code=401, message="invalid_grant: pkce_verification_failed")
+            return ErrorResponse(code=401, message="invalid_grant: pkce_verification_failed")
 
     # Get AWS credentials from database profile (NOT from session token)
     aws_credentials, permissions = get_user_access_key(jwt_payload.cnm, jwt_payload.sub)
-    if aws_credentials is None:
+    if len(aws_credentials) == 0:
         log.info(f"Missing AWS credentials for client {app_info.client_id}: {jwt_payload.sub}")
-        return Response(status="error", code=401, message="invalid_grant: no AWS credentials configured")
 
     # Mint the access token with STS session inside
     try:
@@ -481,7 +480,7 @@ def authorization_code_grant(
         "scope": authz.scope or "",
         "refresh_token": refresh_token,
     }
-    return Response(status="ok", code=200, data=result)
+    return SuccessResponse(data=result)
 
 
 def refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
@@ -489,7 +488,7 @@ def refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
     # RFC 6749 Section 6: refresh an access token
     refresh_token = (body.get("refresh_token") or "").strip()
     if not refresh_token:
-        return Response(status="error", code=400, message="invalid_request: refresh_token required")
+        return ErrorResponse(code=400, message="invalid_request: refresh_token required")
     try:
         rt = JwtPayload(
             **jwt.decode(
@@ -504,18 +503,18 @@ def refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
             )
         )
     except jwt.InvalidTokenError:
-        return Response(status="error", code=401, message="invalid_grant: invalid refresh_token")
+        return ErrorResponse(code=401, message="invalid_grant: invalid refresh_token")
 
     if rt.cid != jwt_payload.cid or rt.typ != "refresh":
-        return Response(status="error", code=401, message="invalid_grant: refresh_token audience/type mismatch")
+        return ErrorResponse(code=401, message="invalid_grant: refresh_token audience/type mismatch")
 
     if not jwt_payload.sub:
-        return Response(status="error", code=401, message="invalid_grant: invalid refresh token")
+        return ErrorResponse(code=401, message="invalid_grant: invalid refresh token")
 
     # Get fresh AWS credentials from database (NOT from refresh token)
     aws_credentials, permissions = get_user_access_key(jwt_payload.cnm, jwt_payload.sub)
     if not aws_credentials:
-        return Response(status="error", code=401, message="invalid_grant: no AWS credentials")
+        return ErrorResponse(code=401, message="invalid_grant: no AWS credentials")
 
     # Create new access token with client info
     try:
@@ -541,7 +540,7 @@ def refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
         "scope": rt.scp or "",
         "refresh_token": new_refresh,
     }
-    return Response(status="ok", code=200, data=result)
+    return SuccessResponse(data=result)
 
 
 def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
@@ -578,31 +577,31 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
         400 invalid_request/invalid_grant, 401 invalid_client, 429 slow_down with Retry-After.
     """
 
-    client_id = body.get("client_id", "").strip()
+    client_id = body.get("client_id", "")
 
     if not client_id:
-        return Response(status="error", code=400, message="invalid_request: client_id required")
+        return ErrorResponse(code=400, message="invalid_request: client_id required")
 
     jwt_payload, jwt_signature = get_authenticated_user(cookies=cookies, headers=headers)
     if not jwt_payload or not client_id or client_id != jwt_payload.cid:
-        return Response(status="error", code=401, message="invalid_client: unauthenticated request")
+        return ErrorResponse(code=401, message="invalid_client: unauthenticated request")
 
     client_secret = body.get("client_secret", "").strip()
 
     if not check_rate_limit(headers, "oauth_token", max_attempts=10, window_minutes=15):
         log.warning(f"Rate limit exceeded for client {client_id} on /auth/v1/token")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     # Validate client registration once
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
-        return Response(status="error", code=401, data={"error": "invalid_client", "error_description": "unknown client"})
+        return ErrorResponse(code=401, data={"error": "invalid_client", "error_description": "unknown client"})
 
     is_confidential = bool(app_info.client_secret)
     _, validated = _validate_client_credentials(client_secret, app_info)
     if is_confidential and not validated:
         log.info(f"Invalid client_secret for client {client_id}")
-        return Response(status="error", code=401, message="invalid_client: invalid credentials")
+        return ErrorResponse(code=401, message="invalid_client: invalid credentials")
 
     grant_type = (body.get("grant_type") or "").strip()
     if grant_type == "authorization_code":
@@ -614,7 +613,7 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
         return refresh_token_grant(body, jwt_payload)
 
     else:
-        return Response(status="error", code=400, message="unsupported_grant_type: use authorization_code or refresh_token")
+        return ErrorResponse(code=400, message="unsupported_grant_type: use authorization_code or refresh_token")
 
 
 def oauth_revoke(*, headers: dict = None, **kwargs) -> Response:
@@ -630,7 +629,7 @@ def oauth_revoke(*, headers: dict = None, **kwargs) -> Response:
         Response: Echo of token value (if present).
     """
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    return Response(status="ok", code=200, data={"token": token})
+    return SuccessResponse(data={"token": token})
 
 
 def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
@@ -652,12 +651,12 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> Re
     token_type_hint = (body.get("token_type_hint") or "").strip()
 
     if not token:
-        return Response(status="error", code=400, message="invalid_request: token parameter required")
+        return ErrorResponse(code=400, message="invalid_request: token parameter required")
 
     # Rate limiting
     if not check_rate_limit(headers, "oauth_introspect", max_attempts=20, window_minutes=1):
         log.warning("Rate limit exceeded on /auth/v1/introspect")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     try:
         # Decode and validate the token
@@ -687,11 +686,11 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> Re
             "aud": jwt_payload.cid,
         }
 
-        return Response(status="ok", code=200, data=introspection_data)
+        return SuccessResponse(data=introspection_data)
 
     except jwt.InvalidTokenError:
         # Token is invalid or expired
-        return Response(status="ok", code=200, data={"active": False})
+        return SuccessResponse(data={"active": False})
     except Exception as e:
         log.error(f"Token introspection error: {e}")
         return ErrorResponse(status="error", code=500, message="introspection_failed", exception=e)
@@ -711,14 +710,14 @@ def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
     # Extract access token from Authorization header
     auth_header = headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return Response(status="error", code=401, message="invalid_token: Bearer token required")
+        return ErrorResponse(code=401, message="invalid_token: Bearer token required")
 
     access_token = auth_header.replace("Bearer ", "").strip()
 
     # Rate limiting
     if not check_rate_limit(headers, "oauth_userinfo", max_attempts=30, window_minutes=1):
         log.warning("Rate limit exceeded on /auth/v1/userinfo")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     try:
         # Validate access token
@@ -737,7 +736,7 @@ def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
 
         # Ensure this is an access token
         if jwt_payload.typ != "access_token":
-            return Response(status="error", code=401, message="invalid_token: access token required")
+            return ErrorResponse(code=401, message="invalid_token: access token required")
 
         # Get user profile from database
         try:
@@ -747,7 +746,7 @@ def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
             response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
 
             if response.code != 200:
-                return Response(status="error", code=404, message="user_not_found")
+                return ErrorResponse(code=404, message="user_not_found")
 
             profile_data = UserProfile(**response.data)
 
@@ -765,14 +764,14 @@ def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
             # Remove None values
             userinfo = {k: v for k, v in userinfo.items() if v is not None}
 
-            return Response(status="ok", code=200, data=userinfo)
+            return SuccessResponse(data=userinfo)
 
         except Exception as e:
             log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
             return ErrorResponse(status="error", code=500, message="profile_retrieval_failed", exception=e)
 
     except jwt.InvalidTokenError:
-        return Response(status="error", code=401, message="invalid_token: token validation failed")
+        return ErrorResponse(code=401, message="invalid_token: token validation failed")
     except Exception as e:
         log.error(f"UserInfo error: {e}")
         return ErrorResponse(status="error", code=500, message="userinfo_failed", exception=e)
@@ -790,7 +789,7 @@ def oauth_jwks(*, headers: dict = None, **kwargs) -> Response:
     # Rate limiting
     if not check_rate_limit(headers, "oauth_jwks", max_attempts=50, window_minutes=1):
         log.warning("Rate limit exceeded on /auth/v1/jwks")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     try:
         # For HMAC (symmetric) keys, we typically don't expose the secret
@@ -808,7 +807,7 @@ def oauth_jwks(*, headers: dict = None, **kwargs) -> Response:
             ]
         }
 
-        return Response(status="ok", code=200, data=jwks_data)
+        return SuccessResponse(data=jwks_data)
 
     except Exception as e:
         log.error(f"JWKS endpoint error: {e}")
@@ -833,7 +832,7 @@ def oauth_logout(*, cookies: dict = None, headers: dict = None, query_params: di
     # Rate limiting
     if not check_rate_limit(headers, "oauth_logout", max_attempts=10, window_minutes=1):
         log.warning("Rate limit exceeded on /auth/v1/logout")
-        return Response(status="error", code=429, message="rate_limited")
+        return ErrorResponse(code=429, message="rate_limited")
 
     # Get current user to validate logout
     jwt_payload, _ = get_authenticated_user(cookies, headers)
@@ -860,7 +859,7 @@ def oauth_logout(*, cookies: dict = None, headers: dict = None, query_params: di
     if jwt_payload:
         logout_data["user"] = jwt_payload.sub
 
-    return Response(status="ok", code=200, data=logout_data)
+    return SuccessResponse(data=logout_data)
 
 
 def oauth_discovery(*, headers: dict = None, **kwargs) -> Response:
@@ -897,39 +896,53 @@ auth_server_endpoints = {
         oauth_authorize,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
+        client_isolation=False,
     ),
     "GET:/auth/v1/cred_enc_key": RouteEndpoint(
         get_cred_enc_key,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
+        client_isolation=False,
     ),
     "POST:/auth/v1/token": RouteEndpoint(
         oauth_token,
         permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+        client_isolation=False,
     ),
     "POST:/auth/v1/revoke": RouteEndpoint(
         oauth_revoke,
-        permissions={Permission.DATA_READ},
+        permissions={Permission.USER_MANAGE},
+        client_isolation=False,
     ),
     "POST:/auth/v1/introspect": RouteEndpoint(
         oauth_introspect,
         permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+        client_isolation=False,
     ),
     "GET:/auth/v1/userinfo": RouteEndpoint(
         oauth_userinfo,
         permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+        client_isolation=False,
     ),
     "GET:/auth/v1/jwks": RouteEndpoint(
         oauth_jwks,
         permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+        client_isolation=False,
     ),
     "GET:/auth/v1/logout": RouteEndpoint(
         oauth_logout,
         permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+        client_isolation=False,
     ),
     "GET:/auth/v1/.well-known/oauth-authorization-server": RouteEndpoint(
         oauth_discovery,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
+        client_isolation=False,
     ),
 }

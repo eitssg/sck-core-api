@@ -649,12 +649,25 @@ class ProxyEvent(BaseModel):
         content_type = info.data.get("headers", {}).get("content-type", "application/json")
         if util.is_json_mimetype(content_type):
             try:
-                body = util.from_json(body) if body else {}
+                return util.from_json(body) if body else {}
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON string for body: {e}") from e
         elif "application/x-www-form-urlencoded" in content_type:
-            return urllib.parse.parse_qs(body) if body else {}
+            data = cls._to_dict(urllib.parse.parse_qs(body)) if body else {}
+            return data
         return {"data": body}  # Put whatever mimetype this data is in a dict
+
+    @classmethod
+    def _to_dict(cls, data: Dict[str, List[str]]) -> Dict[str, Any]:
+        """Convert form-encoded data to a dictionary.
+
+        Args:
+            data (Dict[str, List[str]]): Form-encoded data.
+
+        Returns:
+            Dict[str, Any]: Dictionary representation of the form data.
+        """
+        return {k: v[0] if len(v) == 1 else v for k, v in data.items()}
 
     @field_validator("httpMethod", mode="before")
     @classmethod

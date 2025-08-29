@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 import jwt
 import core_logging as log
 
-from core_db.response import SuccessResponse
+from core_db.response import SuccessResponse, ErrorResponse
 from core_db.registry.client import ClientFact, ClientActions
 from core_db.profile import UserProfile, ProfileActions
 
@@ -502,6 +502,6 @@ def get_oauth_params_token(query_params: dict) -> str:
 
 
 auth_github_endpoints: dict[str, RouteEndpoint] = {
-    "GET:/auth/github/login": RouteEndpoint(github_login),
-    "GET:/auth/github/callback": RouteEndpoint(github_callback),
+    "GET:/auth/github/login": RouteEndpoint(github_login, allow_anonymous=True, client_isolation=False),
+    "GET:/auth/github/callback": RouteEndpoint(github_callback, allow_anonymous=True, client_isolation=False),
 }

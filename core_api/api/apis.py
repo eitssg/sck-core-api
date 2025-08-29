@@ -33,6 +33,7 @@ import core_logging as log
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
+import jwt
 
 from core_api.oauth.auth_creds import decrypt_creds
 
@@ -110,14 +111,42 @@ async def authorize_request(request: Request) -> CognitoIdentity:
     # Your OAuth-based authentication
     jwt_token, _ = get_authenticated_user(request.cookies, request.headers)
 
-    if not jwt_token:
-        return None
+    aws_credentials = decrypt_creds(jwt_token.enc) if jwt_token and jwt_token.enc else {}
 
-    aws_credentials = decrypt_creds(jwt_token)
+    cognitoAuthenticationProvider = "ack-core-api"
+    cognitoIdentityId = jwt_token.sub if jwt_token else "anonymous"
+    if aws_credentials:
+        cognitoAuthenticationType = "authenticated"
+        accessKey = aws_credentials.get("AccessKeyId")
+        accountId = aws_credentials.get("Account")
+        cognitoIdentityId = aws_credentials.get("CognitoIdentityId")
+        userArn = aws_credentials.get("UserArn")
+        user = aws_credentials.get("User")
+    else:
+        cognitoAuthenticationType = "unauthenticated"
+        accessKey = None
+        accountId = None
+        cognitoIdentityId = None
+        userArn = None
+        user = None
 
-    credentials = AWSCredentials(**aws_credentials)
+    sourceIp = get_ip_address()
 
-    return credentials.model_dump()
+    userAgent = request.headers.get("user-agent", "")
+
+    identity = CognitoIdentity(
+        accountId=accountId,
+        cognitoIdentityId=cognitoIdentityId,
+        sourceIp=sourceIp,
+        accessKey=accessKey,
+        cognitoAuthenticationType=cognitoAuthenticationType,
+        cognitoAuthenticationProvider=cognitoAuthenticationProvider,
+        userArn=userArn,
+        userAgent=userAgent,
+        user=user,
+    )
+
+    return identity
 
 
 async def generate_event_context(request: Request, identity: CognitoIdentity) -> tuple[ProxyEvent, ProxyContext]:
@@ -171,7 +200,6 @@ async def generate_event_context(request: Request, identity: CognitoIdentity) ->
     event: ProxyEvent = generate_proxy_event(
         protocol=request.url.scheme,
         identity=identity,
-        source_ip=request.client.host if request.client else "127.0.0.1",
         method=request.method,
         resource=resource,
         path=request.url.path,
