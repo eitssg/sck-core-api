@@ -15,7 +15,7 @@ import core_logging as log
 
 from core_db.registry import ClientFact
 from core_db.oauth import AuthActions, Authorizations
-from core_db.response import Response, RedirectResponse, ErrorResponse
+from core_db.response import Response, SuccessResponse, RedirectResponse, ErrorResponse
 
 from ..request import RouteEndpoint
 
@@ -421,7 +421,7 @@ def authorization_code_grant(
         expires_dt = None
     if not expires_dt or datetime.now(timezone.utc) > expires_dt.astimezone(timezone.utc):
         log.info(f"Authorization code expired for client {app_info.client_id}: {code}")
-        return ErrorResponse(status="error", code=401, message="invalid_grant: code expired")
+        return ErrorResponse(code=401, message="invalid_grant: code expired")
 
     # PKCE verification for public clients
     if app_info.client_type and app_info.client_type == "confidential":
@@ -454,7 +454,7 @@ def authorization_code_grant(
         )
     except Exception as e:
         log.info(f"Failed to create access token: {e}")
-        return ErrorResponse(status="error", code=401, message="invalid_grant: failed to mint access token", exception=e)
+        return ErrorResponse(code=401, message="invalid_grant: failed to mint access token", exception=e)
 
     # Update refresh token to include client info
     refresh_token = _mint_refresh_token(
@@ -525,7 +525,7 @@ def refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
         )
     except Exception as e:
         log.error(f"Failed to create access token: {e}")
-        return ErrorResponse(status="error", code=500, message="failed to create access token", exception=e)
+        return ErrorResponse(code=500, message="failed to create access token", exception=e)
 
     # Create new refresh token with client info
     new_refresh = _mint_refresh_token(
@@ -693,7 +693,7 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> Re
         return SuccessResponse(data={"active": False})
     except Exception as e:
         log.error(f"Token introspection error: {e}")
-        return ErrorResponse(status="error", code=500, message="introspection_failed", exception=e)
+        return ErrorResponse(code=500, message="introspection_failed", exception=e)
 
 
 def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
@@ -768,13 +768,13 @@ def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
 
         except Exception as e:
             log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
-            return ErrorResponse(status="error", code=500, message="profile_retrieval_failed", exception=e)
+            return ErrorResponse(code=500, message="profile_retrieval_failed", exception=e)
 
     except jwt.InvalidTokenError:
         return ErrorResponse(code=401, message="invalid_token: token validation failed")
     except Exception as e:
         log.error(f"UserInfo error: {e}")
-        return ErrorResponse(status="error", code=500, message="userinfo_failed", exception=e)
+        return ErrorResponse(code=500, message="userinfo_failed", exception=e)
 
 
 def oauth_jwks(*, headers: dict = None, **kwargs) -> Response:
@@ -811,7 +811,7 @@ def oauth_jwks(*, headers: dict = None, **kwargs) -> Response:
 
     except Exception as e:
         log.error(f"JWKS endpoint error: {e}")
-        return ErrorResponse(status="error", code=500, message="jwks_failed", exception=e)
+        return ErrorResponse(code=500, message="jwks_failed", exception=e)
 
 
 def oauth_logout(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:

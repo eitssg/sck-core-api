@@ -238,7 +238,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         # Check if route exists
         if route_key not in endpoints:
             # Return 404 for unknown routes
-            error_response = ErrorResponse(status="error", code=404, message=f"Route not found: {key}")
+            error_response = ErrorResponse(code=404, message=f"Route not found: {route_key}")
             return get_proxy_error_response(error_response).model_dump()
 
         endpoint_route = endpoints.get(route_key, None)
@@ -258,7 +258,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
             missing_perms = check_permissions_with_wildcard(security_context.permissions, endpoint_route.required_permissions)
             if missing_perms:
-                raise PermissionError(f"Missing permissions for this operation: {[p.value for p in missing_perms]}")
+                raise PermissionError(f"Missing permissions for this operation: {[str(p) for p in missing_perms]}")
 
             if endpoint_route.client_isolation:
                 validate_client_access(security_context, request)
@@ -283,7 +283,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
     except OperationException as e:
         # Handle known operation exceptions
-        error_response = ErrorResponse(status="error", code=e.code, message=e.message, exception=e)
+        error_response = ErrorResponse(code=e.code, message=e.message, exception=e)
         log.error("Operation error in API request", details=error_response.model_dump())
         return get_proxy_error_response(error_response).model_dump()
 

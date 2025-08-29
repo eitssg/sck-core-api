@@ -158,11 +158,11 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
     aws_secret_key = body.get("aws_secret_key", "")
 
     if not client_id:
-        return ErrorResponse(status="error", code=400, message="client_id is required")
+        return ErrorResponse(code=400, message="client_id is required")
 
     app_info: ClientFact = get_oauth_app_info(client_id=client_id)
     if not app_info:
-        return ErrorResponse(status="error", code=400, message="invalid_client")
+        return ErrorResponse(code=400, message="invalid_client")
 
     client = app_info.client
 
@@ -182,17 +182,17 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
         password = body.get("password")
 
         if not user_id or not password:
-            return ErrorResponse(status="error", code=400, message="Email and password are required")
+            return ErrorResponse(code=400, message="Email and password are required")
 
         # Validate password strength
         if not is_password_compliant(password):
-            return ErrorResponse(status="error", code=400, message="Password does not meet requirements")
+            return ErrorResponse(code=400, message="Password does not meet requirements")
 
         captcha_token = body.get("captcha_token")
 
         ok = _verify_captcha(captcha_token, get_client_ip(headers))
         if not ok:
-            return ErrorResponse(status="error", code=400, message="Invalid captcha")
+            return ErrorResponse(code=400, message="Invalid captcha")
 
     # During sign-up, there may or may not be aws credentials.
     # If there are not credentials, we'll safe the password, and we'll add
@@ -201,7 +201,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
         encrypted_credentials = encrypt_credentials(aws_access_key, aws_secret_key, password)
     except Exception as e:
         log.warning(f"Failed to encrypt credentials (such as bad password validation): {e}")
-        return ErrorResponse(status="error", code=500, message="Failed to encrypt credentials", exception=e)
+        return ErrorResponse(code=500, message="Failed to encrypt credentials", exception=e)
 
     try:
         # Load in UserProfile for validation with Pydantic (includes email validation)
@@ -249,7 +249,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
                 return ErrorResponse(code=response.code, message="Profile creation failed")
 
     except Exception as e:
-        return ErrorResponse(status="error", code=500, message="Profile update failed", exception=e)
+        return ErrorResponse(code=500, message="Profile update failed", exception=e)
 
     try:
 
@@ -270,7 +270,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
         )
 
     except Exception as e:
-        return ErrorResponse(status="error", code=500, message="Issuing session failed", exception=e)
+        return ErrorResponse(code=500, message="Issuing session failed", exception=e)
 
 
 def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
@@ -325,7 +325,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
         current_data = UserProfile(**response.data)
     except Exception as e:
         log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
-        return ErrorResponse(status="error", code=500, message="Failed to retrieve user profile", exception=e)
+        return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
 
     # Prepare update data (only include fields that are provided)
     update_data = {"user_id": jwt_payload.sub, "profile_name": profile}
@@ -358,7 +358,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
 
         except Exception as e:
             log.error(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
-            return ErrorResponse(status="error", code=500, message="Failed to encrypt AWS credentials", exception=e)
+            return ErrorResponse(code=500, message="Failed to encrypt AWS credentials", exception=e)
 
     # Perform the update
     try:
@@ -377,7 +377,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
 
     except Exception as e:
         log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
-        return ErrorResponse(status="error", code=500, message="Failed to update user profile", exception=e)
+        return ErrorResponse(code=500, message="Failed to update user profile", exception=e)
 
 
 def _get_identity(aws_credentials: dict) -> dict:
