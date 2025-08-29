@@ -26,6 +26,7 @@ from typing import Optional
 import base64
 import json
 
+from dotenv.cli import get
 from fastapi.responses import JSONResponse, RedirectResponse
 
 import core_logging as log
@@ -55,6 +56,30 @@ STATUS_CODE = "statusCode"
 BODY = "body"
 
 
+def get_cognito_identity(session_token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
+    """
+    Get AWS Cognito Identity
+    """
+
+    identity_data = get_user_information(session_token, role)
+
+    cognito_identity = CognitoIdentity(
+        accountId=identity_data.get("Account"),
+        user=identity_data.get("UserId"),
+        userArn=identity_data.get("Arn"),
+        caller=identity_data.get("caller", __name__),
+        sourceIp=get_ip_address(),
+        accessKey=identity_data.get("AccessKeyId"),
+        # Additional AWS Cognito fields
+        cognitoIdentityPoolId=identity_data.get("CognitoIdentityPoolId"),
+        cognitoIdentityId=identity_data.get("CognitoIdentityId"),
+        principalOrgId=identity_data.get("PrincipalOrgId"),
+        userAgent="",  # Will be set by generate_proxy_event
+    )
+
+    return cognito_identity
+
+
 async def authorize_request(request: Request, role: str) -> CognitoIdentity:
     """Authorize the request by validating the token in the Authorization header.
 
@@ -81,45 +106,15 @@ async def authorize_request(request: Request, role: str) -> CognitoIdentity:
             identity = await authorize_request(request, "arn:aws:iam::123:role/ReadRole")
             print(f"User: {identity.username}")
     """
+
     # Your OAuth-based authentication
     jwt_token, _ = get_authenticated_user(request.cookies, request.headers)
-    security_context = await get_security_context(request)
-
-    if not security_context:
-        raise ValueError("Authentication required")
 
     aws_credentials = decrypt_creds(jwt_token)
 
-    identity = get_user_information(aws_credentials["SessionToken"], role)
+    session_token = aws_credentials.get("SessionToken")
 
-    if not identity:
-        raise ValueError("User is not authorized")
-
-    return identity
-
-
-def get_cognito_identity(session_token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
-    """
-    Get AWS Cognito Identity
-    """
-
-    identity_data = get_user_information(session_token, role)
-
-    cognito_identity = CognitoIdentity(
-        accountId=identity_data.get("Account"),
-        user=identity_data.get("UserId"),
-        userArn=identity_data.get("Arn"),
-        caller=identity_data.get("caller", __name__),
-        sourceIp=get_ip_address(),
-        accessKey=identity_data.get("AccessKeyId"),
-        # Additional AWS Cognito fields
-        cognitoIdentityPoolId=identity_data.get("CognitoIdentityPoolId"),
-        cognitoIdentityId=identity_data.get("CognitoIdentityId"),
-        principalOrgId=identity_data.get("PrincipalOrgId"),
-        userAgent="",  # Will be set by generate_proxy_event
-    )
-
-    return cognito_identity
+    return get_cognito_identity(session_token, role)
 
 
 async def generate_event_context(request: Request, identity: CognitoIdentity) -> tuple[ProxyEvent, ProxyContext]:

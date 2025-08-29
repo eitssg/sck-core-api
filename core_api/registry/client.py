@@ -15,7 +15,7 @@ class ApiRegClientActions(ApiActions, ClientActions):
     pass
 
 
-def get_client_list_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_client_list_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Handler for GET /api/v1/clients endpoint.
     Lists all clients in the platform.
@@ -32,7 +32,7 @@ def get_client_list_action(*, cookies: dict, headers: dict, query_params: dict, 
     return ApiRegClientActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_client_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Handler for GET /api/v1/client/{client} endpoint.
     Retrieves details for a specific client.
@@ -49,7 +49,7 @@ def get_client_action(*, cookies: dict, headers: dict, query_params: dict, path_
     return ApiRegClientActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_client_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def create_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Handler for POST /api/v1/client endpoint.
     Creates a new client.
@@ -66,7 +66,7 @@ def create_client_action(*, cookies: dict, headers: dict, query_params: dict, pa
     return ApiRegClientActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_client_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def update_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Handler for PUT /api/v1/client/{client} endpoint.
     Fully updates a client or creates if doesn't exist.
@@ -83,7 +83,7 @@ def update_client_action(*, cookies: dict, headers: dict, query_params: dict, pa
     return ApiRegClientActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def patch_client_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def patch_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Handler for PATCH /api/v1/client/{client} endpoint.
     Partially updates an existing client.
@@ -100,7 +100,7 @@ def patch_client_action(*, cookies: dict, headers: dict, query_params: dict, pat
     return ApiRegClientActions.patch(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_client_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def delete_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Handler for DELETE /api/v1/client/{client} endpoint.
     Deletes a client if it exists.

@@ -116,7 +116,7 @@ def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
         return False
 
 
-def oauth_signup(*, cookies: dict, headers: dict, body: dict) -> Response:
+def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Create or update the default profile, then return a session token.
 
     Route:
@@ -273,7 +273,7 @@ def oauth_signup(*, cookies: dict, headers: dict, body: dict) -> Response:
         return ErrorResponse(status="error", code=500, message="Issuing session failed", exception=e)
 
 
-def update_user(*, cookies: dict, headers: dict, body: dict) -> Response:
+def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Update user profile fields including AWS credentials.
 
     Route:
@@ -377,7 +377,7 @@ def update_user(*, cookies: dict, headers: dict, body: dict) -> Response:
         return ErrorResponse(status="error", code=500, message="Failed to update user profile", exception=e)
 
 
-def user_login(*, headers: dict, body: dict) -> Response:
+def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Authenticate with email/password and return a basic session JWT with client context.
 

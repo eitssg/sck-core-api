@@ -26,18 +26,8 @@ GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "http://localhost:8090/auth/github/callback")
 
 ALLOWED_SCOPES: Set[str] = {
-    "registry-clients:read",
-    "registry-clients:write",
-    "registry-zones:read",
-    "registry-zones:write",
-    "registry-portfolios:read",
-    "registry-portfolios:write",
-    "registry-apps:read",
-    "registry-apps:write",
-    "events:read",
-    "events:write",
-    "items:read",
-    "items:write",
+    "read",
+    "write",
 }
 
 # Encryption key for credentials (32-byte base64url)

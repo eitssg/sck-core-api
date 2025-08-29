@@ -35,7 +35,7 @@ def teardown_action(bootstrap_dynamo):
 
     action = NoOpActionSpec(
         **{
-            "params": {
+            "spec": {
                 "account": "123456789012",
                 "region": "us-west-1",
                 "stack_name": "no-stack-exists",

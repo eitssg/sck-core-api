@@ -9,7 +9,7 @@ from ..oauth.tools import get_authenticated_user, decrypt_creds
 from .apis import (
     generate_event_context,
     generate_response_from_lambda,
-    get_cognito_identity,
+    authorize_request,
 )
 
 from .handler import api_endpoints, handler
@@ -47,27 +47,15 @@ async def proxy_forward(request: Request) -> Response:
             # Handles: GET /users -> Lambda function or local handler
     """
 
-    # Lambda functions are in the automation account
-    account = util.get_automation_account()
-    log.debug("Using Automation Account: %s", account)
-
-    if not account:
-        raise ValueError("No Automation Account specified in the environment")
-
     # Read role for "get", Write role for other methods
+
     is_write_operation = request.method.lower() != "get"
-    role = util.get_automation_api_role_arn(account, is_write_operation)
+    role = util.get_automation_api_role_arn(write=is_write_operation)
 
     log.debug("Using IAM Role for operation: %s", role)
 
-    # Generate Lambda event and context
-    jwt_payload, _ = get_authenticated_user(request.cookies, request.headers)
-    credentials = decrypt_creds(jwt_payload.enc)
-
-    session_token = credentials.get("SessionToken")
-
     # Authorize the user for this operation
-    cognito_identity = get_cognito_identity(session_token, role)
+    cognito_identity = await authorize_request(request, role)
     lambda_event, context = await generate_event_context(request, cognito_identity)
 
     # Convert event to dict for Lambda invocation

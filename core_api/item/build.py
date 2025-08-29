@@ -15,10 +15,7 @@ import core_helper.aws as aws
 
 from core_db.response import Response, SuccessResponse
 
-from core_db.exceptions import (
-    BadRequestException,
-    NotFoundException,
-)
+from core_db.exceptions import BadRequestException, NotFoundException
 from core_db.item.branch.models import BranchModel
 from core_db.item.build.actions import BuildActions
 from core_db.item.build.models import BuildModel
@@ -141,49 +138,49 @@ class ApiBuildActions(ApiActions, BuildActions):
         return SuccessResponse(message=f"Build {build.prn} teardown requested")
 
 
-def get_builds(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_builds(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_build(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_build(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def create_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_build(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def update_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_build(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def delete_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
-def release_build(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def release_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.release(**dict(ChainMap(body, pp, qsp)))
 
 
-def teardown_build(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def teardown_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

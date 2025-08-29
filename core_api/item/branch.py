@@ -4,9 +4,7 @@ from core_db.response import Response
 
 from core_db.item.branch.actions import BranchActions
 
-from ..constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
-
-from ..request import ActionHandlerRoutes, RouteEndpoint
+from ..request import RouteEndpoint
 from ..actions import ApiActions
 
 
@@ -15,35 +13,35 @@ class ApiBranchActions(ApiActions, BranchActions):
     pass
 
 
-def get_branch_list_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_branch_list_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_branch_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def post_branch_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def post_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def put_branch_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def put_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_branch_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def delete_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

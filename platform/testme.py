@@ -1,6 +1,5 @@
 import os
 import sys
-from tkinter import E
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
@@ -19,7 +18,8 @@ def _test_get_facts() -> None:
             print("Usage: python testme.py <path to yaml file with query params>")
             return
 
-        basename = filename[0 : filename.rfind(".")] if filename else None
+        # strip the last 8 characters off ".yaml.j2"
+        basename = filename[:-8] if filename else None
         output_name = f"{basename}-output.yaml" if basename else None
 
         if not output_name:

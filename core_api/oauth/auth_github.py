@@ -37,7 +37,7 @@ def _make_state() -> str:
     return uuid.uuid4().hex
 
 
-async def github_login(*, query_params) -> RedirectResponse:
+async def github_login(*, query_params: dict = None, **kwargs) -> RedirectResponse:
     """Initiate GitHub OAuth login flow.
 
     Route:
@@ -113,7 +113,13 @@ async def github_login(*, query_params) -> RedirectResponse:
     return resp
 
 
-async def github_callback(*, cookies: dict, headers: dict, query_params: dict, body: dict) -> Response:
+async def github_callback(
+    *,
+    cookies: dict = None,
+    headers: dict = None,
+    query_params: dict = None,
+    **kwargs,
+) -> Response:
     """Complete GitHub OAuth flow and integrate with OAuth server.
 
     Route:

@@ -33,7 +33,8 @@ Attributes:
 """
 
 from typing import Any, Dict, Optional
-import uuid
+
+import core_framework as util
 
 import core_logging as log
 
@@ -61,11 +62,10 @@ from ..response import get_proxy_error_response, get_proxy_response
 from ..request import (
     ProxyEvent,
     RouteEndpoint,
-    check_permissions_with_wildcard,
     extract_security_context,
     get_correlation_id,
-    validate_client_access,
 )
+from ..security import validate_client_access, check_permissions_with_wildcard, extract_security_context
 
 # Build the router for the API Gateway REST interface
 api_endpoints: dict[str, RouteEndpoint] = {
@@ -237,7 +237,8 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
         security_context = None
         if not endpoint_route.allow_anonymous:
-            security_context = extract_security_context(request)
+
+            security_context = extract_security_context(request, role_arn=util.get_api_lambda_arn, require_aws_credentials=True)
 
             if not security_context:
                 raise UnauthorizedException("Authorization required")
@@ -252,15 +253,14 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             if endpoint_route.client_isolation:
                 validate_client_access(security_context, request)
 
-        # Execute action handler with request parameters
-        # TODO: Update handler signature to accept ProxyEvent directly
-        # Call the endpoint handler
+        # Call the endpoint handler with enhanced security context
         response: Response = api_endpoints[route_key].handler(
             headers=request.headers,
             cookies=request.cookies or {},
             query_params=request.queryStringParameters or {},
             path_params=request.pathParameters or {},
             body=request.body or {},
+            security=security_context,
         )
 
         log.info(
@@ -284,6 +284,11 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
     except OperationException as e:
         error_response = ErrorResponse(message=str(e), code=404, metadata={"correlation_id": correlation_id})
         log.warning("Returning 404 response", details=error_response.model_dump())
+        return get_proxy_error_response(error_response)
+
+    except UnauthorizedException as e:
+        error_response = ErrorResponse(message=str(e), code=401, metadata={"correlation_id": correlation_id})
+        log.warning("Authentication failed", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
     except Exception as e:

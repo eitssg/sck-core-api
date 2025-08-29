@@ -26,7 +26,7 @@ class ApiRegPortfolioActions(ApiActions, PortfolioActions):
     pass
 
 
-def list_portfolios_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def list_portfolios_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Returns a list of all portfolios for the client.
 
@@ -53,7 +53,7 @@ def list_portfolios_action(*, cookies: dict, headers: dict, query_params: dict, 
     return ApiRegPortfolioActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     """
     Returns a portfolio for the client.
     """
@@ -63,28 +63,28 @@ def get_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, pa
     return ApiRegPortfolioActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def create_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiRegPortfolioActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def update_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiRegPortfolioActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def patch_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def patch_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiRegPortfolioActions.patch(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_portfolio_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def delete_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

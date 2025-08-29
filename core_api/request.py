@@ -28,11 +28,11 @@ Attributes:
     DOMAIN_PREFIX (str): Domain prefix for API Gateway endpoints.
 """
 
-from token import OP
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 from enum import Enum
 from datetime import datetime, timezone
 import json
+import urllib.parse
 import uuid
 
 from pydantic import (
@@ -45,11 +45,12 @@ from pydantic import (
     PrivateAttr,
 )
 
+import core_logging as log
 import core_framework as util
 
 from core_db.response import Response
 
-from .security import Permission, Role, SecurityContext
+
 from .actions import ApiActionsClass
 from .constants import HDR_X_CORRELATION_ID, API_ID, DOMAIN_PREFIX
 
@@ -616,7 +617,12 @@ class ProxyEvent(BaseModel):
 
         return cookies
 
-    @field_validator("body", mode="before")
+    @property
+    def content_type(self) -> str:
+        """Get the Content-Type header value."""
+        return self.headers.get("content-type", "application/json")
+
+    @field_validator("body", mode="after")
     @classmethod
     def body_dict(cls, body: Any, info: ValidationInfo) -> Union[Dict[str, Any], str]:
         """Convert JSON string body to dictionary for convenient access.
@@ -638,19 +644,17 @@ class ProxyEvent(BaseModel):
             - Empty strings become empty dictionaries
             - Invalid JSON raises ValueError with descriptive message
         """
-        if body is None:
-            return {}
         if isinstance(body, dict):
             return body
-        if isinstance(body, str):
-            if len(body) == 0:
-                return {}
+        content_type = info.data.get("headers", {}).get("content-type", "application/json")
+        if util.is_json_mimetype(content_type):
             try:
-                return util.from_json(body)
+                body = util.from_json(body)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON string for body: {e}") from e
-        else:
-            raise ValueError(f"Invalid body type: expected dict or str, got {type(body)}")
+        elif "application/x-www-form-urlencoded" in content_type:
+            return urllib.parse.parse_qs(body)
+        return body
 
     @field_validator("httpMethod", mode="before")
     @classmethod
@@ -701,7 +705,7 @@ class RouteEndpoint:
 
     def __init__(self, method: Callable[..., Response], **kwargs):
         self.handler = method
-        self.required_permissions: Set[Permission] = kwargs.get("required_permissions", set())
+        self.required_permissions: Set = kwargs.get("required_permissions", set())
         self.required_token_type: str = kwargs.get("required_token_type", "access")
         self.allow_anonymous: bool = kwargs.get("allow_anonymous", False)
         self.client_isolation: bool = kwargs.get("client_isolation", True)
@@ -710,259 +714,6 @@ class RouteEndpoint:
 # Type aliases for handler function signatures
 ActionHandler = Callable[..., Response]
 ActionHandlerRoutes = Dict[str, RouteEndpoint]
-
-
-def validate_client_access(security: SecurityContext, request: ProxyEvent) -> None:
-    """Validate client isolation for multi-tenant endpoints.
-
-    Checks for client identifier in multiple locations:
-    - Path parameters: {client} in URL path
-    - Query parameters: ?client=value or ?Client=value
-    - Request body: {"client": "value"} or {"Client": "value"}
-
-    Args:
-        security: Security context with user roles and permissions
-        request: API Gateway proxy event with parameters
-
-    Raises:
-        PermissionError: If user doesn't have access to the specified client
-    """
-
-    def extract_client_from_dict(data: dict) -> Optional[str]:
-        """Extract client value from dict, checking both cases."""
-        if not data:
-            return None
-        return data.get("client") or data.get("Client")
-
-    # Check all possible locations for client identifier
-    client_slug = None
-
-    # 1. Path parameters: /api/v1/registry/{client}/portfolios
-    if request.pathParameters:
-        client_slug = extract_client_from_dict(request.pathParameters)
-
-    # 2. Query parameters: ?client=mycompany or ?Client=mycompany
-    if not client_slug and request.queryStringParameters:
-        client_slug = extract_client_from_dict(request.queryStringParameters)
-
-    # 3. Request body: {"client": "mycompany"} or {"Client": "mycompany"}
-    if not client_slug and request.body:
-        try:
-            import json
-
-            body_dict = json.loads(request.body)
-            if isinstance(body_dict, dict):
-                client_slug = extract_client_from_dict(body_dict)
-        except (json.JSONDecodeError, TypeError):
-            # Body is not valid JSON or not a dict, skip body parsing
-            pass
-
-    # If no client found in any location, skip validation
-    if not client_slug:
-        log.debug("No client identifier found in request, skipping client isolation")
-        return
-
-    log.debug(f"Validating client access for '{client_slug}' by user {security.user_id}")
-
-    # Admins can access any client
-    if "admin" in security.roles:
-        log.debug(f"Admin user {security.user_id} granted access to client '{client_slug}'")
-        return
-
-    # Service accounts can access any client
-    if "service" in security.roles:
-        log.debug(f"Service account {security.user_id} granted access to client '{client_slug}'")
-        return
-
-    # Regular users: client slug must match their context (case-insensitive)
-    user_client_id = security.client_id.lower() if security.client_id else ""
-    user_client_name = security.client.lower() if security.client else ""
-    requested_client = client_slug.lower()
-
-    if requested_client not in [user_client_id, user_client_name]:
-        log.warning(
-            f"Client access denied for user {security.user_id}",
-            details={
-                "requested_client": client_slug,
-                "user_client": security.client,
-                "client_id": security.client_id,
-            },
-        )
-        raise PermissionError(f"Access denied to client '{client_slug}'. User belongs to '{security.client}'")
-
-    log.debug(f"Client access granted for user {security.user_id} to client '{client_slug}'")
-
-
-def extract_security_context(request: ProxyEvent) -> Optional[SecurityContext]:
-    """Extract security context from JWT token using OAuth scopes."""
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-
-    token = auth_header[7:]
-
-    try:
-        jwt_payload = JwtPayload.decode(token)
-
-        if jwt_payload.typ != "access_token":
-            log.warning(f"Invalid token type for API: {jwt_payload.typ}")
-            return None
-
-        # USE OAUTH SCOPES instead of separate roles/permissions
-        scopes = jwt_payload.scp or ""
-        permissions = get_permissions_from_scopes(scopes)
-
-        # Derive roles from user attributes or permissions
-        roles = derive_roles_from_permissions(permissions)
-
-        return SecurityContext(
-            user_id=jwt_payload.sub,
-            client_id=jwt_payload.cid,
-            client=jwt_payload.cnm,
-            permissions=permissions,
-            roles=roles,
-            token_type=jwt_payload.typ,
-            custom_attributes={},
-            jwt_payload=jwt_payload,
-        )
-
-    except Exception as e:
-        log.warning(f"Failed to decode JWT token: {e}")
-        return None
-
-
-def get_permissions_from_scopes(scopes: str) -> Set[Permission]:
-    """Convert OAuth scopes to Permission enums."""
-    if not scopes:
-        return set()
-
-    scope_list = scopes.split()
-    permissions = set()
-
-    for scope in scope_list:
-        try:
-            # Direct mapping: scope "portfolio:read" -> Permission.PORTFOLIO_READ
-            perm_name = scope.upper().replace(":", "_")
-            permission = Permission(scope)  # Assuming your Permission enum uses scope values
-            permissions.add(permission)
-        except ValueError:
-            log.warning(f"Unknown scope in token: {scope}")
-
-    return permissions
-
-
-def derive_roles_from_permissions(permissions: Set[Permission]) -> Set[Role]:
-    """Derive user roles from their permissions (optional)."""
-    roles = {Role.USER}  # Default role
-
-    # Admin role if they have admin permissions
-    admin_perms = {Permission.USER_MANAGE, Permission.CLIENT_MANAGE}
-    if admin_perms.intersection(permissions):
-        roles.add(Role.ADMIN)
-
-    return roles
-
-
-def get_permissions_from_scopes(scopes: str) -> Set[Permission]:
-    """Convert OAuth scopes to Permission enums, supporting wildcard permissions."""
-    if not scopes:
-        return set()
-
-    scope_list = scopes.split()
-    permissions = set()
-    wildcard_permissions = set()
-
-    for scope in scope_list:
-        try:
-            if scope.startswith("*:"):
-                # Handle wildcard permissions: "*:read", "*:write", etc.
-                wildcard_action = scope[2:]  # Remove "*:" prefix
-                wildcard_permissions.add(wildcard_action)
-            else:
-                # Handle specific permissions: "registry:read", "aws:write", etc.
-                permission = Permission(scope)
-                permissions.add(permission)
-        except ValueError:
-            log.warning(f"Unknown scope in token: {scope}")
-
-    # If we have wildcard permissions, generate all possible permissions
-    if wildcard_permissions:
-        permissions.update(generate_wildcard_permissions(wildcard_permissions))
-
-    return permissions
-
-
-def generate_wildcard_permissions(wildcard_actions: Set[str]) -> Set[Permission]:
-    """Generate all possible permissions for wildcard actions.
-
-    Args:
-        wildcard_actions: Set of wildcard actions like {"read", "write", "admin"}
-
-    Returns:
-        Set of all Permission enums that match the wildcard pattern
-    """
-    all_permissions = set()
-
-    # Get all available Permission enum values
-    for permission in Permission:
-        permission_parts = permission.value.split(":")
-
-        if len(permission_parts) >= 2:
-            # Extract the action part (last part): "registry:read" -> "read"
-            action = permission_parts[-1]
-
-            # If this action is in wildcard permissions, include it
-            if action in wildcard_actions:
-                all_permissions.add(permission)
-
-    return all_permissions
-
-
-def has_permission_with_wildcard(user_permissions: Set[Permission], required_permission: Permission) -> bool:
-    """Check if user has required permission, considering wildcard permissions.
-
-    Args:
-        user_permissions: User's actual permissions from JWT token
-        required_permission: Required permission for the endpoint
-
-    Returns:
-        True if user has the required permission (directly or via wildcard)
-    """
-    # Direct permission match
-    if required_permission in user_permissions:
-        return True
-
-    # Check for wildcard match
-    permission_parts = required_permission.value.split(":")
-    if len(permission_parts) >= 2:
-        action = permission_parts[-1]  # Get action part
-
-        # Check if user has wildcard permission for this action
-        for user_perm in user_permissions:
-            if user_perm.value == f"*:{action}":
-                return True
-
-    return False
-
-
-def check_permissions_with_wildcard(user_permissions: Set[Permission], required_permissions: Set[Permission]) -> Set[Permission]:
-    """Check which required permissions are missing, considering wildcards.
-
-    Args:
-        user_permissions: User's permissions from JWT token
-        required_permissions: Required permissions for the endpoint
-
-    Returns:
-        Set of missing permissions (empty if all permissions are satisfied)
-    """
-    missing_permissions = set()
-
-    for required_perm in required_permissions:
-        if not has_permission_with_wildcard(user_permissions, required_perm):
-            missing_permissions.add(required_perm)
-
-    return missing_permissions
 
 
 def get_correlation_id(request: ProxyEvent) -> str:

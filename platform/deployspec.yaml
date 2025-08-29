@@ -1,0 +1,101 @@
+- apiVersion: v1 
+  kind: create-stack
+  metadata:
+    name: core-automation-api-roles
+    namespace: core
+    description: Core Automation API roles and service account stack
+  spec:
+    account: {{ context.Account }}
+    region: {{ context.AwsRegion }}
+    template: core-automation-api-roles.yaml
+    capabilities:
+      - CAPABILITY_NAMED_IAM
+    tags:
+      Client: {{ context.Client }}
+      Environment: {{ context.Environment }}
+      Portfolio: {{ context.Portfolio }}
+      App: {{ context.App }}
+      Branch: {{ context.Branch }}
+      Build: {{ context.Build }}
+    parameters:
+      Scope: {{ context.Scope | default('') }}
+
+- apiVersion: v1
+  kind: create-stack
+  metadata:
+    name: core-automation-api
+    namespace: core
+    description: Core Automation API stack
+  depends_on: ['core-automation-api-roles']
+  spec:
+    account: {{ context.Account }}
+    region: {{ context.AwsRegion }}
+    template: core-automation-api.yaml
+    capabilities:
+      - CAPABILITY_NAMED_IAM
+    tags:
+      Client: {{ context.Client }}
+      Environment: {{ context.Environment }}
+      Portfolio: {{ context.Portfolio }}
+      App: {{ context.App }}
+      Branch: {{ context.Branch }}
+      Build: {{ context.Build }}
+    parameters:
+      Scope: {{ context.Scope | default('') }}
+    stack_policy:
+      - Effect: Allow
+        Action: "*"
+        Principal: "*"
+        Resource: "*"
+      - Effect: Deny
+        Action: "Update:*"
+        Principal: "*"
+        Resource:
+          - "LogicalResourceId/ApiLambdaFunction"
+          - "LogicalResourceId/AuthLambdaFunction"
+          - "LogicalResourceId/SimpleCloudKitApiServerUser"
+          - "LogicalResourceId/SimpleCloudKitApiServerAccessKey"
+          - "LogicalResourceId/SimpleCloudKitApiServerPolicy"
+        Condition:
+          StringNotEquals:
+            "aws:PrincipalArn": {{ context.AdminRoleArn }}
+
+- apiVersion: v1
+  kind: create-stack
+  metadata:
+    name: core-automation-api-gateway
+    namespace: core
+    description: Core Automation API Gateway stack
+  spec:
+    account: {{ context.Account }}
+    region: {{ context.AwsRegion }}
+    template: core-automation-api-gateway.yaml
+    capabilities:
+      - CAPABILITY_NAMED_IAM
+    tags:
+      Client: {{ context.Client }}
+      Environment: {{ context.Environment }}
+      Portfolio: {{ context.Portfolio }}
+      App: {{ context.App }}
+      Branch: {{ context.Branch }}
+      Build: {{ context.Build }}
+    parameters:
+      Scope: {{ context.Scope | default('') }}
+      ZipFileName: core-automation-api-lambda.zip
+    stack_policy:
+      - Effect: Allow
+        Action: "*"
+        Principal: "*"
+        Resource: "*"
+      - Effect: Deny
+        Action: "Update:*"
+        Principal: "*"
+        Resource:
+          - "LogicalResourceId/ApiLambdaFunction"
+          - "LogicalResourceId/AuthLambdaFunction"
+          - "LogicalResourceId/SimpleCloudKitApiServerUser"
+          - "LogicalResourceId/SimpleCloudKitApiServerAccessKey"
+          - "LogicalResourceId/SimpleCloudKitApiServerPolicy"
+        Condition:
+          StringNotEquals:
+            "aws:PrincipalArn": {{ context.AdminRoleArn }}

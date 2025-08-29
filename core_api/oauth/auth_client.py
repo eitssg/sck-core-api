@@ -18,7 +18,7 @@ from core_api.item.build import SuccessResponse
 from core_api.request import RouteEndpoint
 
 
-def register_client(*, body: dict) -> Response:
+def register_client(*, body: dict = None, **kwargs) -> Response:
     """Register a new OAuth client."""
 
     client = body.get("client")
@@ -68,7 +68,7 @@ def register_client(*, body: dict) -> Response:
     return CreatedResponse(data=response)
 
 
-def update_client(*, query_params: dict, body: dict) -> Response:
+def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> Response:
     """Update an existing OAuth client."""
 
     client = query_params.get("client")

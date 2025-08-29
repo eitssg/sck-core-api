@@ -1,10 +1,10 @@
-from math import perm
 from typing import Optional, Dict, Tuple
 import time
 import base64
 import os
 import json
 import uuid
+import ipaddress
 import bcrypt
 from datetime import datetime, timedelta, timezone
 
@@ -863,13 +863,13 @@ def get_client_ip(headers: dict) -> str:
         >>> # Use for rate limiting or logging
     """
 
+    ip = headers.get("x-real-ip") or headers.get("x-client-ip") or "unknown"
+
     # Check forwarded IP if behind proxy (take first IP only)
     forwarded = headers.get("x-forwarded-for", "").split(",")[0].strip()
     if forwarded and forwarded != ip:
         # Basic validation of forwarded IP
         try:
-            import ipaddress
-
             ipaddress.ip_address(forwarded)
             return forwarded
         except ValueError:

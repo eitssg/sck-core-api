@@ -15,42 +15,42 @@ class ApiProfileActions(ApiActions, ProfileActions):
     pass
 
 
-def list_profile_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def list_profile_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiProfileActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_profile_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def get_profile_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiProfileActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_profile_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def create_profile_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiProfileActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_profile_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def update_profile_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiProfileActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def patch_profile_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def patch_profile_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiProfileActions.patch(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_profile_action(*, cookies: dict, headers: dict, query_params: dict, path_params: dict, body: dict) -> Response:
+def delete_profile_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

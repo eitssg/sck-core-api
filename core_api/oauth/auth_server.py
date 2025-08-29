@@ -187,7 +187,7 @@ def _authenticate_client(headers: dict, form: dict) -> tuple[str, bool]:
     return _validate_client_credentials(client_id, client_secret)
 
 
-def get_cred_enc_key(query_param: dict) -> Response:
+def get_cred_enc_key(**kwargs) -> Response:
     """Generate a new AWS credential encryption key."""
 
     key_bytes = secrets.token_bytes(32)
@@ -196,7 +196,13 @@ def get_cred_enc_key(query_param: dict) -> Response:
     return Response(status="ok", code=200, data={"cred_enc_key": key_b64url})
 
 
-def oauth_authorize(cookies: dict, headers: dict, query_params: dict) -> Response:
+def oauth_authorize(
+    *,
+    cookies: dict = None,
+    headers: dict = None,
+    query_params: dict = None,
+    **kwargs,
+) -> Response:
     """OAuth 2.0 Authorization Code endpoint.
 
     Route:
@@ -538,7 +544,7 @@ def refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
     return Response(status="ok", code=200, data=result)
 
 
-def oauth_token(*, cookies: dict, headers: dict, body: dict) -> Response:
+def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Exchange authorization codes and refresh tokens for access.
 
     Route:
@@ -611,7 +617,7 @@ def oauth_token(*, cookies: dict, headers: dict, body: dict) -> Response:
         return Response(status="error", code=400, message="unsupported_grant_type: use authorization_code or refresh_token")
 
 
-def oauth_revoke(*, headers: dict) -> Response:
+def oauth_revoke(*, headers: dict = None, **kwargs) -> Response:
     """Token revocation endpoint (RFC 7009).
 
     Route:
@@ -627,7 +633,7 @@ def oauth_revoke(*, headers: dict) -> Response:
     return Response(status="ok", code=200, data={"token": token})
 
 
-def oauth_introspect(*, headers: dict, body: dict) -> Response:
+def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Token introspection endpoint (RFC 7662).
 
     Route:
@@ -691,7 +697,7 @@ def oauth_introspect(*, headers: dict, body: dict) -> Response:
         return ErrorResponse(status="error", code=500, message="introspection_failed", exception=e)
 
 
-def oauth_userinfo(*, headers: dict) -> Response:
+def oauth_userinfo(*, headers: dict = None, **kwargs) -> Response:
     """OpenID Connect UserInfo endpoint.
 
     Route:
@@ -772,7 +778,7 @@ def oauth_userinfo(*, headers: dict) -> Response:
         return ErrorResponse(status="error", code=500, message="userinfo_failed", exception=e)
 
 
-def oauth_jwks(*, headers: dict) -> Response:
+def oauth_jwks(*, headers: dict = None, **kwargs) -> Response:
     """JSON Web Key Set endpoint for token verification.
 
     Route:
@@ -809,7 +815,7 @@ def oauth_jwks(*, headers: dict) -> Response:
         return ErrorResponse(status="error", code=500, message="jwks_failed", exception=e)
 
 
-def oauth_logout(*, cookies: dict, headers: dict, query_params: dict) -> Response:
+def oauth_logout(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:
     """OAuth/OpenID Connect logout endpoint.
 
     Route:
@@ -857,7 +863,7 @@ def oauth_logout(*, cookies: dict, headers: dict, query_params: dict) -> Respons
     return Response(status="ok", code=200, data=logout_data)
 
 
-def oauth_discovery(*, headers: dict) -> Response:
+def oauth_discovery(*, headers: dict = None, **kwargs) -> Response:
     """OAuth 2.0 Authorization Server Metadata (RFC 8414)."""
     base_url = headers.get("Host", "").rstrip("/")
     return Response(
