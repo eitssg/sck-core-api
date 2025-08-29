@@ -649,12 +649,12 @@ class ProxyEvent(BaseModel):
         content_type = info.data.get("headers", {}).get("content-type", "application/json")
         if util.is_json_mimetype(content_type):
             try:
-                body = util.from_json(body)
+                body = util.from_json(body) if body else {}
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON string for body: {e}") from e
         elif "application/x-www-form-urlencoded" in content_type:
-            return urllib.parse.parse_qs(body)
-        return body
+            return urllib.parse.parse_qs(body) if body else {}
+        return {"data": body}  # Put whatever mimetype this data is in a dict
 
     @field_validator("httpMethod", mode="before")
     @classmethod
@@ -708,7 +708,7 @@ class RouteEndpoint:
         self.required_permissions: Set = kwargs.get("required_permissions", set())
         self.required_token_type: str = kwargs.get("required_token_type", "access")
         self.allow_anonymous: bool = kwargs.get("allow_anonymous", False)
-        self.client_isolation: bool = kwargs.get("client_isolation", True)
+        self.client_isolation: bool = kwargs.get("client_isolation", False if self.allow_anonymous else True)
 
 
 # Type aliases for handler function signatures

@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Invoker Lambda Function
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+
+  ZipFileName:
+    Type: String
+    Description: "Name of the ZIP file containing Lambda code"
+    Default: "core-automation-api-lambda.zip"
+
+Resources:
+  # CloudWatch Log Group for Invoker Lambda
+  InvokerLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}{{ context.Client }}-automation-invoker-lambda"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-logs"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # IAM Execution Role for Invoker Lambda
+  InvokerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "InvokerLambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt InvokerLambdaLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}*"
+              # Permission to invoke orchestrated Lambda functions
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}{{ context.Client }}-automation-runner-lambda"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}{{ context.Client }}-automation-deployspec-lambda"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}{{ context.Client }}-automation-component-lambda"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-execution-role"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # Invoker Lambda Function
+  InvokerLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: InvokerLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda"
+      Runtime: python3.11
+      Handler: core_invoker.invoker.handler:handler
+      Role: !GetAtt InvokerLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: {{ context.FilesBucketName }}
+        S3Key: !Sub "{{ context.BuildFilesPrefix }}/${ZipFileName}"
+        {%- if context.S3ObjectVersion | default('') %}
+        S3ObjectVersion: {{ context.S3ObjectVersion }}
+        {%- endif %}
+      Timeout: 900  # 15 minutes for orchestration workflows
+      MemorySize: 512
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: {{ context.Client }}
+          ENVIRONMENT: {{ context.Environment }}
+          PORTFOLIO: {{ context.Portfolio }}
+          APP: {{ context.App }}
+          BRANCH: {{ context.Branch }}
+          BUILD: {{ context.Build }}
+          LOG_LEVEL: INFO
+          # Target Lambda function names for orchestration
+          RUNNER_LAMBDA_NAME: !Sub "${Scope}{{ context.Client }}-automation-runner-lambda"
+          DEPLOYSPEC_LAMBDA_NAME: !Sub "${Scope}{{ context.Client }}-automation-deployspec-lambda"
+          COMPONENT_LAMBDA_NAME: !Sub "${Scope}{{ context.Client }}-automation-component-lambda"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  # Permission for administrators and API Lambda only
+  InvokerLambdaControlledAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InvokerLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: !Ref AWS::AccountId
+
+  # Specific permission for API Lambda
+  InvokerLambdaApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InvokerLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}core-automation-api-lambda"
+
+  # CloudWatch Alarms for Monitoring
+  InvokerLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-errors"
+      AlarmDescription: "Alarm for Invoker Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref InvokerLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-errors"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  InvokerLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-throttles"
+      AlarmDescription: "Alarm for Invoker Lambda function throttles"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref InvokerLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-throttles"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+  InvokerLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-duration"
+      AlarmDescription: "Alarm for Invoker Lambda function duration"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600000  # 10 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref InvokerLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-invoker-lambda-duration"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+Outputs:
+  InvokerLambdaFunctionArn:
+    Description: "ARN of the Invoker Lambda function"
+    Value: !GetAtt InvokerLambdaFunction.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationInvokerLambdaFunctionArn"
+
+  InvokerLambdaFunctionName:
+    Description: "Name of the Invoker Lambda function"
+    Value: !Ref InvokerLambdaFunction
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationInvokerLambdaFunctionName"
+
+  InvokerLambdaExecutionRoleArn:
+    Description: "ARN of the Invoker Lambda execution role"
+    Value: !GetAtt InvokerLambdaExecutionRole.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationInvokerLambdaExecutionRoleArn"
+
+  InvokerLambdaLogGroupName:
+    Description: "Name of the Invoker Lambda log group"
+    Value: !Ref InvokerLambdaLogGroup
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationInvokerLambdaLogGroupName"

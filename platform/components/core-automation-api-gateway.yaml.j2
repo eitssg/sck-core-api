@@ -13,16 +13,29 @@ Parameters:
     Default: "core-automation-api-lambda.zip"
 
 Resources:
-  # CloudWatch Log Groups (create first to ensure proper permissions)
-  ApiLambdaLogGroup:
-    Type: AWS::Logs::LogGroup
-    DeletionPolicy: Delete
+
+
+  # S3 Bucket for React Application
+  ReactAppBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      LogGroupName: !Sub "/aws/lambda/${Scope}{{ context.Client }}-automation-api-lambda"
-      RetentionInDays: 1
+      BucketName: !Sub "${Scope}{{ context.Client }}-automation-ui"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      # Bucket policy to restrict deployment access
+      NotificationConfiguration: {}  # Empty for now, can add later if needed
       Tags:
         - Key: Name
-          Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-logs"
+          Value: !Sub "${Scope}{{ context.Client }}-automation-ui"
         - Key: Client
           Value: {{ context.Client }}
         - Key: Environment
@@ -36,15 +49,49 @@ Resources:
         - Key: Build
           Value: {{ context.Build }}
 
-  AuthLambdaLogGroup:
+  # S3 Bucket Policy - Restrict deployment access
+  ReactAppBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReactAppBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Allow the Lambda function to read React files
+          - Sid: AllowLambdaReadAccess
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt AppLambdaExecutionRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:ListBucket
+            Resource:
+              - !Sub "${ReactAppBucket.Arn}"
+              - !Sub "${ReactAppBucket.Arn}/*"
+          # Deny all other access (deployment role will be added later)
+          - Sid: DenyUnauthorizedAccess
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "${ReactAppBucket.Arn}"
+              - !Sub "${ReactAppBucket.Arn}/*"
+            Condition:
+              StringNotEquals:
+                "aws:PrincipalArn":
+                - !GetAtt AppLambdaExecutionRole.Arn
+ 
+  # Single CloudWatch Log Group for the entire application
+  AppLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
     Properties:
-      LogGroupName: !Sub "/aws/lambda/${Scope}{{ context.Client }}-automation-auth-lambda"
-      RetentionInDays: 1
+      LogGroupName: !Sub "/aws/lambda/${Scope}{{ context.Client }}-automation"
+      RetentionInDays: 7
       Tags:
         - Key: Name
-          Value: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-logs"
+          Value: !Sub "${Scope}{{ context.Client }}-automation-logs"
         - Key: Client
           Value: {{ context.Client }}
         - Key: Environment
@@ -57,9 +104,9 @@ Resources:
           Value: {{ context.Branch }}
         - Key: Build
           Value: {{ context.Build }}
-
+          
   # Lambda Execution Roles (minimal permissions)
-  ApiLambdaExecutionRole:
+  AppLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-execution-role"
@@ -80,12 +127,21 @@ Resources:
                   - "logs:CreateLogGroup"
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
-                Resource: !GetAtt ApiLambdaLogGroup.Arn
+                Resource: 
+                  - !GetAtt AppLogGroup.Arn
               - Effect: Allow
                 Action:
                   - "s3:GetObject"
                   - "s3:GetObjectVersion"
                 Resource: !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}*"
+                # Add S3 access for React app bucket
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "${ReactAppBucket.Arn}"
+                  - !Sub "${ReactAppBucket.Arn}/*"
       Tags:
         - Key: Name
           Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda-execution-role"
@@ -102,58 +158,15 @@ Resources:
         - Key: Build
           Value: {{ context.Build }}
 
-  AuthLambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-execution-role"
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: "LambdaBasicExecution"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                Resource: !GetAtt AuthLambdaLogGroup.Arn
-              - Effect: Allow
-                Action:
-                  - "s3:GetObject"
-                  - "s3:GetObjectVersion"
-                Resource: !Sub "arn:${AWS::Partition}:s3:::{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}*"
-      Tags:
-        - Key: Name
-          Value: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda-execution-role"
-        - Key: Client
-          Value: {{ context.Client }}
-        - Key: Environment
-          Value: {{ context.Environment }}
-        - Key: Portfolio
-          Value: {{ context.Portfolio }}
-        - Key: App
-          Value: {{ context.App }}
-        - Key: Branch
-          Value: {{ context.Branch }}
-        - Key: Build
-          Value: {{ context.Build }}
-
   # Lambda Functions
   ApiLambdaFunction:
     Type: AWS::Lambda::Function
-    DependsOn: ApiLambdaLogGroup
+    DependsOn: AppLogGroup
     Properties:
       FunctionName: !Sub "${Scope}{{ context.Client }}-automation-api-lambda"
       Runtime: python3.11
       Handler: core_api.api.handler:handler
-      Role: !GetAtt ApiLambdaExecutionRole.Arn
+      Role: !GetAtt AppLambdaExecutionRole.Arn
       Code:
         S3Bucket: {{ context.FilesBucketName }}
         S3Key: !Sub "{{ context.BuildFilesPrefix }}/${ZipFileName}"
@@ -172,6 +185,7 @@ Resources:
           BRANCH: {{ context.Branch }}
           BUILD: {{ context.Build }}
           LOG_LEVEL: INFO
+          REACT_S3_BUCKET: !Ref ReactAppBucket
       Tags:
         - Key: Name
           Value: !Sub "${Scope}{{ context.Client }}-automation-api-lambda"
@@ -190,15 +204,18 @@ Resources:
 
   AuthLambdaFunction:
     Type: AWS::Lambda::Function
-    DependsOn: AuthLambdaLogGroup
+    DependsOn: AppLogGroup
     Properties:
       FunctionName: !Sub "${Scope}{{ context.Client }}-automation-auth-lambda"
       Runtime: python3.11
       Handler: core_api.auth.handler:handler
-      Role: !GetAtt AuthLambdaExecutionRole.Arn
+      Role: !GetAtt AppLambdaExecutionRole.Arn
       Code:
         S3Bucket: {{ context.FilesBucketName }}
         S3Key: !Sub "{{ context.BuildFilesPrefix }}/${ZipFileName}"
+        {%- if context.S3ObjectVersion | default('') %}
+        S3ObjectVersion: {{ context.S3ObjectVersion }}
+        {%- endif %}
       Timeout: 30
       MemorySize: 256
       Environment:
@@ -227,7 +244,50 @@ Resources:
         - Key: Build
           Value: {{ context.Build }}
 
-  # API Gateway
+  
+    # Static file serving Lambda function
+  StaticLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AppLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}{{ context.Client }}-automation-static-lambda"
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt AppLambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          {{ "files/static_file_lambda.py" | read_file | indent(10) }}
+      Environment:
+        Variables:
+          REACT_S3_BUCKET: !Ref ReactAppBucket
+      Timeout: 30
+      MemorySize: 256
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-static-lambda"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+  
+  # Lambda Permission for Static Lambda
+  StaticLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StaticLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
+
+  # API Gateway  
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
     Properties:
@@ -346,6 +406,25 @@ Resources:
           ResponseModels:
             application/json: Empty
 
+  # Root method for serving React app at /
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !GetAtt ApiGateway.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StaticLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
   # Lambda Permissions for API Gateway
   AuthLambdaPermission:
     Type: AWS::Lambda::Permission
@@ -363,12 +442,41 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
 
+  # Catch-all resource for React SPA routing
+  CatchAllResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "{proxy+}"
+
+  # Catch-all method for React SPA routing
+  CatchAllMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref CatchAllResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StaticLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
   # API Gateway Deployment
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - AuthProxyMethod
       - ApiProxyMethod
+      - RootMethod
+      - CatchAllMethod
     Properties:
       RestApiId: !Ref ApiGateway
       Description: "Initial deployment of {{ context.Client | capitalize }} Automation API"
@@ -416,8 +524,9 @@ Resources:
   ApiGatewayLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
     Properties:
-      LogGroupName: !Sub "/aws/apigateway/${Scope}{{ context.Client }}-automation-api"
+      LogGroupName: !Sub "/aws/apigateway/${Scope}{{ context.Client }}-automation"
       RetentionInDays: 7
       Tags:
         - Key: Name
@@ -492,6 +601,34 @@ Resources:
           Value: {{ context.Branch }}
         - Key: Build
           Value: {{ context.Build }}
+
+  StaticLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}{{ context.Client }}-automation-static-lambda-errors"
+      AlarmDescription: "Alarm for Static Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref StaticLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-static-lambda-errors"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
 
   # CloudWatch Alarms
   ApiGateway5xxErrorAlarm:
@@ -756,13 +893,33 @@ Resources:
               }
             },
             {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${Scope}{{ context.Client }}-automation-static-lambda" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Static Lambda Metrics",
+                "period": 300
+              }
+            },
+            {
               "type": "log",
               "x": 0,
               "y": 12,
               "width": 24,
               "height": 6,
               "properties": {
-                "query": "SOURCE '/aws/apigateway/${Scope}{{ context.Client }}-automation-api'\\n| fields @timestamp, status, httpMethod, resourcePath, responseLength, ip\\n| filter status >= 400\\n| sort @timestamp desc\\n| limit 100",
+                "query": "SOURCE '/aws/apigateway/${Scope}{{ context.Client }}-automation'\\n| fields @timestamp, status, httpMethod, resourcePath, responseLength, ip\\n| filter status >= 400\\n| sort @timestamp desc\\n| limit 100",
                 "region": "${AWS::Region}",
                 "title": "Recent API Errors (4xx/5xx)",
                 "view": "table"
@@ -772,31 +929,19 @@ Resources:
               "type": "log",
               "x": 0,
               "y": 18,
-              "width": 12,
+              "width": 24,
               "height": 6,
               "properties": {
-                "query": "SOURCE '/aws/lambda/${Scope}{{ context.Client }}-automation-api-lambda'\\n| fields @timestamp, @message\\n| filter @message like /ERROR/\\n| sort @timestamp desc\\n| limit 50",
+                "query": "SOURCE '/aws/lambda/${Scope}{{ context.Client }}-automation'\\n| fields @timestamp, @message, @requestId\\n| filter @message like /ERROR/\\n| extend function = case(@logStream like /api/, \"API\", @logStream like /auth/, \"AUTH\", @logStream like /static/, \"STATIC\", \"UNKNOWN\")\\n| sort @timestamp desc\\n| limit 100",
                 "region": "${AWS::Region}",
-                "title": "API Lambda Errors",
-                "view": "table"
-              }
-            },
-            {
-              "type": "log",
-              "x": 12,
-              "y": 18,
-              "width": 12,
-              "height": 6,
-              "properties": {
-                "query": "SOURCE '/aws/lambda/${Scope}{{ context.Client }}-automation-auth-lambda'\\n| fields @timestamp, @message\\n| filter @message like /ERROR/\\n| sort @timestamp desc\\n| limit 50",
-                "region": "${AWS::Region}",
-                "title": "Auth Lambda Errors",
+                "title": "All Lambda Function Errors (with Function Type)",
                 "view": "table"
               }
             }
           ]
         }
 
+  
 Outputs:
   # API Gateway Outputs
   ApiGatewayId:
@@ -856,17 +1001,11 @@ Outputs:
       Name: "{{ context.Client | capitalize }}AutomationAuthLambdaFunctionName"
 
   # Execution Role Outputs
-  ApiLambdaExecutionRoleArn:
-    Description: "ARN of the API Lambda execution role"
-    Value: !GetAtt ApiLambdaExecutionRole.Arn
+  AppLambdaExecutionRoleArn:
+    Description: "ARN of the App Lambda execution role"
+    Value: !GetAtt AppLambdaExecutionRole.Arn
     Export:
-      Name: "{{ context.Client | capitalize }}AutomationApiLambdaExecutionRoleArn"
-
-  AuthLambdaExecutionRoleArn:
-    Description: "ARN of the Auth Lambda execution role"
-    Value: !GetAtt AuthLambdaExecutionRole.Arn
-    Export:
-      Name: "{{ context.Client | capitalize }}AutomationAuthLambdaExecutionRoleArn"
+      Name: "{{ context.Client | capitalize }}AutomationAppLambdaExecutionRoleArn"
 
   # Deployment Outputs
   LambdaCodeS3Bucket:
@@ -898,3 +1037,35 @@ Outputs:
     Value: !Sub "https://s3.{{ context.FilesBucketRegion }}.amazonaws.com/{{ context.FilesBucketName }}/{{ context.BuildFilesPrefix }}/${ZipFileName}"
     Export:
       Name: "{{ context.Client | capitalize }}AutomationApiLambdaCodeHttpsUrl"
+
+  # React App Outputs
+  ReactAppBucketName:
+    Description: "Name of the S3 bucket for React application deployment"
+    Value: !Ref ReactAppBucket
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationReactAppBucketName"
+
+  ReactAppBucketArn:
+    Description: "ARN of the S3 bucket for React application"
+    Value: !GetAtt ReactAppBucket.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationReactAppBucketArn"
+
+  ReactAppUrl:
+    Description: "URL of the React application (same as API Gateway)"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/{{ context.Environment }}"
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationReactAppUrl"
+
+    # Static Lambda Function Output
+  StaticLambdaFunctionArn:
+    Description: "ARN of the Static file serving Lambda function"
+    Value: !GetAtt StaticLambdaFunction.Arn
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationStaticLambdaFunctionArn"
+
+  StaticLambdaFunctionName:
+    Description: "Name of the Static file serving Lambda function"
+    Value: !Ref StaticLambdaFunction
+    Export:
+      Name: "{{ context.Client | capitalize }}AutomationStaticLambdaFunctionName"

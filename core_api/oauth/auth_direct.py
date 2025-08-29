@@ -353,6 +353,8 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
             # Preserve password hash if it exists
             update_data["Credentials"] = existing_credentials
 
+            update_data["Identity"] = _get_identity(existing_credentials)
+
         except Exception as e:
             log.error(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
             return ErrorResponse(status="error", code=500, message="Failed to encrypt AWS credentials", exception=e)
@@ -375,6 +377,27 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     except Exception as e:
         log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
         return ErrorResponse(status="error", code=500, message="Failed to update user profile", exception=e)
+
+
+def _get_identity(aws_credentials: dict) -> dict:
+    """Extract AWS identity information from encrypted credentials."""
+    import boto3
+
+    client = boto3.client(
+        "sts",
+        aws_access_key_id=aws_credentials.get("AccessKeyId"),
+        aws_secret_access_key=aws_credentials.get("SecretAccessKey"),
+    )
+
+    identity = client.get_caller_identity()
+
+    response = {
+        "UserId": identity.get("UserId"),
+        "Account": identity.get("Account"),
+        "Arn": identity.get("Arn"),
+    }
+
+    return response
 
 
 def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response:

@@ -4,7 +4,7 @@ import json
 import base64
 from enum import Enum
 
-from core_db.response import Response, ErrorResponse
+from core_db.response import Response, ErrorResponse, RedirectResponse
 
 
 class HttpStatus(int, Enum):
@@ -463,30 +463,25 @@ def get_proxy_response(response: Response) -> ProxyResponse:
         # Determine redirect location from multiple possible sources
         location = None
 
-        # 1. Check metadata for redirect_location
-        if isinstance(response.metadata, dict) and "redirect_location" in response.metadata:
-            location = response.metadata["redirect_location"]
-        # 2. Check data for location field
+        # 1. Check for RedirectResponse
+        if isinstance(response, RedirectResponse):
+            location = response.url
+        # 2. Check metadata for locaiotn field
+        elif isinstance(response.metadata, dict) and "location" in response.metadata:
+            location = response.metadata["location"]
+        # 3. Check data for location field
         elif isinstance(response.data, dict) and "location" in response.data:
             location = response.data["location"]
-        # 3. Check if data is a URL string
+        # 4. Check if data is a URL string
         elif isinstance(response.data, str) and (
             response.data.startswith(("http://", "https://", "/")) or "?" in response.data  # Query string indicates URL
         ):
             location = response.data
-        else:
-            # Fallback - treat as JSON response even with 3xx code
-            # This handles cases where OAuth returns data with redirect status
-            return ProxyResponse.json(
-                data=response.data,
-                status_code=response.code,
-                cookies=response.cookies,  # Use cookies directly from Response
-            )
 
         if not location:
             # No valid location found, treat as JSON
             return ProxyResponse.json(
-                data=response.data or {"error": "redirect_location_missing"},
+                data=response.model_dump(),
                 status_code=response.code,
                 cookies=response.cookies,
             )

@@ -38,7 +38,7 @@ from core_api.oauth.auth_creds import decrypt_creds
 
 from ..oauth.tools import get_authenticated_user
 
-from ..security import get_security_context
+from core_framework.models.aws import AWSCredentials
 
 from ..request import ProxyEvent
 
@@ -80,7 +80,7 @@ def get_cognito_identity(session_token: str, role: Optional[str] = None) -> Opti
     return cognito_identity
 
 
-async def authorize_request(request: Request, role: str) -> CognitoIdentity:
+async def authorize_request(request: Request) -> CognitoIdentity:
     """Authorize the request by validating the token in the Authorization header.
 
     Extracts and validates the Bearer token from the Authorization header,
@@ -110,11 +110,14 @@ async def authorize_request(request: Request, role: str) -> CognitoIdentity:
     # Your OAuth-based authentication
     jwt_token, _ = get_authenticated_user(request.cookies, request.headers)
 
+    if not jwt_token:
+        return None
+
     aws_credentials = decrypt_creds(jwt_token)
 
-    session_token = aws_credentials.get("SessionToken")
+    credentials = AWSCredentials(**aws_credentials)
 
-    return get_cognito_identity(session_token, role)
+    return credentials.model_dump()
 
 
 async def generate_event_context(request: Request, identity: CognitoIdentity) -> tuple[ProxyEvent, ProxyContext]:
@@ -160,6 +163,11 @@ async def generate_event_context(request: Request, identity: CognitoIdentity) ->
     router: APIRoute = request.scope.get("route", None)
     resource = router.path_format
 
+    if identity is None:
+        ip = get_ip_address()
+        user_agent = headers.get("user-agent", "")
+        identity = CognitoIdentity(sourceIp=ip, caller="anonymous", userAgent=user_agent)
+
     event: ProxyEvent = generate_proxy_event(
         protocol=request.url.scheme,
         identity=identity,
@@ -175,7 +183,7 @@ async def generate_event_context(request: Request, identity: CognitoIdentity) ->
         stage="local",  # API Gateway stage
     )
 
-    context = generate_proxy_context(event)
+    context: ProxyContext = generate_proxy_context(event)
 
     return event, context
 

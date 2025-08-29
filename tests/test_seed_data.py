@@ -154,7 +154,7 @@ prod_app_facts = [
     {
         "client": client,  # slug
         "portfolio": "core-automation",
-        "app_regex": "^prn:core-automation:api:main:[^:].*$",
+        "app_regex": "^prn:core-automation:api-[^:]*:main:[^:].*$",
         "name": "sck-core-api",
         "zone": "core-automation-production",
         "environment": "prod",
@@ -253,7 +253,7 @@ dev_app_facts = [
     {
         "client": client,  # slug
         "portfolio": "core-automation",
-        "app_regex": "^prn:core-automation:api:develop:[^:].*$",
+        "app_regex": "^prn:core-automation:api-[^:]*:develop:[^:].*$",
         "name": "sck-core-api",
         "zone": "core-automation-development",
         "environment": "dev",

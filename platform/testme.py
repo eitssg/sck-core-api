@@ -7,16 +7,38 @@ load_dotenv(find_dotenv())
 from core_renderer import Jinja2Renderer
 from core_api.facts.facter import get_facts_action
 
+ITEMS = {
+    "api-roles": "core-automation-api-roles.yaml.j2",
+    "api": "core-automation-api.yaml.j2",
+    "api-gateway": "core-automation-api-gateway.yaml.j2",
+    "component": "core-automation-component.yaml.j2",
+    "deployspec": "core-automation-deployspec.yaml.j2",
+    "execute": "core-automation-execute.yaml.j2",
+    "invoker": "core-automation-invoker.yaml.j2",
+    "runner": "core-automation-runner.yaml.j2",
+}
 
-def _test_get_facts() -> None:
+
+def _run_it(query: dict) -> None:
 
     try:
-        query = {"client": "core", "prn": "prn:core-automation:api:main:latest"}
 
-        filename = sys.argv[1] if len(sys.argv) > 1 else None
+        prn = query.get("prn", "")
+        if not prn:
+            print("No PRN")
+            return
+
+        app = prn.split(":")[2] if len(prn.split(":")) > 2 else ""
+        if not app:
+            print("No app found in PRN")
+            return
+
+        filename = ITEMS.get(app)
         if not filename:
             print("Usage: python testme.py <path to yaml file with query params>")
             return
+
+        filename = f"components/{filename}"
 
         # strip the last 8 characters off ".yaml.j2"
         basename = filename[:-8] if filename else None
@@ -47,6 +69,14 @@ def _test_get_facts() -> None:
     except Exception as e:
 
         print("Error occurred:", e)
+
+
+def _test_get_facts():
+
+    for item in ITEMS.keys():
+        print(f"--- Generating {item} ---")
+        query = {"client": "core", "prn": f"prn:core-automation:{item}:main:latest"}
+        _run_it(query)
 
 
 if __name__ == "__main__":

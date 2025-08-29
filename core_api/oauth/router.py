@@ -11,24 +11,21 @@ from .handler import endpoints, handler
 
 async def auth_handler(request: Request) -> Response:
 
-    # Generate and AWS API Gateway event (ProxyEvent) and context
-    is_write_operation = request.method.lower() != "get"
+    # In our gateway emulator, we are going to generate the context identity
+    # from the JWT token we used to login, or 'anonymous' if not available.
+    identity = await authorize_request(request)
 
-    role = util.get_automation_api_role_arn(write=is_write_operation)
-
-    identity = await authorize_request(request, role)
-
-    event, client_context = await generate_event_context(request, identity)
+    event, context = await generate_event_context(request, identity)
     # Up to 3,583 bytes of base64-encoded data about the invoking client to
     # pass to the function in the context object. Lambda passes the ClientContext
     # object to your function for synchronous invocations only.
 
     if util.is_local_mode():
-        result = handler(event=event, context=client_context)
+        result = handler(event.model_dump(), context=context)
     else:
         arn = util.get_auth_lambda_arn()
 
-        result = aws.invoke_lambda(arn=arn, event=event, role=role, context=client_context)
+        result = aws.invoke_lambda(arn, event.model_dump(), context=context)
 
     return await generate_response_from_lambda(result)
 

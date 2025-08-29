@@ -893,13 +893,43 @@ def oauth_discovery(*, headers: dict = None, **kwargs) -> Response:
 
 
 auth_server_endpoints = {
-    "GET:/auth/v1/authorize": RouteEndpoint(oauth_authorize, permissions={Permission.DATA_READ}),
-    "GET:/auth/v1/cred_enc_key": RouteEndpoint(get_cred_enc_key, permissions={Permission.DATA_READ}),
-    "POST:/auth/v1/token": RouteEndpoint(oauth_token, permissions={Permission.DATA_READ}),
-    "POST:/auth/v1/revoke": RouteEndpoint(oauth_revoke, permissions={Permission.DATA_READ}),
-    "POST:/auth/v1/introspect": RouteEndpoint(oauth_introspect, permissions={Permission.DATA_READ}),
-    "GET:/auth/v1/userinfo": RouteEndpoint(oauth_userinfo, permissions={Permission.DATA_READ}),
-    "GET:/auth/v1/jwks": RouteEndpoint(oauth_jwks, permissions={Permission.DATA_READ}),
-    "GET:/auth/v1/logout": RouteEndpoint(oauth_logout, permissions={Permission.DATA_READ}),
-    "GET:/auth/v1/.well-known/oauth-authorization-server": RouteEndpoint(oauth_discovery, permissions={Permission.DATA_READ}),
+    "GET:/auth/v1/authorize": RouteEndpoint(
+        oauth_authorize,
+        permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+    ),
+    "GET:/auth/v1/cred_enc_key": RouteEndpoint(
+        get_cred_enc_key,
+        permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+    ),
+    "POST:/auth/v1/token": RouteEndpoint(
+        oauth_token,
+        permissions={Permission.DATA_READ},
+    ),
+    "POST:/auth/v1/revoke": RouteEndpoint(
+        oauth_revoke,
+        permissions={Permission.DATA_READ},
+    ),
+    "POST:/auth/v1/introspect": RouteEndpoint(
+        oauth_introspect,
+        permissions={Permission.DATA_READ},
+    ),
+    "GET:/auth/v1/userinfo": RouteEndpoint(
+        oauth_userinfo,
+        permissions={Permission.DATA_READ},
+    ),
+    "GET:/auth/v1/jwks": RouteEndpoint(
+        oauth_jwks,
+        permissions={Permission.DATA_READ},
+    ),
+    "GET:/auth/v1/logout": RouteEndpoint(
+        oauth_logout,
+        permissions={Permission.DATA_READ},
+    ),
+    "GET:/auth/v1/.well-known/oauth-authorization-server": RouteEndpoint(
+        oauth_discovery,
+        permissions={Permission.DATA_READ},
+        allow_anonymous=True,
+    ),
 }

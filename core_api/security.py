@@ -65,6 +65,10 @@ class Permission(str, Enum):
     SYSTEM_CONFIG = "system:config"
     SYSTEM_MONITOR = "system:monitor"
 
+    DATA_READ = "data:read"
+    DATA_WRITE = "data:write"
+    DATA_ADMIN = "data:admin"
+
 
 class Role(str, Enum):
     """System roles that can be assigned to users."""
@@ -433,7 +437,7 @@ def extract_security_context(
             log.debug("No valid JWT token found in request")
             return None
 
-        if jwt_payload.typ != "access_token":
+        if jwt_payload.typ != "access":
             log.warning(f"Invalid token type for API: {jwt_payload.typ}")
             return None
 

@@ -62,10 +62,13 @@ from ..response import get_proxy_error_response, get_proxy_response
 from ..request import (
     ProxyEvent,
     RouteEndpoint,
-    extract_security_context,
     get_correlation_id,
 )
-from ..security import validate_client_access, check_permissions_with_wildcard, extract_security_context
+from ..security import (
+    validate_client_access,
+    check_permissions_with_wildcard,
+    extract_security_context,
+)
 
 # Build the router for the API Gateway REST interface
 api_endpoints: dict[str, RouteEndpoint] = {

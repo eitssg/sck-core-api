@@ -246,7 +246,7 @@ def _event_headers(headers: Dict[str, str]) -> Dict[str, str]:
     if not proto:
         headers[proto_header] = "https"
 
-    ua_header, ua = get_header(headers, HDR_USER_AGENT)
+    ua_header, ua = get_header(headers, "user-agent")
     if not ua:
         headers[ua_header] = _generate_user_agent("core_api", __version__)
 
@@ -555,6 +555,10 @@ def generate_proxy_context(event: ProxyEvent) -> ProxyContext:
             result = lambda_handler(event.model_dump(), context)
     """
     aws_request_id = event.requestContext.requestId
+
+    # Why do we do this?  Well, I've observed that in the "real-world"
+    # This is a simple dictionary, while "ProxyContext" is a complex object
+    # so, we just dump this to match what we observe AWS does.
     identity = event.requestContext.identity.model_dump() if event.requestContext.identity else None
 
     return ProxyContext(aws_request_id=aws_request_id, identity=identity)

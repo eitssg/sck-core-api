@@ -4,19 +4,18 @@ import core_logging as log
 
 from ..api.handler import ProxyEvent
 from ..response import get_proxy_error_response, get_proxy_response
-from ..request import (
-    RouteEndpoint,
-    check_permissions_with_wildcard,
-    extract_security_context,
-    validate_client_access,
-)
-
+from ..request import RouteEndpoint
 
 from core_db.response import ErrorResponse, Response
 from core_db.exceptions import (
     OperationException,
     NotFoundException,
     UnauthorizedException,
+)
+from ..security import (
+    check_permissions_with_wildcard,
+    extract_security_context,
+    validate_client_access,
 )
 
 from .auth_client import auth_client_endpoints
@@ -259,9 +258,10 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             query_params=request.queryStringParameters or {},
             path_params=request.pathParameters or {},
             body=request.body or {},
+            security_context=security_context,
         )
 
-        # Convert Response to ProxyResponse and return as dict
+        # Convert Response to ProxyResponse and return as dict for AWS API Gateway
         return get_proxy_response(response).model_dump()
 
     except (ValueError, TypeError) as e:
