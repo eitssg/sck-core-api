@@ -1,3 +1,4 @@
+from http import client
 from typing import Optional
 from datetime import datetime, timezone
 import random
@@ -14,11 +15,13 @@ import core_logging as log
 from core_db.response import ErrorResponse, Response, SuccessResponse
 from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
+from core_db.oauth import ForgotPassword, ForgotPasswordActions
 
 from core_api.request import RouteEndpoint
 
 from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES
 from .tools import (
+    JwtPayload,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
@@ -548,6 +551,165 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         return ErrorResponse(code=500, message="Authentication processing error", exception=e)
 
 
+def forgot_password(*, body: dict = None, **kwargs):
+
+    valid_characters = "0123456789"
+
+    # Generate a random sequence of numbers exactly 8 characters long and it may begin with 0
+    code = "".join(random.choices(valid_characters, k=8))
+
+    key = f"forgot_password:{code}"
+    email = body.get("email", None)
+    client = body.get("client", "core")
+    client_id = body.get("client_id", "")
+
+    if not email:
+        return ErrorResponse(code=400, message="Email Address is required")
+
+    if not client_id:
+        return ErrorResponse(code=400, message="Client ID is required")
+
+    try:
+        token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=5, jti=code).encode()
+
+        forgot_password = ForgotPassword(
+            **{"code": key, "email": email, "user_id": email, "client": client, "client_id": client_id, "reset_token": token}
+        )
+        log.debug("Forgot Password: ", details=forgot_password.model_dump())
+
+        ForgotPasswordActions.create(**forgot_password.model_dump())
+
+        log.info("Forgot password request created", details={"email": email, "client": client, "code": code})
+
+    except Exception as e:
+        log.debug(f"Failed to create forgot password request: {str(e)}", details={"email": email, "client": client, "code": code})
+        return ErrorResponse(code=500, message="Failed to create forgot password request", exception=e)
+
+    data = {"token": token}
+    log.debug("Forgot password token created", details=data)
+
+    return SuccessResponse(data=data)
+
+
+def verify_secret(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs):
+    log.info("Verify secret called")
+
+    try:
+        jwt_token, _ = get_authenticated_user(cookies, headers)
+    except Exception as e:
+        log.debug(f"Failed to get authenticated user: {str(e)}")
+        return ErrorResponse(code=401, message=f"Unauthorized: {str(e)}")
+
+    if not jwt_token:
+        return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
+    try:
+
+        code = body.get("code", None)
+        email = jwt_token.sub
+        client = jwt_token.cnm
+        client_id = jwt_token.cid
+        jti = jwt_token.jti  # The expected code from JWT
+        token_type = jwt_token.typ
+
+        # Validate this is a forgot password token
+        if token_type != "forgot_password":
+            return ErrorResponse(code=401, message="Invalid token type for verification")
+
+        # Verify the code matches the one in the JWT
+        if code != jti:
+            log.warning(f"Code mismatch for {email}: input={code}, jwt={jti}")
+            return ErrorResponse(code=404, message="Verification code not found in database")
+
+        key = f"forgot_password:{jwt_token.jti}"
+        result = ForgotPasswordActions.get(client=client, code=key)
+        if not result:
+            return ErrorResponse(code=404, message="Forgot password request not found")
+
+        data = ForgotPassword(**result.data)
+
+        if data.verified:
+            return ErrorResponse(code=400, message="Secret already verified")
+
+        data.verified = True
+
+        ForgotPasswordActions.patch(client=jwt_token.cnm, **data.model_dump())
+
+        return SuccessResponse(message="Token verified")
+
+    except Exception as e:
+        log.debug(f"Failed to verify secret: {str(e)}")
+        return ErrorResponse(code=500, message=f"Failed to verify secret: {str(e)}", exception=e)
+
+
+def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs):
+
+    log.info("Set new password called")
+
+    try:
+        jwt_token, _ = get_authenticated_user(cookies, headers)
+    except Exception as e:
+        log.debug(f"Failed to get authenticated password token: {str(e)}")
+        return ErrorResponse(code=401, message=f"Unauthorized - missing or invalid token: {str(e)}")
+
+    if not jwt_token:
+        return ErrorResponse(
+            code=401, message="Authorization token is missing or expired.  Please request a new authorization code."
+        )
+
+    new_password = body.get("password")
+
+    if not new_password:
+        return ErrorResponse(code=400, message="Missing new password")
+
+    email = jwt_token.sub
+    client = jwt_token.cnm
+    jti = jwt_token.jti
+    token_type = jwt_token.typ
+
+    if token_type != "forgot_password":
+        return ErrorResponse(code=401, message="Invalid token type for password reset")
+
+    try:
+        key = f"forgot_password:{jti}"
+        result = ForgotPasswordActions.get(client=client, code=key)
+        forgot_password = ForgotPassword(**result.data)
+    except Exception as e:
+        log.debug(f"Failed to get forgot password request: {str(e)}")
+        return ErrorResponse(code=404, message="Forgot password request not found")
+
+    if not forgot_password.verified:
+        return ErrorResponse(code=400, message="Forgot password request has not been verified")
+
+    forgot_password.used = True
+    try:
+        ForgotPasswordActions.patch(client=client, **forgot_password.model_dump())
+    except Exception as e:
+        log.debug(f"Failed to update forgot password request: {str(e)}")
+        return ErrorResponse(code=500, message="Failed to update forgot password request")
+
+    try:
+        result = ProfileActions.get(client=client, user_id=email)
+        profile = UserProfile(**result.data)
+    except Exception as e:
+        log.debug(f"Failed to get user profile: {str(e)}")
+        return ErrorResponse(code=404, message="User profile not found")
+
+    try:
+        credentials = profile.credentials or {}
+        credentials["Password"] = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        profile.credentials = credentials
+
+        ProfileActions.update(client=client, **profile.model_dump())
+
+        log.info("Password updated successfully", details={"email": email, "client": client})
+
+        return SuccessResponse(message="Password updated successfully")
+
+    except Exception as e:
+        return ErrorResponse(code=500, message=f"Failed to set new password.  Please contact support.", exception=e)
+
+
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/signup": RouteEndpoint(
         oauth_signup,
@@ -563,6 +725,24 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/login": RouteEndpoint(
         user_login,
         permissions=["user:login"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/forgot": RouteEndpoint(
+        forgot_password,
+        permissions=["user:forgot_password"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/verify-secret": RouteEndpoint(
+        verify_secret,
+        permissions=["user:verify_secret"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "PUT:/auth/v1/password": RouteEndpoint(
+        set_new_password,
+        permissions=["user:set_new_password"],
         allow_anonymous=True,
         client_isolation=False,
     ),

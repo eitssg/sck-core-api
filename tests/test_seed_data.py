@@ -4,6 +4,8 @@ from core_db.registry.client import ClientFact, ClientActions
 from core_db.registry.zone import ZoneFact, ZoneActions
 from core_db.registry.portfolio import PortfolioFact, PortfolioActions
 from core_db.registry.app import AppFact, AppActions
+from core_db.profile import ProfileActions
+from core_db.profile import UserProfile
 
 from .bootstrap import *
 
@@ -320,3 +322,7 @@ def test_seed_data(bootstrap_dynamo):
         results = AppActions.create(**fact)
         app_fact = AppFact(**results.data)
         print(app_fact.model_dump_json(indent=2))
+
+    results = ProfileActions.create(**administrator)
+    profile = UserProfile(**results.data)
+    print(profile.model_dump_json(indent=2))

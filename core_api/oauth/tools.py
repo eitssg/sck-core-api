@@ -1236,8 +1236,8 @@ def get_authenticated_user(cookies: dict, headers: dict) -> Tuple[JwtPayload | N
 
         return jwt_payload, jwt_signature
 
-    except jwt.InvalidTokenError:
-        log.warning("Invalid JWT token in request")
+    except jwt.InvalidTokenError as e:
+        log.warning(f"Invalid JWT token in request: {e}")
 
     return None, None
 
