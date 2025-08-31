@@ -189,6 +189,11 @@ def get_app() -> FastAPI:
 
     static_dir = get_static_dir()
 
+    @__app.get("/.well-known/oauth-authorization-server")
+    async def oauth_discovery(request: Request) -> Response:
+        """OAuth 2.0 Authorization Server Metadata (RFC 8414)"""
+        return handle_oauth_discovery(request)
+
     # Health check endpoint (SECOND - before catch-all)
     @__app.get("/health", include_in_schema=False)
     async def health_check() -> Response:
@@ -315,3 +320,41 @@ def get_app() -> FastAPI:
         )
 
     return __app
+
+
+def handle_oauth_discovery(request: Request):
+    """OAuth 2.0 Authorization Server Metadata (RFC 8414)."""
+
+    # Get the host and protocol from headers
+    host = request.headers.get("Host", "")
+    # Check for forwarded protocol (common in reverse proxies/load balancers)
+    protocol = request.headers.get("X-Forwarded-Proto", "https")
+    base_url = f"{protocol}://{host}"
+
+    # OAuth discovery data (RFC 8414 compliant)
+    discovery_data = {
+        "issuer": base_url,
+        "authorization_endpoint": f"{base_url}/auth/v1/authorize",
+        "token_endpoint": f"{base_url}/auth/v1/token",
+        "revocation_endpoint": f"{base_url}/auth/v1/revoke",
+        "introspection_endpoint": f"{base_url}/auth/v1/introspect",
+        "userinfo_endpoint": f"{base_url}/auth/v1/userinfo",
+        "jwks_uri": f"{base_url}/auth/v1/jwks",
+        "end_session_endpoint": f"{base_url}/auth/v1/logout",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": [
+            "client_secret_basic",
+            "client_secret_post",
+            "none",
+        ],
+        "scopes_supported": ["registry-clients:read", "registry-clients:write"],
+        "claims_supported": ["sub", "email", "name", "given_name", "family_name", "preferred_username", "updated_at"],
+    }
+
+    # Return discovery data directly (not wrapped)
+    return JSONResponse(
+        content=discovery_data,
+        headers={"Cache-Control": "public, max-age=3600", "Content-Type": "application/json"},  # Cache for 1 hour
+    )

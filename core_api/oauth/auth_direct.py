@@ -17,7 +17,9 @@ from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
 
-from core_api.request import RouteEndpoint
+from ..request import RouteEndpoint
+
+from ..email.smtp import send_auth_code_email, send_password_updated_email
 
 from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES
 from .tools import (
@@ -486,10 +488,12 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
     """
 
     try:
+        log.debug("Login request received", details=dict(body))
+
         user_id = body.get("email")
-        password = body.get("password")
+        password = body.get("password", "")
         if not user_id or not password:
-            return ErrorResponse(code=400, message="email_and_password_required")
+            return ErrorResponse(code=400, message="Email and password are required")
 
         client_id = body.get("client_id")
         if not client_id:
@@ -508,11 +512,8 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
 
         # Get user profile and validate password
         try:
-            response: SuccessResponse = ProfileActions.get(
-                client=client,
-                user_id=user_id,
-                profile_name="default",
-            )
+            profile_name = "default"
+            response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
             profile_data = UserProfile(**response.data)
         except Exception as e:
             log.debug(f"Profile not found for user {user_id}: {e}")
@@ -520,7 +521,7 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
 
         # Check if user has a password (some SSO users might not)
         credentials = profile_data.credentials or {}
-        stored_hash = credentials.get("Password") or credentials.get("password")
+        stored_hash = credentials.get("Password")
         if not stored_hash:
             log.debug(f"No password found for user {user_id}")
             return ErrorResponse(code=401, message="Authorization Failed")
@@ -543,6 +544,8 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         }
         if returnTo:
             resp_data["returnTo"] = returnTo
+
+        log.info(f"User {user_id} authenticated successfully for client '{client}'", details=resp_data)
 
         return SuccessResponse(data=resp_data)
 
@@ -570,7 +573,7 @@ def forgot_password(*, body: dict = None, **kwargs):
         return ErrorResponse(code=400, message="Client ID is required")
 
     try:
-        token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=5, jti=code).encode()
+        token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=15, jti=code).encode()
 
         forgot_password = ForgotPassword(
             **{"code": key, "email": email, "user_id": email, "client": client, "client_id": client_id, "reset_token": token}
@@ -587,6 +590,15 @@ def forgot_password(*, body: dict = None, **kwargs):
 
     data = {"token": token}
     log.debug("Forgot password token created", details=data)
+
+    # Send email with authorization code
+    email_sent = send_auth_code_email(
+        to_email=email, auth_code=code, user_name=email.split("@")[0]  # Or get actual user name from database
+    )
+
+    if not email_sent:
+        log.warning(f"Failed to send auth code email to {email}, but continuing...")
+        # Decision: Continue anyway or fail? Depends on your requirements
 
     return SuccessResponse(data=data)
 
@@ -653,6 +665,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
         return ErrorResponse(code=401, message=f"Unauthorized - missing or invalid token: {str(e)}")
 
     if not jwt_token:
+        log.debug("Authorization token is missing or expired")
         return ErrorResponse(
             code=401, message="Authorization token is missing or expired.  Please request a new authorization code."
         )
@@ -660,6 +673,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
     new_password = body.get("password")
 
     if not new_password:
+        log.debug("New password is missing from request")
         return ErrorResponse(code=400, message="Missing new password")
 
     email = jwt_token.sub
@@ -668,6 +682,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
     token_type = jwt_token.typ
 
     if token_type != "forgot_password":
+        log.debug(f"Invalid token type for password reset: {token_type}")
         return ErrorResponse(code=401, message="Invalid token type for password reset")
 
     try:
@@ -676,7 +691,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
         forgot_password = ForgotPassword(**result.data)
     except Exception as e:
         log.debug(f"Failed to get forgot password request: {str(e)}")
-        return ErrorResponse(code=404, message="Forgot password request not found")
+        return ErrorResponse(code=400, message="Forgot password request not found")
 
     if not forgot_password.verified:
         return ErrorResponse(code=400, message="Forgot password request has not been verified")
@@ -689,7 +704,9 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
         return ErrorResponse(code=500, message="Failed to update forgot password request")
 
     try:
-        result = ProfileActions.get(client=client, user_id=email)
+        profile_name = "default"
+        log.info(f"Looking up user profile {client}/{profile_name}: {email} ")
+        result = ProfileActions.get(client=client, user_id=email, profile_name=profile_name)
         profile = UserProfile(**result.data)
     except Exception as e:
         log.debug(f"Failed to get user profile: {str(e)}")
@@ -699,14 +716,29 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
         credentials = profile.credentials or {}
         credentials["Password"] = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         profile.credentials = credentials
+        data = profile.model_dump(by_alias=False)
+        log.debug("Updating user profile with new password", details=data)
 
-        ProfileActions.update(client=client, **profile.model_dump())
+        ProfileActions.update(client=client, **data)
 
         log.info("Password updated successfully", details={"email": email, "client": client})
+
+        # After successful password update:
+        email_sent = send_password_updated_email(
+            to_email=email,
+            user_name=email.split("@")[0],
+            ip_address=headers.get("source_ip"),
+            user_agent=headers.get("user_agent"),
+        )
+
+        if not email_sent:
+            log.warning(f"Failed to send password update notification to {email}")
+            # Continue anyway - don't fail the password update
 
         return SuccessResponse(message="Password updated successfully")
 
     except Exception as e:
+        log.debug(f"Failed to set new password: {str(e)}")
         return ErrorResponse(code=500, message=f"Failed to set new password.  Please contact support.", exception=e)
 
 

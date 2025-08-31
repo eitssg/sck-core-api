@@ -20,6 +20,10 @@ def handler(event, context):
         # URL decode the path
         path = unquote(path)
 
+        # Handle OAuth discovery endpoint
+        if path == ".well-known/oauth-authorization-server":
+            return handle_oauth_discovery(event)
+
         # Root path serves index.html
         if not path or path == "/" or path == "":
             s3_key = "index.html"
@@ -93,3 +97,49 @@ def handler(event, context):
             "body": json.dumps({"error": "Internal server error"}),
             "isBase64Encoded": False,
         }
+
+
+def handle_oauth_discovery(event):
+    """Handle OAuth 2.0 Authorization Server Metadata (RFC 8414)"""
+
+    # Get the host from the request
+    headers = event.get("headers", {})
+    host = headers.get("Host") or headers.get("host", "")
+
+    # Determine if HTTPS (usually true in AWS)
+    forwarded_proto = headers.get("X-Forwarded-Proto") or headers.get("x-forwarded-proto", "https")
+    base_url = f"{forwarded_proto}://{host}"
+
+    discovery_data = {
+        "issuer": base_url,
+        "authorization_endpoint": f"{base_url}/auth/v1/authorize",
+        "token_endpoint": f"{base_url}/auth/v1/token",
+        "revocation_endpoint": f"{base_url}/auth/v1/revoke",
+        "introspection_endpoint": f"{base_url}/auth/v1/introspect",
+        "userinfo_endpoint": f"{base_url}/auth/v1/userinfo",
+        "jwks_uri": f"{base_url}/auth/v1/jwks",
+        "end_session_endpoint": f"{base_url}/auth/v1/logout",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": [
+            "client_secret_basic",
+            "client_secret_post",
+            "none",
+        ],
+        "scopes_supported": ["registry-clients:read", "registry-clients:write"],
+        "claims_supported": ["sub", "email", "name", "given_name", "family_name", "preferred_username", "updated_at"],
+    }
+
+    return {
+        "statusCode": 200,
+        "headers": {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "Content-Type",
+        },
+        "body": json.dumps(discovery_data, indent=2),
+        "isBase64Encoded": False,
+    }

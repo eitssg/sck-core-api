@@ -25,7 +25,7 @@ client_facts = [
         "client_id": client_id,
         "client_secret": client_secret_hash,
         "client_name": "Core Automation Team",
-        "client_redirect_urls": [client_redirect_uri],
+        "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
     }
 ]
 
@@ -267,10 +267,10 @@ dev_app_facts = [
 ]
 
 administrator = {
-    "user_id": "admin@example.com",
+    "user_id": "jbarwick@eits.com.sg",
     "profile_name": "default",
     "display_name": "Administrator",
-    "email": "admin@example.com",
+    "email": "jbarwick@eits.com.sg",
     "timezone": "GMT+8",
     "language": "en",
     "theme": "dark",

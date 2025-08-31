@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Union, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field
+from typing import Optional
 import json
 import base64
 from enum import Enum
@@ -568,5 +570,116 @@ def get_proxy_error_response(error: ErrorResponse) -> ProxyResponse:
     )
 
 
-# Export both existing and new classes
-__all__ = ["Response", "ErrorResponse", "ProxyResponse", "HttpStatus"]
+class OAuthResponse(Response):
+
+    def model_dump(self, **kwargs):
+        # If the exclude set() exists, add code to it
+        exclude = kwargs.get("exclude", set())
+
+        # Convert to set if needed and add 'code'
+        if isinstance(exclude, str):
+            exclude = {exclude}
+        elif not isinstance(exclude, set):
+            exclude = set(exclude) if exclude else set()
+
+        kwargs["exclude"] = exclude | {"code", "status", "message"}
+
+        return super().model_dump(**kwargs)
+
+
+class OAuthSuccessResponse(OAuthResponse):
+
+    @model_validator(mode="before")
+    def validate_success(cls, values):
+        # Custom validation logic for success responses
+        values["status"] = "ok"
+        values["code"] = 200
+        return values
+
+
+class OAuthErrorResponse(OAuthResponse):
+
+    error_description: str
+    error_uri: Optional[str] = None
+    state: Optional[str] = None
+
+    @computed_field
+    @property
+    def error(self) -> str:
+        """Auto-generate OAuth error code from HTTP status code"""
+        error_mapping = {
+            400: "invalid_request",
+            401: "invalid_client",
+            403: "access_denied",
+            404: "invalid_request",
+            500: "server_error",
+            502: "temporarily_unavailable",
+            503: "temporarily_unavailable",
+        }
+        return error_mapping.get(self.code, "server_error")
+
+    @model_validator(mode="before")
+    def validate_oauth_response(cls, values):
+        if "code" not in values:
+            raise ValueError("code is required for OAuthErrorResponse")
+        values["status"] = "error"
+        return values
+
+
+class OAuthTokenResponse(OAuthSuccessResponse):
+    """OAuth token endpoint response (RFC 6749 Section 5.1)."""
+
+    access_token: str = Field(description="The access token issued by the authorization server")
+    token_type: str = Field(default="Bearer", description="The type of token issued")
+    expires_in: Optional[int] = Field(default=None, description="Token lifetime in seconds")
+    scope: Optional[str] = Field(default=None, description="The scope of the access token")
+    refresh_token: Optional[str] = Field(default=None, description="The refresh token for obtaining new access tokens")
+
+
+class OAuthIntrospectionResponse(OAuthSuccessResponse):
+    """OAuth introspection endpoint response (RFC 7662)."""
+
+    active: bool = Field(description="Whether the token is active")
+    client_id: Optional[str] = Field(default=None, description="Client identifier for the OAuth client")
+    username: Optional[str] = Field(default=None, description="Human-readable identifier for the resource owner")
+    scope: Optional[str] = Field(default=None, description="Space-separated list of scopes")
+    token_type: Optional[str] = Field(default=None, description="Type of the token")
+    exp: Optional[int] = Field(default=None, description="Token expiration timestamp")
+    iat: Optional[int] = Field(default=None, description="Token issued at timestamp")
+    sub: Optional[str] = Field(default=None, description="Subject of the token")
+    aud: Optional[str] = Field(default=None, description="Intended audience of the token")
+
+
+class OAuthUserInfoResponse(OAuthSuccessResponse):
+    """OpenID Connect UserInfo endpoint response (OpenID Connect Core 1.0 Section 5.3)."""
+
+    sub: str = Field(description="Subject identifier - unique user identifier")
+    email: Optional[str] = Field(default=None, description="User's email address")
+    name: Optional[str] = Field(default=None, description="User's full name")
+    given_name: Optional[str] = Field(default=None, description="User's first/given name")
+    family_name: Optional[str] = Field(default=None, description="User's last/family name")
+    preferred_username: Optional[str] = Field(default=None, description="User's preferred username")
+    updated_at: Optional[int] = Field(default=None, description="Time the user's information was last updated (Unix timestamp)")
+    # Add other standard claims as needed:
+    # picture: Optional[str] = Field(default=None, description="URL of user's profile picture")
+    # website: Optional[str] = Field(default=None, description="URL of user's website")
+    # locale: Optional[str] = Field(default=None, description="User's locale")
+
+
+class OAuthJWKSResponse(OAuthSuccessResponse):
+    """JSON Web Key Set endpoint response (RFC 7517)."""
+
+    keys: List[Dict[str, Any]] = Field(description="Array of JSON Web Key objects")
+
+
+class OAuthLogoutResponse(OAuthResponse):
+    """OpenID Connect RP-Initiated Logout response."""
+
+    message: str = Field(description="Logout confirmation message")
+    user: Optional[str] = Field(default=None, description="User that was logged out")
+
+
+class OAuthCredentialResponse(OAuthSuccessResponse):
+    """Response for credential encryption key endpoint."""
+
+    cred_enc_key: str = Field(description="Base64-encoded encryption key")
