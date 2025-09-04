@@ -11,6 +11,112 @@ Parameters:
 
 Resources:
 
+  StateMachineExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}{{ context.Client }}-automation-state-machine-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "StateMachineExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17" 
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: !GetAtt ExecuteLambdaFunction.Arn
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+
+  AutomationStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${Scope}{{ context.Client }}-automation-state-machine"
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Core Automation Execution State Machine",
+          "StartAt": "ExecuteActions",
+          "States": {
+            
+            "ExecuteActions": {
+              "Type": "Task",
+              "Resource": "${ExecuteLambdaFunction.Arn}",
+              "Parameters": {
+                "$": "$"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                  "IntervalSeconds": 5,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "ExecutionFailed",
+                  "ResultPath": "$.error"
+                }
+              ],
+              "Next": "CheckExecutionStatus"
+            },
+
+            "CheckExecutionStatus": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.FlowControl",
+                  "StringEquals": "success",
+                  "Next": "ExecutionComplete"
+                },
+                {
+                  "Variable": "$.FlowControl",
+                  "StringEquals": "failure", 
+                  "Next": "ExecutionFailed"
+                },
+                {
+                  "Variable": "$.FlowControl",
+                  "StringEquals": "execute",
+                  "Next": "WaitAndContinue"
+                }
+              ],
+              "Default": "ExecutionFailed"
+            },
+
+            "WaitAndContinue": {
+              "Type": "Wait",
+              "Seconds": 10,
+              "Next": "ExecuteActions"
+            },
+
+            "ExecutionComplete": {
+              "Type": "Succeed",
+              "Comment": "All actions completed successfully"
+            },
+
+            "ExecutionFailed": {
+              "Type": "Fail",
+              "Comment": "Action execution failed",
+              "Cause": "One or more actions failed during execution"
+            }
+          }
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}{{ context.Client }}-automation-state-machine"
+          
   # God-level provisioning role - Can do ANYTHING on the platform
   CoreAutomationProvisioningRole:
     Type: AWS::IAM::Role

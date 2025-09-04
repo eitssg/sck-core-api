@@ -44,9 +44,8 @@ from .tools import (
 )
 
 from .constants import (
-    JWT_SECRET_KEY,
     JWT_ALGORITHM,
-    JWT_EXPIRATION_HOURS,
+    JWT_ACCESS_HOURS,
     ALLOWED_SCOPES,
 )
 
@@ -179,7 +178,7 @@ def _validate_client_credentials(client_secret: str, app_info: ClientFact) -> Tu
     provided_hash = hashlib.sha256(client_secret.encode("utf-8")).hexdigest()
 
     if provided_hash != secret_hash:
-        log.info(f"Invalid client_secret for client {client_id}")
+        log.warn("Invalid client credentials for %s", client_id)
         return client_id, False
 
     return client_id, True
@@ -260,7 +259,7 @@ def oauth_authorize(
 
     # 2) Now check rate limiting (only for valid requests)
     if not check_rate_limit(query_params, "oauth_authorize", max_attempts=10, window_minutes=15):
-        log.warning(f"Rate limit exceeded for client {client_id} on /auth/v1/authorize")
+        log.warn(f"Rate limit exceeded for client {client_id} on /auth/v1/authorize")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # 3) Require authenticated user with valid session token
@@ -271,6 +270,10 @@ def oauth_authorize(
         pass  # Continue to login redirect logic below
     elif jwt_payload.typ != "session":
         # Wrong token type - return error instead of redirect
+        log.warn(
+            "Invalid token type for authorization flow",
+            details={"client_id": client_id, "token_type": jwt_payload.typ, "expected": "session"},
+        )
         token_type_name = {
             "access_token": "access token",
             "refresh": "refresh token",
@@ -282,6 +285,7 @@ def oauth_authorize(
         )
     elif jwt_payload.cid != client_id:
         # Client ID mismatch - return error
+        log.warn("Client ID mismatch in authorization flow", details={"request_client": client_id, "token_client": jwt_payload.cid})
         return OAuthErrorResponse(
             code=400,
             error_description=f"client_mismatch: Token was issued for client '{jwt_payload.cid}' but request is for client '{client_id}'",
@@ -330,6 +334,7 @@ def oauth_authorize(
     # 4) Database validation (client lookup) - AFTER auth check and rate limiting
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
+        log.warn("Unknown client attempted OAuth flow: %s", client_id)
         return OAuthErrorResponse(
             code=400,
             error_description=f"invalid_request: Invalid client_id. Client '{client_id}' not found in database.",
@@ -404,13 +409,13 @@ def _authorization_code_grant(
     code_verifier = (body.get("code_verifier") or "").strip()
 
     if not code or not redirect_uri:
-        log.info(f"Missing code or redirect_uri for client {app_info.client_id}")
+        log.debug(f"Missing code or redirect_uri for client {app_info.client_id}")
         return OAuthErrorResponse(code=400, error_description="invalid_request: code and redirect_uri required")
 
     # Validate redirect_uri matches client registration (reuse app_info)
     registered_uris = app_info.client_redirect_urls or []
     if redirect_uri not in [uri for uri in registered_uris if uri]:
-        log.info(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
+        log.debug(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
         return OAuthErrorResponse(code=400, error_description="invalid_request: redirect_uri not registered for this client")
 
     # Load authorization code record
@@ -418,26 +423,32 @@ def _authorization_code_grant(
         rec = AuthActions.get(client=jwt_payload.cnm, code=code)
         authz = Authorizations(**rec.data)
     except Exception:
-        log.info(f"Failed to retrieve authorization code for client {app_info.client_id}: {code}")
+        log.warn(
+            "Authorization code database lookup failed",
+            details={"client": jwt_payload.cnm, "code": code[:8] + "...", "error": "code not found"},
+        )
         return OAuthErrorResponse(code=401, error_description=f"invalid_grant: code '{code}' not found")
 
     # Validate code record
     code_challenge_method = (authz.code_challenge_method or "S256") if authz.code_challenge else None
 
     if authz.used:
-        log.info(f"Authorization code already used for client {app_info.client_id}: {code}")
+        log.warn("Authorization code reuse attempt", details={"client_id": authz.client_id, "code": code[:8] + "..."})
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code already used")
 
     if jwt_signature != authz.jwt_signature:
-        log.info(f"Token signature mismatch for client {app_info.client_id}: {code}")
+        log.warn("Token signature mismatch", details={"client_id": authz.client_id, "code": code[:8] + "..."})
         return OAuthErrorResponse(code=401, error_description="invalid_grant: token signature mismatch")
 
     if jwt_payload.cid != authz.client_id:
-        log.info(f"Code client mismatch for client {app_info.client_id}: {code}")
+        log.warn(
+            "Authorization code client mismatch",
+            details={"token_client": jwt_payload.cid, "code_client": authz.client_id, "code": code[:8] + "..."},
+        )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code client mismatch")
 
     if redirect_uri != authz.redirect_url:
-        log.info(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
+        log.debug(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
         return OAuthErrorResponse(code=401, error_description="invalid_grant: redirect_uri does not match code")
 
     if authz.expires_at is not None:
@@ -445,30 +456,37 @@ def _authorization_code_grant(
     else:
         expires_dt = None
     if not expires_dt or datetime.now(timezone.utc) > expires_dt.astimezone(timezone.utc):
-        log.info(f"Authorization code expired for client {app_info.client_id}: {code}")
+        log.warn(
+            "Expired authorization code used",
+            details={
+                "client_id": authz.client_id,
+                "code": code[:8] + "...",
+                "expired_at": expires_dt.isoformat() if expires_dt else "unknown",
+            },
+        )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code expired")
 
     # PKCE verification for public clients
     if app_info.client_type and app_info.client_type == "confidential":
         if not authz.code_challenge:
-            log.info(f"Missing code_challenge for client {app_info.client_id}: {code}")
+            log.debug(f"Missing code_challenge for client {app_info.client_id}: {code}")
             return OAuthErrorResponse(code=400, error_description="invalid_request: pkce required for public client")
         if not code_verifier:
-            log.info(f"Missing code_verifier for client {app_info.client_id}: {code}")
+            log.debug(f"Missing code_verifier for client {app_info.client_id}: {code}")
             return OAuthErrorResponse(code=400, error_description="invalid_request: code_verifier required")
         try:
             expected = _pkce_calc_challenge(code_verifier, code_challenge_method or "S256")
         except Exception:
-            log.info(f"Failed to calculate PKCE challenge for client {app_info.client_id}: {code}")
+            log.debug(f"Failed to calculate PKCE challenge for client {app_info.client_id}: {code}")
             return OAuthErrorResponse(code=400, error_description="invalid_request: invalid code_verifier/method")
         if expected != authz.code_challenge:
-            log.info(f"PKCE verification failed for client {app_info.client_id}: {code}")
+            log.warn("PKCE verification failed", details={"client_id": authz.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=401, error_description="invalid_grant: pkce_verification_failed")
 
     # Get AWS credentials from database profile (NOT from session token)
     aws_credentials, permissions = get_user_access_key(jwt_payload.cnm, jwt_payload.sub)
     if len(aws_credentials) == 0:
-        log.info(f"Missing AWS credentials for client {app_info.client_id}: {jwt_payload.sub}")
+        log.warn("Missing AWS credentials for user %s in client %s", jwt_payload.sub, jwt_payload.cnm)
 
     # Mint the access token with STS session inside
     try:
@@ -478,7 +496,9 @@ def _authorization_code_grant(
             permissions=permissions,
         )
     except Exception as e:
-        log.info(f"Failed to create access token: {e}")
+        log.warn(
+            "Access token creation failed", details={"client_id": jwt_payload.cid, "user_id": jwt_payload.sub, "error": str(e)}
+        )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: failed to mint access token", exception=e)
 
     # Update refresh token to include client info
@@ -496,12 +516,12 @@ def _authorization_code_grant(
             used_at=datetime.now(timezone.utc),
         )
     except Exception:
-        log.info(f"Failed to mark code used: {code}")
+        log.debug(f"Failed to mark code used: {code}")
 
     return OAuthTokenResponse(
         access_token=access_token,
         token_type="Bearer",
-        expires_in=int(JWT_EXPIRATION_HOURS * 3600),
+        expires_in=int(JWT_ACCESS_HOURS * 3600),
         scope=authz.scope or "",
         refresh_token=refresh_token,
     )
@@ -521,6 +541,10 @@ def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
         return OAuthErrorResponse(code=401, error_description="invalid_grant: invalid refresh_token")
 
     if rt.cid != jwt_payload.cid or rt.typ != "refresh":
+        log.warn(
+            "Refresh token validation failed",
+            details={"client_id": jwt_payload.cid, "refresh_client": rt.cid, "refresh_type": rt.typ},
+        )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: refresh_token audience/type mismatch")
 
     if not jwt_payload.sub:
@@ -529,6 +553,7 @@ def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
     # Get fresh AWS credentials from database (NOT from refresh token)
     aws_credentials, permissions = get_user_access_key(jwt_payload.cnm, jwt_payload.sub)
     if not aws_credentials:
+        log.warn("Missing AWS credentials for refresh token user %s in client %s", jwt_payload.sub, jwt_payload.cnm)
         return OAuthErrorResponse(code=401, error_description="invalid_grant: no AWS credentials")
 
     # Create new access token with client info
@@ -539,7 +564,10 @@ def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
             permissions=permissions,
         )
     except Exception as e:
-        log.error(f"Failed to create access token: {e}")
+        log.warn(
+            "Refresh token access token creation failed",
+            details={"client_id": jwt_payload.cid, "user_id": jwt_payload.sub, "error": str(e)},
+        )
         return OAuthErrorResponse(code=500, error_description="failed to create access token", exception=e)
 
     # Create new refresh token with client info
@@ -551,7 +579,7 @@ def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
     return OAuthTokenResponse(
         access_token=access_token,
         token_type="Bearer",
-        expires_in=int(JWT_EXPIRATION_HOURS * 3600),
+        expires_in=int(JWT_ACCESS_HOURS * 3600),
         scope=rt.scp or "",
         refresh_token=new_refresh,
     )
@@ -603,18 +631,19 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
     client_secret = body.get("client_secret", "").strip()
 
     if not check_rate_limit(headers, "oauth_token", max_attempts=10, window_minutes=15):
-        log.warning(f"Rate limit exceeded for client {client_id} on /auth/v1/token")
+        log.warn(f"Rate limit exceeded for client {client_id} on /auth/v1/token")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate client registration once
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
+        log.warn("Unknown client attempted token exchange: %s", client_id)
         return OAuthErrorResponse(code=401, error_description="invalid_client: unknown client")
 
     is_confidential = bool(app_info.client_secret)
     _, validated = _validate_client_credentials(client_secret, app_info)
     if is_confidential and not validated:
-        log.info(f"Invalid client_secret for client {client_id}")
+        log.warn("Client authentication failed for %s on /auth/v1/token", client_id)
         return OAuthErrorResponse(code=401, error_description="invalid_client: invalid credentials")
 
     grant_type = (body.get("grant_type") or "").strip()
@@ -653,7 +682,7 @@ def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = Non
 
     # Rate limiting
     if not check_rate_limit(headers, "oauth_revoke", max_attempts=10, window_minutes=1):
-        log.warning("Rate limit exceeded on /auth/v1/revoke")
+        log.warn("Rate limit exceeded on /auth/v1/revoke")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Optional: Validate the token format (but don't require it to be valid)
@@ -661,10 +690,10 @@ def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = Non
 
     try:
         jwt_payload = JwtPayload.decode(token)
-        log.info(f"Token revoked for user {jwt_payload.sub}, client {jwt_payload.cid}")
+        log.debug(f"Token revoked for user {jwt_payload.sub}, client {jwt_payload.cid}")
     except:
         # Token is invalid/expired - still return 200 per RFC 7009
-        log.info("Invalid token submitted for revocation")
+        log.debug("Invalid token submitted for revocation")
 
     # RFC 7009: Return HTTP 200 with empty body
     # Use a special response class for empty body
@@ -694,7 +723,7 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs):
 
     # Rate limiting
     if not check_rate_limit(headers, "oauth_introspect", max_attempts=20, window_minutes=1):
-        log.warning("Rate limit exceeded on /auth/v1/introspect")
+        log.warn("Rate limit exceeded on /auth/v1/introspect")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     try:
@@ -733,7 +762,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
 
     # Rate limiting
     if not check_rate_limit(headers, "oauth_userinfo", max_attempts=30, window_minutes=1):
-        log.warning("Rate limit exceeded on /auth/v1/userinfo")
+        log.warn("Rate limit exceeded on /auth/v1/userinfo")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate access token
@@ -748,7 +777,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
         response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
         profile = UserProfile(**response.data)
     except Exception as e:
-        log.info(f"Failed to retrieve user profile: {str(e)}")
+        log.debug(f"Failed to retrieve user profile: {str(e)}")
         return OAuthErrorResponse(code=404, error_description="User Information unavailable", exception=e)
 
     return OAuthUserInfoResponse(
@@ -773,7 +802,7 @@ def oauth_jwks(*, headers: dict = None, **kwargs):
     """
     # Rate limiting
     if not check_rate_limit(headers, "oauth_jwks", max_attempts=50, window_minutes=1):
-        log.warning("Rate limit exceeded on /auth/v1/jwks")
+        log.warn("Rate limit exceeded on /auth/v1/jwks")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     try:
@@ -814,7 +843,7 @@ def oauth_logout(*, cookies: dict = None, headers: dict = None, query_params: di
 
     # Rate limiting
     if not check_rate_limit(headers, "oauth_logout", max_attempts=10, window_minutes=1):
-        log.warning("Rate limit exceeded on /auth/v1/logout")
+        log.warn("Rate limit exceeded on /auth/v1/logout")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Get current user to validate logout

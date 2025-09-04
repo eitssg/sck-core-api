@@ -6,7 +6,7 @@ from typing import Set
 SCK_TOKEN_COOKIE_NAME = "sck_token"
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")
-SESSION_JWT_MINUTES = os.getenv("SESSION_JWT_MINUTES", "30")
+JWT_SESSION_MINUTES = os.getenv("JWT_SESSION_MINUTES", "30")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 # Validate algorithm is supported
 SUPPORTED_ALGORITHMS = ["HS256", "HS384", "HS512"]
@@ -15,11 +15,11 @@ if JWT_ALGORITHM not in SUPPORTED_ALGORITHMS:
 
 # Safe integer conversion with better error handling
 try:
-    JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
-    if JWT_EXPIRATION_HOURS < 1 or JWT_EXPIRATION_HOURS > 168:  # 1 hour to 1 week
-        JWT_EXPIRATION_HOURS = 24
+    JWT_ACCESS_HOURS = int(os.getenv("JWT_ACCESS_HOURS", "24"))
+    if JWT_ACCESS_HOURS < 1 or JWT_ACCESS_HOURS > 168:  # 1 hour to 1 week
+        JWT_ACCESS_HOURS = 24
 except (ValueError, TypeError):
-    JWT_EXPIRATION_HOURS = 24
+    JWT_ACCESS_HOURS = 24
 
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
@@ -36,3 +36,7 @@ CRED_ENC_KEY_B64 = os.getenv("CRED_ENC_KEY", "")
 
 # Abuse/cost controls (stateless; configurable via env)
 REFRESH_MIN_INTERVAL_SECONDS = int(os.getenv("REFRESH_MIN_INTERVAL_SECONDS", "300"))  # 5 minutes
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+API_HOST = os.getenv("API_HOST", "localhost")
+API_PORT = int(os.getenv("API_PORT", "8090"))

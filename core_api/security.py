@@ -21,6 +21,10 @@ class Permission(str, Enum):
     WILDCARD_READ = "*:read"
     WILDCARD_WRITE = "*:write"
 
+    # Profile permissions
+    PROFILE_READ = "profile:read"  # Maps to read:profile OAuth scope
+    PROFILE_WRITE = "profile:write"  # Maps to write:profile OAuth scope
+
     # Portfolio permissions
     PORTFOLIO_READ = "portfolio:read"
     PORTFOLIO_WRITE = "portfolio:write"

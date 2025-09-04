@@ -1,4 +1,4 @@
-from http import client
+from statistics import correlation
 from typing import Optional
 from datetime import datetime, timezone
 import random
@@ -11,6 +11,12 @@ import httpx
 import jwt
 
 import core_logging as log
+import core_framework as util
+from core_helper.aws import invoke_lambda
+
+from core_invoker.handler import handler as invoker_handler
+from core_execute.actionlib.actions.system.send_email import SendEmailActionResource, SendEmailActionSpec
+from core_framework.models import ActionResource, DeploySpec, DeploymentDetails, PackageDetails, TaskPayload
 
 from core_db.response import ErrorResponse, Response, SuccessResponse
 from core_db.profile.actions import ProfileActions
@@ -19,9 +25,9 @@ from core_db.oauth import ForgotPassword, ForgotPasswordActions
 
 from ..request import RouteEndpoint
 
-from ..email.smtp import send_auth_code_email, send_password_updated_email
+from ..email.smtp import send_password_updated_email
 
-from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, SESSION_JWT_MINUTES
+from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, JWT_SESSION_MINUTES
 from .tools import (
     JwtPayload,
     get_client_ip,
@@ -237,16 +243,15 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
             if exists:
                 ProfileActions.patch(client=client, **data)
             else:
-                log.debug(f"Creating new profile for SSO user: {user_id}")
+                log.info("New user profile created", details={"user_id": user_id, "client": client, "mode": "sso_signup"})
                 ProfileActions.create(client=client, **data)
 
         else:
-
             # Signup via email/password: creation only; reject if exists
             if exists:
                 return ErrorResponse(code=409, message=f"User '{user_id}' already exists")
 
-            log.debug(f"Creating new profile for email/password user: {user_id}")
+            log.info("New user profile created", details={"user_id": user_id, "client": client, "mode": "email_signup"})
             response: SuccessResponse = ProfileActions.create(client=client, **data)
             if not response:
                 return ErrorResponse(code=500, message="Profile creation failed")
@@ -259,7 +264,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
     try:
 
         # Create session JWT with proper parameter order
-        minutes = int(SESSION_JWT_MINUTES)
+        minutes = int(JWT_SESSION_MINUTES)
         jwt_token = create_basic_session_jwt(client_id, client, user_id, minutes)
 
         # Return a short-lived session token (no cookies) so SPA can call /authorize → /token
@@ -306,11 +311,6 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     if not check_rate_limit(headers, "update_user", max_attempts=20, window_minutes=1):
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /v1/users/me")
         return ErrorResponse(code=429, message="rate_limited")
-
-    log.debug(
-        f"Updating user {jwt_payload.sub} from client '{jwt_payload.cid}' for '{jwt_payload.cnm}' with data:",
-        details=dict(body),
-    )
 
     # Extract update fields
     aws_access_key = body.get("aws_access_key")
@@ -488,8 +488,6 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
     """
 
     try:
-        log.debug("Login request received", details=dict(body))
-
         user_id = body.get("email")
         password = body.get("password", "")
         if not user_id or not password:
@@ -505,6 +503,7 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
 
         app_info: ClientFact = get_oauth_app_info(client_id)
         if not app_info:
+            log.warn("Invalid client attempted login: %s", client_id)
             return ErrorResponse(code=400, message="invalid_client")
 
         client = app_info.client
@@ -523,15 +522,17 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         credentials = profile_data.credentials or {}
         stored_hash = credentials.get("Password")
         if not stored_hash:
+            log.warn("Login attempt for user without password: %s", user_id)
             log.debug(f"No password found for user {user_id}")
             return ErrorResponse(code=401, message="Authorization Failed")
 
         # Validate password against stored hash
         if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
+            log.warn("Password validation failed for user: %s", user_id)
             log.debug(f"Password validation failed for user {user_id}")
             return ErrorResponse(code=401, message="Authorization Failed")
 
-        minutes = int(SESSION_JWT_MINUTES)
+        minutes = int(JWT_SESSION_MINUTES)
 
         # Create session JWT with NO AWS credentials - just user identity
         session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
@@ -555,12 +556,10 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
 
 
 def forgot_password(*, body: dict = None, **kwargs):
+    """Generate forgot password token and queue email via API→Invoker→Runner→StepFunction chain."""
 
     valid_characters = "0123456789"
-
-    # Generate a random sequence of numbers exactly 8 characters long and it may begin with 0
     code = "".join(random.choices(valid_characters, k=8))
-
     key = f"forgot_password:{code}"
     email = body.get("email", None)
     client = body.get("client", "core")
@@ -575,32 +574,115 @@ def forgot_password(*, body: dict = None, **kwargs):
     try:
         token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=15, jti=code).encode()
 
-        forgot_password = ForgotPassword(
+        forgot_password_record = ForgotPassword(
             **{"code": key, "email": email, "user_id": email, "client": client, "client_id": client_id, "reset_token": token}
         )
-        log.debug("Forgot Password: ", details=forgot_password.model_dump())
 
-        ForgotPasswordActions.create(**forgot_password.model_dump())
+        ForgotPasswordActions.create(**forgot_password_record.model_dump())
 
-        log.info("Forgot password request created", details={"email": email, "client": client, "code": code})
+        log.info("Forgot password request created", details={"email": email, "client": client})
 
     except Exception as e:
-        log.debug(f"Failed to create forgot password request: {str(e)}", details={"email": email, "client": client, "code": code})
+        log.warn("Failed to create forgot password request for %s: %s", email, str(e))
         return ErrorResponse(code=500, message="Failed to create forgot password request", exception=e)
 
-    data = {"token": token}
-    log.debug("Forgot password token created", details=data)
+    server_url = os.getenv("CLIENT_NEW_PASSWORD", "http://localhost:8080/new-password")
 
-    # Send email with authorization code
-    email_sent = send_auth_code_email(
-        to_email=email, auth_code=code, user_name=email.split("@")[0]  # Or get actual user name from database
-    )
+    try:
+        _queue_email_via_security_chain(
+            client=client,
+            email_type="authcode",
+            to_email=email,
+            template_data={
+                "auth_code": code,
+                "user_name": email.split("@")[0],
+                "company_name": "EITS",
+                "reset_url": f"{server_url}?code={code}&token={token}",
+            },
+        )
 
-    if not email_sent:
-        log.warning(f"Failed to send auth code email to {email}, but continuing...")
-        # Decision: Continue anyway or fail? Depends on your requirements
+        log.info("Forgot password email queued successfully for %s", email)
 
-    return SuccessResponse(data=data)
+    except Exception as e:
+        log.warn("Failed to queue forgot password email for %s: %s", email, str(e))
+        # Continue anyway - user has the token for manual verification
+
+    return SuccessResponse(data={"token": token})
+
+
+def _queue_email_via_security_chain(client: str, email_type: str, to_email: str, template_data: dict) -> None:
+    """Queue email sending via API→Invoker→Runner→StepFunction security chain."""
+
+    try:
+        spec = SendEmailActionSpec(
+            account=util.get_automation_account(),
+            region=util.get_automation_region(),
+            to_email=to_email,
+            subject=_get_email_subject(email_type),
+            template_type=email_type,
+            template_data=template_data,
+        )
+
+        # SPEC should be a dictionary....why...because
+        # ActionResource doesn't know the structure of the spec
+
+        send_email_action = SendEmailActionResource(
+            apiVersion="v1",
+            kind="send-email",
+            metadata={
+                "name": "system-send-email",
+                "namespace": "email",
+                "description": "Send email action",
+            },
+            spec=spec,
+        )
+
+        package_details = PackageDetails(actions=[send_email_action])
+
+        deployment_details = DeploymentDetails(
+            client=client,  # Customer: core, acme, bbr, etc.
+            portfolio="automation",  # System: automation (email system runs in automation portfolio)
+            # branch=None, build=None (not specified for portfolio scope)
+        )
+
+        task_payload = TaskPayload(
+            correlation_id=log.get_correlation_id(),
+            client=client,
+            task="deploy",  # "deploy" means "run this program"
+            deployment_details=deployment_details,
+            package=package_details,
+            type="deployspec",  # Using deployspec execution
+            scope="portfolio",  # Portfolio scope
+        )
+
+        log.debug("Email task queued:", details=task_payload.model_dump())
+
+        if util.is_local_mode():
+            # Local mode: Call invoker handler directly
+            response = invoker_handler(task_payload.model_dump())
+            log.debug("Email task executed locally", details={"response": response})
+        else:
+            # Production: Invoke through security chain
+            arn = util.get_invoker_lambda_arn()
+            response = invoke_lambda(arn, task_payload.model_dump())
+            log.debug("Email task invoked via Lambda", details={"response": response})
+
+    except ValueError as ve:
+        errors = ve.errors() if hasattr(ve, "errors") else str(ve)
+        log.warn("Failed to queue email via security chain: %s", errors)
+    except Exception as e:
+        log.warn("Failed to queue email via security chain: %s", str(e))
+        # Don't raise - email failure shouldn't break the main operation
+
+
+def _get_email_subject(email_type: str) -> str:
+    """Get email subject based on type."""
+    subjects = {
+        "authcode": "Password Reset Verification Code",
+        "passupdated": "Password Updated Successfully",
+        "welcome": "Welcome to Simple Cloud Kit",
+    }
+    return subjects.get(email_type, "Notification")
 
 
 def verify_secret(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs):

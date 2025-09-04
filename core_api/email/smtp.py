@@ -155,12 +155,11 @@ def send_email(
         with _create_connection() as server:
             server.send_message(msg, to_addrs=recipients)
 
-        log.info(f"Email sent successfully to {to_email}")
+        log.debug(f"Email sent successfully to {to_email}")
         return True
 
     except Exception as e:
-        resp = ErrorResponse(code=500, message=f"Failed to send email {str(e)}", exception=e)
-        log.error(f"Failed to send email to {to_email}: {str(e)}", details=resp.model_dump(mode="json"))
+        log.debug(f"Failed to send email to {to_email}: {str(e)}")
         return False
 
 
@@ -234,7 +233,7 @@ def send_auth_code_email(to_email: str, auth_code: str, user_name: str = None) -
         )
 
     except Exception as e:
-        log.error(f"Failed to send auth code email to {to_email}: {str(e)}")
+        log.debug(f"Failed to send auth code email to {to_email}: {str(e)}")
         return False
 
 

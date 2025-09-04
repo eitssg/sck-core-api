@@ -10,8 +10,7 @@ import secrets
 
 import core_logging as log
 
-from core_db.response import Response, SuccessResponse, CreatedResponse
-from core_db.exceptions import BadRequestException, UnknownException, NotFoundException
+from core_db.response import ErrorResponse, Response, SuccessResponse, CreatedResponse
 from core_db.registry.client.actions import ClientActions
 
 from core_api.item.build import SuccessResponse
@@ -21,20 +20,23 @@ from core_api.request import RouteEndpoint
 def register_client(*, body: dict = None, **kwargs) -> Response:
     """Register a new OAuth client."""
 
+    # Get the form data
     client = body.get("client")
-    if not client:
-        raise BadRequestException(message={"error": "Missing client name"})
-
     redirect_uris = body.get("redirect_uris")
+    client_type = body.get("client_type", "public")
+    scopes = body.get("scopes", ["registry-clients:read"])
+
+    # Register the client
+
+    if not client:
+        return ErrorResponse(code=400, message={"error": "Missing client name"})
+
     if not redirect_uris:
-        raise BadRequestException(message={"error": "Missing redirect_uris"})
+        return ErrorResponse(code=400, message={"error": "Missing redirect_uris"})
 
     if isinstance(redirect_uris, str):
         redirect_uris = [redirect_uris]
 
-    client_type = body.get("client_type", "public")
-
-    scopes = body.get("scopes", ["registry-clients:read"])
     if not isinstance(scopes, list):
         scopes = [scopes]
 
@@ -52,14 +54,18 @@ def register_client(*, body: dict = None, **kwargs) -> Response:
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    log.debug(f"Creating client:", details=client_data)
+    log.debug("Creating client:", details=client_data)
 
     try:
         # Store in DynamoDB oauth-clients table
         ClientActions.create(**client_data)
+        log.info(
+            "OAuth client registered",
+            details={"client": client, "client_id": client_id, "client_type": client_type, "redirect_uris": redirect_uris},
+        )
     except Exception as e:
-        log.error(f"Error creating client: {e}")
-        raise UnknownException(message={"error": str(e)})
+        log.warn("OAuth client creation failed", details={"client": client, "error": str(e)})
+        return ErrorResponse(code=500, message={"error": str(e)})
 
     response = {"client": client, "client_id": client_id}
     if client_secret:
@@ -80,8 +86,8 @@ def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> 
         existing_client: SuccessResponse = ClientActions.get(client=client)
         data = existing_client.data
     except Exception as e:
-        log.info(f"Client Not Found: {client}: {str(e)}")
-        raise NotFoundException(message={"error": "Client not found"})
+        log.debug("Client lookup failed for %s: %s", client, str(e))
+        return ErrorResponse(code=404, message={"error": "Client not found"})
 
     client_id = data.get("ClientId")
     if not client_id:
@@ -102,8 +108,10 @@ def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> 
     log.debug("Updating client data:", details=data)
     try:
         ClientActions.update(**data)
+        log.info("OAuth client updated", details={"client": client, "client_id": client_id, "client_type": client_type})
     except Exception as e:
-        raise UnknownException(message={"error": str(e)})
+        log.warn("OAuth client update failed", details={"client": client, "error": str(e)})
+        return ErrorResponse(code=500, message={"error": str(e)})
 
     return SuccessResponse(
         data={

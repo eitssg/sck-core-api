@@ -35,7 +35,7 @@ import core_framework as util  # CORRECTED: Import util for to_json()
 from core_api.oauth.constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
-    JWT_EXPIRATION_HOURS,
+    JWT_ACCESS_HOURS,
 )
 from core_api.oauth.tools import validate_token
 
@@ -608,9 +608,9 @@ def test_get_credentials_case_insensitive_header(valid_jwt_token):
         {"headers": {"Content-Type": "application/json"}},  # No auth header
     ],
 )
-def test_get_credentials_no_authorization(kwargs_input):
+def test_get_credentials_no_authorization(kwargs):
     """Test credential extraction when Authorization header is missing."""
-    credentials = get_credentials(**kwargs_input)
+    credentials = get_credentials(**kwargs)
     assert credentials is None
 
 
@@ -910,7 +910,7 @@ def test_jwt_configuration_sanity():
     assert JWT_SECRET_KEY is not None
     assert len(JWT_SECRET_KEY) >= 32  # Minimum security requirement
     assert JWT_ALGORITHM in ["HS256", "HS384", "HS512"]
-    assert 1 <= JWT_EXPIRATION_HOURS <= 168  # 1 hour to 1 week is reasonable
+    assert 1 <= JWT_ACCESS_HOURS <= 168  # 1 hour to 1 week is reasonable
 
 
 # ============================================================================

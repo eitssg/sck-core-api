@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 
 import core_logging as log
+import core_framework as util
 
 from ..api.handler import ProxyEvent
 from ..response import get_proxy_error_response, get_proxy_response
@@ -224,13 +225,11 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
         correlation_id = get_correlation_id(request)
 
-        log.info(
-            "Processing API Gateway request",
-            details={
-                "method": request.httpMethod,
-                "resource": request.resource,
-                "correlation_id": correlation_id,
-            },
+        log.set_correlation_id(correlation_id)
+
+        log.debug(
+            "Processing API Gateway OAUTH request",
+            details={"method": request.httpMethod, "resource": request.resource},
         )
 
         route_key = request.route_key

@@ -127,8 +127,54 @@ def handle_oauth_discovery(event):
             "client_secret_post",
             "none",
         ],
-        "scopes_supported": ["registry-clients:read", "registry-clients:write"],
-        "claims_supported": ["sub", "email", "name", "given_name", "family_name", "preferred_username", "updated_at"],
+        # UPDATED: Add all supported scopes including profile scopes
+        "scopes_supported": [
+            # Profile scopes (OAuth format - what your frontend expects)
+            "read:profile",
+            "write:profile",
+            # Registry/Client scopes (existing)
+            "registry-clients:read",
+            "registry-clients:write",
+            # Application scopes
+            "read:applications",
+            "write:applications",
+            # Portfolio scopes
+            "read:portfolios",
+            "write:portfolios",
+            # Zone scopes
+            "read:zones",
+            "write:zones",
+            # Deployment scopes
+            "read:deployments",
+            "write:deployments",
+            # Admin scopes
+            "admin:all",
+            # Wildcard scopes
+            "*:read",
+            "*:write",
+            "*:admin",
+        ],
+        "claims_supported": [
+            "sub",
+            "email",
+            "name",
+            "given_name",
+            "family_name",
+            "preferred_username",
+            "updated_at",
+            # Add profile-related claims
+            "profile",
+            "picture",
+            "locale",
+            "zoneinfo",
+        ],
+        # Add additional OAuth 2.0 metadata
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
+        "request_uri_parameter_supported": False,
+        "require_request_uri_registration": False,
+        "claims_parameter_supported": False,
+        "request_parameter_supported": False,
     }
 
     return {

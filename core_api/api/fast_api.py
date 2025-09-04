@@ -51,16 +51,20 @@ def get_static_dir() -> str:
 
 
 # Read allowed origins from env (comma-separated), fall back to known UI origins
-def get_origins() -> list[str]:
+def get_allow_origins() -> list[str]:
 
     return [
         o.strip()
         for o in os.getenv(
-            "CORS_ORIGINS",
+            "CORS_ALLOW_ORIGINS",
             "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8090,http://127.0.0.1:8090,https://monster-jj.jvj28.com:2200",
         ).split(",")
         if o.strip()
     ]
+
+
+def get_allow_credentials() -> bool:
+    return os.getenv("CORS_ALLOW_CREDENTIALS", "True").lower() in ("true", "1", "yes")
 
 
 __app: Optional[FastAPI] = None
@@ -173,8 +177,8 @@ def get_app() -> FastAPI:
 
     __app.add_middleware(
         CORSMiddleware,
-        allow_origins=get_origins(),
-        allow_credentials=True,
+        allow_origins=get_allow_origins(),
+        allow_credentials=get_allow_credentials(),
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["*"],
@@ -349,8 +353,80 @@ def handle_oauth_discovery(request: Request):
             "client_secret_post",
             "none",
         ],
-        "scopes_supported": ["registry-clients:read", "registry-clients:write"],
-        "claims_supported": ["sub", "email", "name", "given_name", "family_name", "preferred_username", "updated_at"],
+        # ✅ UPDATED: Complete scopes list matching your Permission enum
+        "scopes_supported": [
+            # Profile scopes (OAuth format - what your frontend expects)
+            "read:profile",
+            "write:profile",
+            # Portfolio scopes (OAuth format)
+            "read:portfolio",
+            "write:portfolio",
+            "admin:portfolio",
+            # Registry scopes (OAuth format)
+            "read:registry",
+            "write:registry",
+            "admin:registry",
+            "read:registry-client",
+            "write:registry-client",
+            "read:registry-portfolio",
+            "write:registry-portfolio",
+            # Application scopes (OAuth format)
+            "read:app",
+            "write:app",
+            "admin:app",
+            # Component scopes (OAuth format)
+            "read:component",
+            "write:component",
+            "admin:component",
+            # User management scopes (OAuth format)
+            "read:user",
+            "write:user",
+            "manage:user",
+            # Client management scopes (OAuth format)
+            "read:client",
+            "write:client",
+            "manage:client",
+            # AWS scopes (OAuth format)
+            "read:aws",
+            "write:aws",
+            "admin:aws",
+            "read:aws-billing",
+            # System scopes (OAuth format)
+            "config:system",
+            "monitor:system",
+            # Data scopes (OAuth format)
+            "read:data",
+            "write:data",
+            "admin:data",
+            # Wildcard scopes
+            "*:read",
+            "*:write",
+            "*:admin",
+            # Legacy scopes (for backward compatibility)
+            "registry-clients:read",
+            "registry-clients:write",
+        ],
+        "claims_supported": [
+            "sub",
+            "email",
+            "name",
+            "given_name",
+            "family_name",
+            "preferred_username",
+            "updated_at",
+            # ✅ Add profile-related claims
+            "profile",
+            "picture",
+            "locale",
+            "zoneinfo",
+        ],
+        # ✅ Add additional OAuth 2.0 metadata
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
+        "request_uri_parameter_supported": False,
+        "require_request_uri_registration": False,
+        "claims_parameter_supported": False,
+        "request_parameter_supported": False,
     }
 
     # Return discovery data directly (not wrapped)

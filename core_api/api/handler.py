@@ -59,16 +59,14 @@ from ..registry.zone import registry_zone_actions
 from ..facts.facter import facts_actions
 
 from ..response import get_proxy_error_response, get_proxy_response
-from ..request import (
-    ProxyEvent,
-    RouteEndpoint,
-    get_correlation_id,
-)
+from ..request import ProxyEvent, RouteEndpoint, get_correlation_id
 from ..security import (
     validate_client_access,
     check_permissions_with_wildcard,
     extract_security_context,
 )
+from ..oauth.auth_creds import get_credentials
+import core_helper.aws as aws_helper
 
 # Build the router for the API Gateway REST interface
 api_endpoints: dict[str, RouteEndpoint] = {
@@ -219,16 +217,17 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         # Parse and validate incoming request
         request = ProxyEvent(**event)
 
+        # Extract AWS credentials from Bearer JWT
+        aws_credentials = get_credentials(request)
+
         # Extract or generate correlation ID for tracing
         correlation_id = get_correlation_id(request)
 
+        log.set_correlation_id(correlation_id)
+
         log.info(
             "Processing API Gateway request",
-            details={
-                "method": request.httpMethod,
-                "resource": request.resource,
-                "correlation_id": correlation_id,
-            },
+            details={"method": request.httpMethod, "resource": request.resource},
         )
 
         # Build route key for handler lookup
@@ -243,16 +242,29 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
             security_context = extract_security_context(request, role_arn=util.get_api_lambda_arn, require_aws_credentials=True)
 
+            # bale out if the security_context cannot be determined.
             if not security_context:
                 raise UnauthorizedException("Authorization required")
 
+            # Validate token type
             if security_context.token_type != endpoint_route.required_token_type:
                 raise UnauthorizedException(f"Invalid token type for this operation: {security_context.token_type}")
 
+            # Check permissions
             missing_perms = check_permissions_with_wildcard(security_context.permissions, endpoint_route.required_permissions)
             if missing_perms:
                 raise PermissionError(f"Missing permissions for this operation: {[p.value for p in missing_perms]}")
 
+            if aws_credentials and security_context.user_id:
+                # This now handles the optimization internally
+                aws_helper.set_user_context(security_context.user_id, aws_credentials)
+                log.debug("User context ready", details={"user_id": security_context.user_id})
+            elif aws_credentials and not security_context.user_id:
+                log.warning("AWS credentials found but no user_id in security context")
+            elif not aws_credentials and security_context.user_id:
+                log.warning("User_id found but no AWS credentials in JWT token")
+
+            # Validate client access
             if endpoint_route.client_isolation:
                 validate_client_access(security_context, request)
 
@@ -302,3 +314,12 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         )
         log.error("Unexpected error in API handler", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
+
+    finally:
+        # ✅ CLEANUP: Clear user context at end of request
+        # This prevents credential leakage between requests in the same Lambda container
+        try:
+            aws_helper.clear_user_context()
+            log.debug("Cleared user context at request end", details={"correlation_id": correlation_id})
+        except Exception as e:
+            log.warning("Error clearing user context", details={"correlation_id": correlation_id, "error": str(e)})

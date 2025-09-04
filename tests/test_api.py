@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 import core_framework as util
 
-from core_execute.actionlib.actions.system.no_op import NoOpActionSpec
+from core_execute.actionlib.actions.system.no_op import NoOpActionResource
 
 from core_db.event.models import EventModel
 from core_db.item.models import ItemModel
@@ -33,7 +33,7 @@ def teardown_action(bootstrap_dynamo):
     """Create test action and upload to S3."""
     assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
 
-    action = NoOpActionSpec(
+    action = NoOpActionResource(
         **{
             "spec": {
                 "account": "123456789012",

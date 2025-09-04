@@ -32,8 +32,8 @@ from .constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     REFRESH_MIN_INTERVAL_SECONDS,
-    SESSION_JWT_MINUTES,
-    JWT_EXPIRATION_HOURS,
+    JWT_SESSION_MINUTES,
+    JWT_ACCESS_HOURS,
     SCK_TOKEN_COOKIE_NAME,
 )
 
@@ -578,7 +578,7 @@ def get_user_access_key(client: str, user_id: str, password: Optional[str] = Non
         raise
 
 
-def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, minutes: int = SESSION_JWT_MINUTES) -> str:
+def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, minutes: int = JWT_SESSION_MINUTES) -> str:
     """Generate session JWT for OAuth flows with user identity and client context but no AWS credentials
 
     Creates a lightweight authentication token used in OAuth authorization flows.
@@ -589,7 +589,7 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
         client_id (str): OAuth client ID
         client_name (str): Client name/slug for data operations
         user_id (str): User identifier (subject claim)
-        minutes (int): Token validity in minutes. Defaults to SESSION_JWT_MINUTES.
+        minutes (int): Token validity in minutes. Defaults to JWT_SESSION_MINUTES.
 
     Returns:
         str: Signed JWT token for session authentication
@@ -678,7 +678,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
         }
 
     Security Features:
-        - STS credentials time-limited (based on JWT_EXPIRATION_HOURS)
+        - STS credentials time-limited (based on JWT_ACCESS_HOURS)
         - All AWS credentials encrypted with server key (JWE)
         - No long-term credentials exposed to clients
         - Token signed and tamper-evident
@@ -686,7 +686,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
 
     AWS STS Integration:
         - Calls boto3 STS get_session_token()
-        - Duration limited by JWT_EXPIRATION_HOURS
+        - Duration limited by JWT_ACCESS_HOURS
         - Supports optional MFA (currently disabled)
         - Fails gracefully on AWS errors (empty credentials)
 
@@ -712,7 +712,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
     combined_scope = _combine_scopes(session_scope, user_scope)
 
     # Use provided duration or default
-    duration_seconds = 3600 * JWT_EXPIRATION_HOURS
+    duration_seconds = 3600 * JWT_ACCESS_HOURS
 
     sts_credentials = {
         "AccessKeyId": "",
@@ -755,7 +755,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
     else:
         creds_enc = None
 
-    minutes = 60 * JWT_EXPIRATION_HOURS
+    minutes = 60 * JWT_ACCESS_HOURS
 
     payload = JwtPayload(
         sub=jwt_payload.sub,
@@ -1064,12 +1064,12 @@ def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window
                 "attempts": [now],
                 "ttl": now + (window_minutes * 60 * 2),  # TTL = 2x window for safety
             }
-            log.debug(f"Creating new rate limit record: ", details=data)
+            log.debug("Creating new rate limit record", details=data)
             RateLimitActions.create(**data)
 
             return True  # First attempt allowed
         except Exception as e:
-            log.warning(f"Failed to create rate limit record: {e}")
+            log.error(f"Failed to create rate limit record: {e}")
             return True  # Fail open
 
     try:
@@ -1077,7 +1077,7 @@ def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window
         attempts = [ts for ts in response.get("attempts", []) if ts > window_start]
 
         if len(attempts) >= max_attempts:
-            log.info(f"Rate limit exceeded for {identifier} on {endpoint}: {len(attempts)}/{max_attempts}")
+            log.debug(f"Rate limit exceeded for {identifier} on {endpoint}: {len(attempts)}/{max_attempts}")
             return False  # Rate limited
 
         # Add current attempt
@@ -1094,7 +1094,7 @@ def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window
         return True
 
     except Exception as e:
-        log.warning(f"Rate limit check failed: {e}")
+        log.debug(f"Rate limit check failed: {e}")
         return True  # Fail open to avoid blocking legitimate users
 
 
@@ -1237,7 +1237,7 @@ def get_authenticated_user(cookies: dict, headers: dict) -> Tuple[JwtPayload | N
         return jwt_payload, jwt_signature
 
     except jwt.InvalidTokenError as e:
-        log.warning(f"Invalid JWT token in request: {e}")
+        log.debug(f"Invalid JWT token in request: {e}")
 
     return None, None
 
@@ -1296,8 +1296,8 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
     """
     try:
         response = ClientActions.get(client_id=client_id)
-        log.debug(f"OAuth app info for client {client_id}:", details=response.data)
+        log.debug(f"OAuth app info for client {client_id}", details=response.data)
         return ClientFact(**response.data)
     except Exception as e:
-        log.error(f"Failed to get OAuth app info for client {client_id}: {e}")
+        log.debug(f"Failed to get OAuth app info for client {client_id}: {e}")
         return None
