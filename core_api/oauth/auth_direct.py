@@ -16,7 +16,8 @@ from core_helper.aws import invoke_lambda
 
 from core_invoker.handler import handler as invoker_handler
 from core_execute.actionlib.actions.system.send_email import SendEmailActionResource, SendEmailActionSpec
-from core_framework.models import ActionResource, DeploySpec, DeploymentDetails, PackageDetails, TaskPayload
+from core_framework.models import DeploymentDetails, PackageDetails, TaskPayload
+from core_framework.models import ActionMetadata
 
 from core_db.response import ErrorResponse, Response, SuccessResponse
 from core_db.profile.actions import ProfileActions
@@ -614,6 +615,9 @@ def _queue_email_via_security_chain(client: str, email_type: str, to_email: str,
     """Queue email sending via API→Invoker→Runner→StepFunction security chain."""
 
     try:
+        # You must define which AWS Account has the permission to send emails
+        # Will also need to be able to assume the role for the email sending
+        # for the region that needs to send email
         spec = SendEmailActionSpec(
             account=util.get_automation_account(),
             region=util.get_automation_region(),
@@ -623,19 +627,13 @@ def _queue_email_via_security_chain(client: str, email_type: str, to_email: str,
             template_data=template_data,
         )
 
-        # SPEC should be a dictionary....why...because
-        # ActionResource doesn't know the structure of the spec
-
-        send_email_action = SendEmailActionResource(
-            apiVersion="v1",
-            kind="send-email",
-            metadata={
-                "name": "system-send-email",
-                "namespace": "email",
-                "description": "Send email action",
-            },
-            spec=spec,
+        metadata = ActionMetadata(
+            name="system-send-email",
+            namespace="email",
+            description="Send email action",
         )
+
+        send_email_action = SendEmailActionResource(metadata=metadata, spec=spec)
 
         package_details = PackageDetails(actions=[send_email_action])
 
@@ -651,8 +649,6 @@ def _queue_email_via_security_chain(client: str, email_type: str, to_email: str,
             task="deploy",  # "deploy" means "run this program"
             deployment_details=deployment_details,
             package=package_details,
-            type="deployspec",  # Using deployspec execution
-            scope="portfolio",  # Portfolio scope
         )
 
         log.debug("Email task queued:", details=task_payload.model_dump())
