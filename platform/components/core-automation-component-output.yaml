@@ -1,0 +1,283 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Component Lambda Function - Manages component artifacts and metadata
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+  ZipFileName:
+    Type: String
+    Default: "core-automation-component.zip"
+
+Resources:
+  # CloudWatch Log Group for Component Lambda
+  ComponentLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}core-automation-component-lambda"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-component-lambda-logs"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: component
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # IAM Execution Role for Component Lambda
+  ComponentLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-component-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "ComponentLambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt ComponentLambdaLogGroup.Arn
+              # Permission to read/write Files bucket (deployment artifacts)
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                  - "s3:ListBucket"
+                Resource: 
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+              # Permission to read/write Artifacts bucket (component outputs)
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                  - "s3:ListBucket"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutBucketVersioning"
+                Resource: 
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-component-lambda-execution-role"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: component
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Component Lambda Function
+  ComponentLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ComponentLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-component-lambda"
+      Runtime: python3.11
+      Handler: core_component.component.handler:handler
+      Role: !GetAtt ComponentLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: core-automation-ap-southeast-1
+        S3Key: !Sub "files/core-automation/component/main/latest/${ZipFileName}"
+      Timeout: 900  # 15 minutes for component operations
+      MemorySize: 1024  # Good memory for file operations
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: core
+          ENVIRONMENT: prod
+          PORTFOLIO: core-automation
+          APP: component
+          BRANCH: main
+          BUILD: latest
+          LOG_LEVEL: INFO
+          # S3 bucket configuration
+          FILES_BUCKET_NAME: core-automation-ap-southeast-1
+          ARTIFACTS_BUCKET_NAME: core-automation-ap-southeast-1
+          # Component-specific settings
+          COMPONENT_PREFIX: "components/"
+          METADATA_PREFIX: "metadata/"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-component-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: component
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Access control - ONLY invoker and administrators can invoke
+  ComponentLambdaControlledAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ComponentLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: !Ref AWS::AccountId
+
+  # Specific permission for Invoker Lambda
+  ComponentLambdaInvokerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ComponentLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}core-automation-invoker-lambda"
+
+  # CloudWatch Alarms for Monitoring
+  ComponentLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-component-lambda-errors"
+      AlarmDescription: "Alarm for Component Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ComponentLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-component-lambda-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: component
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  ComponentLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-component-lambda-throttles"
+      AlarmDescription: "Alarm for Component Lambda function throttles"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ComponentLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-component-lambda-throttles"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: component
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  ComponentLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-component-lambda-duration"
+      AlarmDescription: "Alarm for Component Lambda function duration"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600000  # 10 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ComponentLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-component-lambda-duration"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: component
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+Outputs:
+  ComponentLambdaFunctionArn:
+    Description: "ARN of the Component Lambda function"
+    Value: !GetAtt ComponentLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationComponentLambdaFunctionArn"
+
+  ComponentLambdaFunctionName:
+    Description: "Name of the Component Lambda function"
+    Value: !Ref ComponentLambdaFunction
+    Export:
+      Name: "CoreAutomationComponentLambdaFunctionName"
+
+  ComponentLambdaExecutionRoleArn:
+    Description: "ARN of the Component Lambda execution role"
+    Value: !GetAtt ComponentLambdaExecutionRole.Arn
+    Export:
+      Name: "CoreAutomationComponentLambdaExecutionRoleArn"
+
+  ComponentLambdaLogGroupName:
+    Description: "Name of the Component Lambda log group"
+    Value: !Ref ComponentLambdaLogGroup
+    Export:
+      Name: "CoreAutomationComponentLambdaLogGroupName"

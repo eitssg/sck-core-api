@@ -1,0 +1,563 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Execute Lambda Function - God-level provisioning and management
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+  ZipFileName:
+    Type: String
+    Default: "core-automation-api.zip"
+
+Resources:
+
+  StateMachineExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-state-machine-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "StateMachineExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17" 
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: !GetAtt ExecuteLambdaFunction.Arn
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+
+  AutomationStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${Scope}core-automation-state-machine"
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Core Automation Execution State Machine",
+          "StartAt": "ExecuteActions",
+          "States": {
+            
+            "ExecuteActions": {
+              "Type": "Task",
+              "Resource": "${ExecuteLambdaFunction.Arn}",
+              "Parameters": {
+                "$": "$"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                  "IntervalSeconds": 5,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "ExecutionFailed",
+                  "ResultPath": "$.error"
+                }
+              ],
+              "Next": "CheckExecutionStatus"
+            },
+
+            "CheckExecutionStatus": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.FlowControl",
+                  "StringEquals": "success",
+                  "Next": "ExecutionComplete"
+                },
+                {
+                  "Variable": "$.FlowControl",
+                  "StringEquals": "failure", 
+                  "Next": "ExecutionFailed"
+                },
+                {
+                  "Variable": "$.FlowControl",
+                  "StringEquals": "execute",
+                  "Next": "WaitAndContinue"
+                }
+              ],
+              "Default": "ExecutionFailed"
+            },
+
+            "WaitAndContinue": {
+              "Type": "Wait",
+              "Seconds": 10,
+              "Next": "ExecuteActions"
+            },
+
+            "ExecutionComplete": {
+              "Type": "Succeed",
+              "Comment": "All actions completed successfully"
+            },
+
+            "ExecutionFailed": {
+              "Type": "Fail",
+              "Comment": "Action execution failed",
+              "Cause": "One or more actions failed during execution"
+            }
+          }
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-state-machine"
+          
+  # God-level provisioning role - Can do ANYTHING on the platform
+  CoreAutomationProvisioningRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "CoreAutomationProvisioningRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ONLY the Execute Lambda can assume this god role
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Scope}core-automation-execute-lambda-execution-role"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "sts:ExternalId": "core-automation-execute"
+          # Allow cross-account Execute Lambdas with proper trust
+          - Effect: Allow
+            Principal:
+              AWS: "*"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "aws:PrincipalServiceName": "lambda.amazonaws.com"
+                "sts:ExternalId": "core-automation-execute"
+              StringLike:
+                "aws:PrincipalArn": "arn:*:iam::*:role/*-automation-execute-lambda-execution-role"
+      ManagedPolicyArns:
+        # GOD POWERS - Can do EVERYTHING
+        - "arn:aws:iam::aws:policy/AdministratorAccess"
+      Policies:
+        - PolicyName: "CrossAccountGodAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Additional cross-account permissions if needed
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "aws:RequestedRegion": 
+                      - "us-east-1"
+                      - "us-west-2"
+                      - "ap-southeast-1"
+                      # Add allowed regions
+      Tags:
+        - Key: Name
+          Value: "CoreAutomationProvisioningRole"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "GOD-LEVEL"
+        - Key: Purpose
+          Value: "Core Automation God Role - Can do ANYTHING"
+
+
+  # CloudWatch Log Group for Execute Lambda
+  ExecuteLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}core-automation-execute-lambda"
+      RetentionInDays: 30  # Longer retention for god-level operations
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-logs"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  # IAM Execution Role for Execute Lambda
+  ExecuteLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-execute-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteLambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt ExecuteLambdaLogGroup.Arn
+              # Permission to assume the GOD role
+              - Effect: Allow
+                Action:
+                  - "sts:AssumeRole"
+                Resource: 
+                  # Current account God role
+                  - !GetAtt CoreAutomationProvisioningRole.Arn
+                  # Cross-account God roles (wildcard for any account with trust relationship)
+                  - !Sub "arn:${AWS::Partition}:iam::*:role/CoreAutomationProvisioningRole"
+              # Permission to get caller identity for logging/auditing
+              - Effect: Allow
+                Action:
+                  - "sts:GetCallerIdentity"
+                Resource: "*"
+              # Permission to decrypt user credentials if encrypted
+              - Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    "kms:ViaService": !Sub "lambda.${AWS::Region}.amazonaws.com"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-execution-role"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  # Execute Lambda Function
+  ExecuteLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ExecuteLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-execute-lambda"
+      Runtime: python3.11
+      Handler: core_execute.execute.handler:handler
+      Role: !GetAtt ExecuteLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: core-automation-ap-southeast-1
+        S3Key: !Sub "files/core-automation/execute/main/latest/${ZipFileName}"
+      Timeout: 900  # 15 minutes for complex provisioning operations
+      MemorySize: 3008  # Maximum memory for complex operations
+      ReservedConcurrentExecutions: 5  # Limit concurrent executions for safety
+      DeadLetterConfig:
+        TargetArn: !GetAtt ExecuteLambdaDeadLetterQueue.Arn
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: core
+          ENVIRONMENT: prod
+          PORTFOLIO: core-automation
+          APP: execute
+          BRANCH: main
+          BUILD: latest
+          LOG_LEVEL: INFO
+          # God role configuration
+          GOD_ROLE_NAME: "CoreAutomationProvisioningRole"
+          GOD_ROLE_ARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/CoreAutomationProvisioningRole"
+          # Security settings
+          AUDIT_MODE: "ENABLED"
+          REQUIRE_MFA: "true"
+          MAX_EXECUTION_TIME: "900"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  # Dead Letter Queue for failed executions
+  ExecuteLambdaDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      QueueName: !Sub "${Scope}core-automation-execute-lambda-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
+      VisibilityTimeout: 960  # Longer than Lambda timeout
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-dlq"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  # Permission for Lambda to send messages to DLQ
+  ExecuteLambdaDLQPermission:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref ExecuteLambdaDeadLetterQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - "sqs:SendMessage"
+            Resource: !GetAtt ExecuteLambdaDeadLetterQueue.Arn
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+
+  # CRITICAL SECURITY: Only Runner Lambda and Administrators can invoke
+  ExecuteLambdaControlledAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ExecuteLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: !Ref AWS::AccountId
+
+  # Specific permission for Runner Lambda ONLY
+  ExecuteLambdaRunnerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ExecuteLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}core-automation-runner-lambda"
+
+  # CloudWatch Alarms for CRITICAL monitoring
+  ExecuteLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-execute-lambda-errors-CRITICAL"
+      AlarmDescription: "CRITICAL: Execute Lambda function errors - God-level operations failing"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60  # Check every minute
+      EvaluationPeriods: 1  # Alert immediately
+      Threshold: 1  # Any error is critical
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ExecuteLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-errors-CRITICAL"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  ExecuteLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-execute-lambda-throttles-CRITICAL"
+      AlarmDescription: "CRITICAL: Execute Lambda function throttles - God-level operations being throttled"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ExecuteLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-throttles-CRITICAL"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  ExecuteLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-execute-lambda-duration-WARNING"
+      AlarmDescription: "WARNING: Execute Lambda function long duration - God-level operations taking too long"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 600000  # 10 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ExecuteLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-duration-WARNING"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+  # DLQ Message Alarm
+  ExecuteLambdaDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-execute-lambda-dlq-CRITICAL"
+      AlarmDescription: "CRITICAL: Execute Lambda DLQ has messages - Failed god-level operations"
+      MetricName: ApproximateNumberOfVisibleMessages
+      Namespace: AWS/SQS
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ExecuteLambdaDeadLetterQueue.QueueName
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-execute-lambda-dlq-CRITICAL"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: execute
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+        - Key: SecurityLevel
+          Value: "CRITICAL"
+
+Outputs:
+  ExecuteLambdaFunctionArn:
+    Description: "ARN of the Execute Lambda function"
+    Value: !GetAtt ExecuteLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationExecuteLambdaFunctionArn"
+
+  ExecuteLambdaFunctionName:
+    Description: "Name of the Execute Lambda function"
+    Value: !Ref ExecuteLambdaFunction
+    Export:
+      Name: "CoreAutomationExecuteLambdaFunctionName"
+
+  ExecuteLambdaExecutionRoleArn:
+    Description: "ARN of the Execute Lambda execution role"
+    Value: !GetAtt ExecuteLambdaExecutionRole.Arn
+    Export:
+      Name: "CoreAutomationExecuteLambdaExecutionRoleArn"
+
+  ExecuteLambdaLogGroupName:
+    Description: "Name of the Execute Lambda log group"
+    Value: !Ref ExecuteLambdaLogGroup
+    Export:
+      Name: "CoreAutomationExecuteLambdaLogGroupName"
+
+  ExecuteLambdaDeadLetterQueueArn:
+    Description: "ARN of the Execute Lambda Dead Letter Queue"
+    Value: !GetAtt ExecuteLambdaDeadLetterQueue.Arn
+    Export:
+      Name: "CoreAutomationExecuteLambdaDLQArn"
+      
+  CoreAutomationProvisioningRoleArn:
+    Description: "ARN of the God-level provisioning role"
+    Value: !GetAtt CoreAutomationProvisioningRole.Arn
+    Export:
+      Name: "CoreAutomationProvisioningRoleArn"

@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Runner Lambda Function - Executes Step Functions for automation workflows
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+  ZipFileName:
+    Type: String
+    Default: "core-automation-api.zip"
+
+Resources:
+  # CloudWatch Log Group for Runner Lambda
+  RunnerLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}core-automation-runner-lambda"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-runner-lambda-logs"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: runner
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # IAM Execution Role for Runner Lambda
+  RunnerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-runner-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "RunnerLambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt RunnerLambdaLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                  - "states:DescribeExecution"
+                  - "states:GetExecutionHistory"
+                  - "states:StopExecution"
+                Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Scope}core-automation-execute-sf"
+              - Effect: Allow
+                Action:
+                  - "states:DescribeStateMachine"
+                Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Scope}core-automation-execute-sf"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-runner-lambda-execution-role"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: runner
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Runner Lambda Function
+  RunnerLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: RunnerLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-runner-lambda"
+      Runtime: python3.11
+      Handler: core_execute.execute.handler:handler
+      Role: !GetAtt RunnerLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: core-automation-ap-southeast-1
+        S3Key: !Sub "files/core-automation/runner/main/latest/${ZipFileName}"
+      Timeout: 900  # 15 minutes for execution workflows
+      MemorySize: 1024  # More memory for execution tasks
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: core
+          ENVIRONMENT: prod
+          PORTFOLIO: core-automation
+          APP: runner
+          BRANCH: main
+          BUILD: latest
+          LOG_LEVEL: INFO
+          STEP_FUNCTION_ARN: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Scope}core-automation-execute-sf"
+          STEP_FUNCTION_NAME: !Sub "${Scope}core-automation-execute-sf"          # Add any runner-specific environment variables here
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-runner-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: runner
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Access control - ONLY invoker, administrators, and console access
+  RunnerLambdaControlledAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RunnerLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: !Ref AWS::AccountId
+
+  # Additional permission for Invoker Lambda specifically
+  RunnerLambdaInvokerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RunnerLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}core-automation-invoker-lambda"
+
+  # CloudWatch Alarms for Monitoring
+  RunnerLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-runner-lambda-errors"
+      AlarmDescription: "Alarm for Runner Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-runner-lambda-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: runner
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  RunnerLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-runner-lambda-throttles"
+      AlarmDescription: "Alarm for Runner Lambda function throttles"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-runner-lambda-throttles"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: runner
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  RunnerLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-runner-lambda-duration"
+      AlarmDescription: "Alarm for Runner Lambda function duration"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600000  # 10 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-runner-lambda-duration"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: runner
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+Outputs:
+  RunnerLambdaFunctionArn:
+    Description: "ARN of the Runner Lambda function"
+    Value: !GetAtt RunnerLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationRunnerLambdaFunctionArn"
+
+  RunnerLambdaFunctionName:
+    Description: "Name of the Runner Lambda function"
+    Value: !Ref RunnerLambdaFunction
+    Export:
+      Name: "CoreAutomationRunnerLambdaFunctionName"
+
+  RunnerLambdaExecutionRoleArn:
+    Description: "ARN of the Runner Lambda execution role"
+    Value: !GetAtt RunnerLambdaExecutionRole.Arn
+    Export:
+      Name: "CoreAutomationRunnerLambdaExecutionRoleArn"
+
+  RunnerLambdaLogGroupName:
+    Description: "Name of the Runner Lambda log group"
+    Value: !Ref RunnerLambdaLogGroup
+    Export:
+      Name: "CoreAutomationRunnerLambdaLogGroupName"
+      

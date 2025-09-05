@@ -1,0 +1,1256 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway and Lambda functions for Core Automation API'
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+    Description: "Scope prefix for resource names"
+  
+  ZipFileName:
+    Type: String
+    Description: "Name of the ZIP file containing Lambda code"
+    Default: "core-automation-api-lambda.zip"
+
+Resources:
+
+
+  # S3 Bucket for React Application
+  ReactAppBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Scope}core-automation-ui"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      # Bucket policy to restrict deployment access
+      NotificationConfiguration: {}  # Empty for now, can add later if needed
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-ui"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # S3 Bucket Policy - Restrict deployment access
+  ReactAppBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReactAppBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Allow the Lambda function to read React files
+          - Sid: AllowLambdaReadAccess
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt AppLambdaExecutionRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:ListBucket
+            Resource:
+              - !Sub "${ReactAppBucket.Arn}"
+              - !Sub "${ReactAppBucket.Arn}/*"
+          # Deny all other access (deployment role will be added later)
+          - Sid: DenyUnauthorizedAccess
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "${ReactAppBucket.Arn}"
+              - !Sub "${ReactAppBucket.Arn}/*"
+            Condition:
+              StringNotEquals:
+                "aws:PrincipalArn":
+                - !GetAtt AppLambdaExecutionRole.Arn
+ 
+  # Single CloudWatch Log Group for the entire application
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}core-automation"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-logs"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+          
+  # Lambda Execution Roles (minimal permissions)
+  AppLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-api-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "LambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: 
+                  - !GetAtt AppLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest*"
+                # Add S3 access for React app bucket
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "${ReactAppBucket.Arn}"
+                  - !Sub "${ReactAppBucket.Arn}/*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-lambda-execution-role"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Lambda Functions
+  ApiLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AppLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-api-lambda"
+      Runtime: python3.11
+      Handler: core_api.api.handler:handler
+      Role: !GetAtt AppLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: core-automation-ap-southeast-1
+        S3Key: !Sub "files/core-automation/api-gateway/main/latest/${ZipFileName}"
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: core
+          ENVIRONMENT: prod
+          PORTFOLIO: core-automation
+          APP: api-gateway
+          BRANCH: main
+          BUILD: latest
+          LOG_LEVEL: INFO
+          REACT_S3_BUCKET: !Ref ReactAppBucket
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  AuthLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AppLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-auth-lambda"
+      Runtime: python3.11
+      Handler: core_api.auth.handler:handler
+      Role: !GetAtt AppLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: core-automation-ap-southeast-1
+        S3Key: !Sub "files/core-automation/api-gateway/main/latest/${ZipFileName}"
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: core
+          ENVIRONMENT: prod
+          PORTFOLIO: core-automation
+          APP: api-gateway
+          BRANCH: main
+          BUILD: latest
+          LOG_LEVEL: INFO
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-auth-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  
+    # Static file serving Lambda function
+  StaticLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AppLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-static-lambda"
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt AppLambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import mimetypes
+          from botocore.exceptions import ClientError
+          from urllib.parse import unquote
+
+          s3 = boto3.client("s3")
+
+
+          def handler(event, context):
+              try:
+                  bucket = os.environ["REACT_S3_BUCKET"]
+
+                  # Get path from event
+                  path = event.get("pathParameters", {}).get("proxy", "") if event.get("pathParameters") else ""
+                  if not path:
+                      path = event.get("path", "/").lstrip("/")
+
+                  # URL decode the path
+                  path = unquote(path)
+
+                  # Handle OAuth discovery endpoint
+                  if path == ".well-known/oauth-authorization-server":
+                      return handle_oauth_discovery(event)
+
+                  # Root path serves index.html
+                  if not path or path == "/" or path == "":
+                      s3_key = "index.html"
+                  else:
+                      s3_key = path
+
+                  print(f"Serving: {s3_key} from bucket: {bucket}")
+
+                  try:
+                      # Get file from S3
+                      response = s3.get_object(Bucket=bucket, Key=s3_key)
+                      content = response["Body"].read()
+
+                      # Determine content type
+                      content_type, _ = mimetypes.guess_type(s3_key)
+                      if not content_type:
+                          if s3_key.endswith(".js"):
+                              content_type = "application/javascript"
+                          elif s3_key.endswith(".css"):
+                              content_type = "text/css"
+                          elif s3_key.endswith(".html"):
+                              content_type = "text/html"
+                          elif s3_key.endswith(".json"):
+                              content_type = "application/json"
+                          else:
+                              content_type = "application/octet-stream"
+
+                      # Set cache headers
+                      cache_control = "public, max-age=31536000" if "/assets/" in s3_key else "no-cache, no-store, must-revalidate"
+
+                      # Check if content is binary
+                      is_binary = not content_type.startswith(("text/", "application/json", "application/javascript"))
+
+                      return {
+                          "statusCode": 200,
+                          "headers": {"Content-Type": content_type, "Cache-Control": cache_control, "X-Content-Type-Options": "nosniff"},
+                          "body": content.decode("utf-8") if not is_binary else content,
+                          "isBase64Encoded": is_binary,
+                      }
+
+                  except ClientError as e:
+                      error_code = e.response["Error"]["Code"]
+                      if error_code == "NoSuchKey":
+                          # File not found, serve index.html for SPA routing
+                          try:
+                              print(f"File not found: {s3_key}, serving index.html for SPA routing")
+                              response = s3.get_object(Bucket=bucket, Key="index.html")
+                              content = response["Body"].read()
+                              return {
+                                  "statusCode": 200,
+                                  "headers": {"Content-Type": "text/html", "Cache-Control": "no-cache, no-store, must-revalidate"},
+                                  "body": content.decode("utf-8"),
+                                  "isBase64Encoded": False,
+                              }
+                          except ClientError:
+                              print("index.html not found in S3 bucket")
+                              return {
+                                  "statusCode": 404,
+                                  "headers": {"Content-Type": "text/html"},
+                                  "body": "<html><body><h1>React app not deployed yet</h1><p>Upload your React build to the S3 bucket to see your application.</p></body></html>",
+                                  "isBase64Encoded": False,
+                              }
+                      else:
+                          raise e
+
+              except Exception as e:
+                  print(f"Error serving static file: {str(e)}")
+                  return {
+                      "statusCode": 500,
+                      "headers": {"Content-Type": "application/json"},
+                      "body": json.dumps({"error": "Internal server error"}),
+                      "isBase64Encoded": False,
+                  }
+
+
+          def handle_oauth_discovery(event):
+              """Handle OAuth 2.0 Authorization Server Metadata (RFC 8414)"""
+
+              # Get the host from the request
+              headers = event.get("headers", {})
+              host = headers.get("Host") or headers.get("host", "")
+
+              # Determine if HTTPS (usually true in AWS)
+              forwarded_proto = headers.get("X-Forwarded-Proto") or headers.get("x-forwarded-proto", "https")
+              base_url = f"{forwarded_proto}://{host}"
+
+              discovery_data = {
+                  "issuer": base_url,
+                  "authorization_endpoint": f"{base_url}/auth/v1/authorize",
+                  "token_endpoint": f"{base_url}/auth/v1/token",
+                  "revocation_endpoint": f"{base_url}/auth/v1/revoke",
+                  "introspection_endpoint": f"{base_url}/auth/v1/introspect",
+                  "userinfo_endpoint": f"{base_url}/auth/v1/userinfo",
+                  "jwks_uri": f"{base_url}/auth/v1/jwks",
+                  "end_session_endpoint": f"{base_url}/auth/v1/logout",
+                  "response_types_supported": ["code"],
+                  "grant_types_supported": ["authorization_code", "refresh_token"],
+                  "code_challenge_methods_supported": ["S256"],
+                  "token_endpoint_auth_methods_supported": [
+                      "client_secret_basic",
+                      "client_secret_post",
+                      "none",
+                  ],
+                  # UPDATED: Add all supported scopes including profile scopes
+                  "scopes_supported": [
+                      # Profile scopes (OAuth format - what your frontend expects)
+                      "read:profile",
+                      "write:profile",
+                      # Registry/Client scopes (existing)
+                      "registry-clients:read",
+                      "registry-clients:write",
+                      # Application scopes
+                      "read:applications",
+                      "write:applications",
+                      # Portfolio scopes
+                      "read:portfolios",
+                      "write:portfolios",
+                      # Zone scopes
+                      "read:zones",
+                      "write:zones",
+                      # Deployment scopes
+                      "read:deployments",
+                      "write:deployments",
+                      # Admin scopes
+                      "admin:all",
+                      # Wildcard scopes
+                      "*:read",
+                      "*:write",
+                      "*:admin",
+                  ],
+                  "claims_supported": [
+                      "sub",
+                      "email",
+                      "name",
+                      "given_name",
+                      "family_name",
+                      "preferred_username",
+                      "updated_at",
+                      # Add profile-related claims
+                      "profile",
+                      "picture",
+                      "locale",
+                      "zoneinfo",
+                  ],
+                  # Add additional OAuth 2.0 metadata
+                  "subject_types_supported": ["public"],
+                  "id_token_signing_alg_values_supported": ["RS256"],
+                  "request_uri_parameter_supported": False,
+                  "require_request_uri_registration": False,
+                  "claims_parameter_supported": False,
+                  "request_parameter_supported": False,
+              }
+
+              return {
+                  "statusCode": 200,
+                  "headers": {
+                      "Content-Type": "application/json",
+                      "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+                      "Access-Control-Allow-Origin": "*",
+                      "Access-Control-Allow-Methods": "GET",
+                      "Access-Control-Allow-Headers": "Content-Type",
+                  },
+                  "body": json.dumps(discovery_data, indent=2),
+                  "isBase64Encoded": False,
+              }
+
+      Environment:
+        Variables:
+          REACT_S3_BUCKET: !Ref ReactAppBucket
+      Timeout: 30
+      MemorySize: 256
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-static-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+  
+  # Lambda Permission for Static Lambda
+  StaticLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StaticLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
+
+  # API Gateway  
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${Scope}core-automation-api"
+      Description: "Core Automation API Gateway"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: execute-api:Invoke
+            Resource: "*"
+          - Effect: Deny
+            Principal: "*"
+            Action: execute-api:Invoke
+            Resource: "*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # API Gateway Resources
+  AuthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: auth
+
+  AuthV1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref AuthResource
+      PathPart: v1
+
+  AuthProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref AuthV1Resource
+      PathPart: "{proxy+}"
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: api
+
+  ApiV1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiResource
+      PathPart: v1
+
+  ApiProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiV1Resource
+      PathPart: "{proxy+}"
+
+  # API Gateway Methods
+  AuthProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref AuthProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  ApiProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # Root method for serving React app at /
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !GetAtt ApiGateway.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StaticLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # Lambda Permissions for API Gateway
+  AuthLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
+
+  ApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:${AWS::AccountId}:restapis/${ApiGateway}/stages/*/*"
+
+  # Catch-all resource for React SPA routing
+  CatchAllResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "{proxy+}"
+
+  # Catch-all method for React SPA routing
+  CatchAllMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref CatchAllResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StaticLambdaFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - AuthProxyMethod
+      - ApiProxyMethod
+      - RootMethod
+      - CatchAllMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Description: "Initial deployment of Core Automation API"
+
+  # API Gateway Stage
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: prod
+      Description: "Prod stage for Core Automation API"
+      Variables:
+        SCOPE: !Ref Scope
+        CLIENT: core
+        ENVIRONMENT: prod
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+          ThrottlingRateLimit: 1000
+          ThrottlingBurstLimit: 2000
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-stage-prod"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # API Gateway CloudWatch Log Group
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${Scope}core-automation"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-gateway-logs"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # API Gateway Account (for CloudWatch logs)
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchRole.Arn
+
+  # CloudWatch Role for API Gateway
+  ApiGatewayCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-api-gateway-cloudwatch-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-gateway-cloudwatch-role"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # SNS Topic for Alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${Scope}core-automation-api-alerts"
+      DisplayName: "Core Automation API Alerts"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-alerts"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: api-gateway
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  StaticLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-static-lambda-errors"
+      AlarmDescription: "Alarm for Static Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref StaticLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-static-lambda-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  # CloudWatch Alarms
+  ApiGateway5xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-api-5xx-errors"
+      AlarmDescription: "Alarm for API Gateway 5xx errors"
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${Scope}core-automation-api"
+        - Name: Stage
+          Value: prod
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-5xx-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  ApiGateway4xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-api-4xx-errors"
+      AlarmDescription: "Alarm for API Gateway 4xx errors (including 401 unauthorized)"
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 20
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${Scope}core-automation-api"
+        - Name: Stage
+          Value: prod
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-4xx-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  ApiGatewayHighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-api-high-latency"
+      AlarmDescription: "Alarm for API Gateway high latency"
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${Scope}core-automation-api"
+        - Name: Stage
+          Value: prod
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-high-latency"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  ApiLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-api-lambda-errors"
+      AlarmDescription: "Alarm for API Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-lambda-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  AuthLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-auth-lambda-errors"
+      AlarmDescription: "Alarm for Auth Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AuthLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-auth-lambda-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  ApiLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-api-lambda-throttles"
+      AlarmDescription: "Alarm for API Lambda function throttles"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiLambdaFunction
+      AlarmActions:
+        - !Ref AlertTopic
+      OKActions:
+        - !Ref AlertTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-api-lambda-throttles"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+
+  # CloudWatch Dashboard
+  ApiDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${Scope}core-automation-api-dashboard"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "${Scope}core-automation-api", "Stage", "prod" ],
+                  [ ".", "4XXError", ".", ".", ".", "." ],
+                  [ ".", "5XXError", ".", ".", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Request Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Latency", "ApiName", "${Scope}core-automation-api", "Stage", "prod" ],
+                  [ ".", "IntegrationLatency", ".", ".", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Latency",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${Scope}core-automation-api-lambda" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Lambda Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${Scope}core-automation-auth-lambda" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Auth Lambda Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${Scope}core-automation-static-lambda" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Duration", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Static Lambda Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 12,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/apigateway/${Scope}core-automation'\\n| fields @timestamp, status, httpMethod, resourcePath, responseLength, ip\\n| filter status >= 400\\n| sort @timestamp desc\\n| limit 100",
+                "region": "${AWS::Region}",
+                "title": "Recent API Errors (4xx/5xx)",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 18,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${Scope}core-automation'\\n| fields @timestamp, @message, @requestId\\n| filter @message like /ERROR/\\n| extend function = case(@logStream like /api/, \"API\", @logStream like /auth/, \"AUTH\", @logStream like /static/, \"STATIC\", \"UNKNOWN\")\\n| sort @timestamp desc\\n| limit 100",
+                "region": "${AWS::Region}",
+                "title": "All Lambda Function Errors (with Function Type)",
+                "view": "table"
+              }
+            }
+          ]
+        }
+
+  
+Outputs:
+  # API Gateway Outputs
+  ApiGatewayId:
+    Description: "ID of the API Gateway"
+    Value: !Ref ApiGateway
+    Export:
+      Name: "CoreAutomationApiGatewayId"
+
+  ApiGatewayUrl:
+    Description: "URL of the API Gateway"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: "CoreAutomationApiGatewayUrl"
+
+  ApiGatewayStage:
+    Description: "Stage name of the API Gateway"
+    Value: !Ref ApiStage
+    Export:
+      Name: "CoreAutomationApiGatewayStage"
+
+  # Monitoring Outputs
+  AlertTopicArn:
+    Description: "ARN of the SNS topic for alerts"
+    Value: !Ref AlertTopic
+    Export:
+      Name: "CoreAutomationApiAlertTopicArn"
+
+  DashboardUrl:
+    Description: "URL of the CloudWatch Dashboard"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${Scope}core-automation-api-dashboard"
+    Export:
+      Name: "CoreAutomationApiDashboardUrl"
+
+  # Lambda Function Outputs
+  ApiLambdaFunctionArn:
+    Description: "ARN of the API Lambda function"
+    Value: !GetAtt ApiLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationApiLambdaFunctionArn"
+
+  AuthLambdaFunctionArn:
+    Description: "ARN of the Auth Lambda function"
+    Value: !GetAtt AuthLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationAuthLambdaFunctionArn"
+
+  ApiLambdaFunctionName:
+    Description: "Name of the API Lambda function"
+    Value: !Ref ApiLambdaFunction
+    Export:
+      Name: "CoreAutomationApiLambdaFunctionName"
+
+  AuthLambdaFunctionName:
+    Description: "Name of the Auth Lambda function"
+    Value: !Ref AuthLambdaFunction
+    Export:
+      Name: "CoreAutomationAuthLambdaFunctionName"
+
+  # Execution Role Outputs
+  AppLambdaExecutionRoleArn:
+    Description: "ARN of the App Lambda execution role"
+    Value: !GetAtt AppLambdaExecutionRole.Arn
+    Export:
+      Name: "CoreAutomationAppLambdaExecutionRoleArn"
+
+  # Deployment Outputs
+  LambdaCodeS3Bucket:
+    Description: "S3 bucket containing Lambda code"
+    Value: core-automation-ap-southeast-1
+    Export:
+      Name: "CoreAutomationApiLambdaCodeS3Bucket"
+
+  LambdaCodeS3BucketRegion:
+    Description: "S3 bucket region containing Lambda code"
+    Value: ap-southeast-1
+    Export:
+      Name: "CoreAutomationApiLambdaCodeS3BucketRegion"
+
+  LambdaCodeS3Key:
+    Description: "S3 key for Lambda code ZIP file"
+    Value: !Sub "files/core-automation/api-gateway/main/latest/${ZipFileName}"
+    Export:
+      Name: "CoreAutomationApiLambdaCodeS3Key"
+
+  LambdaCodeS3Url:
+    Description: "Full S3 URL for Lambda code"
+    Value: !Sub "s3://core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest/${ZipFileName}"
+    Export:
+      Name: "CoreAutomationApiLambdaCodeS3Url"
+
+  LambdaCodeHttpsUrl:
+    Description: "HTTPS URL for Lambda code (for cross-region access)"
+    Value: !Sub "https://s3.ap-southeast-1.amazonaws.com/core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest/${ZipFileName}"
+    Export:
+      Name: "CoreAutomationApiLambdaCodeHttpsUrl"
+
+  # React App Outputs
+  ReactAppBucketName:
+    Description: "Name of the S3 bucket for React application deployment"
+    Value: !Ref ReactAppBucket
+    Export:
+      Name: "CoreAutomationReactAppBucketName"
+
+  ReactAppBucketArn:
+    Description: "ARN of the S3 bucket for React application"
+    Value: !GetAtt ReactAppBucket.Arn
+    Export:
+      Name: "CoreAutomationReactAppBucketArn"
+
+  ReactAppUrl:
+    Description: "URL of the React application (same as API Gateway)"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: "CoreAutomationReactAppUrl"
+
+    # Static Lambda Function Output
+  StaticLambdaFunctionArn:
+    Description: "ARN of the Static file serving Lambda function"
+    Value: !GetAtt StaticLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationStaticLambdaFunctionArn"
+
+  StaticLambdaFunctionName:
+    Description: "Name of the Static file serving Lambda function"
+    Value: !Ref StaticLambdaFunction
+    Export:
+      Name: "CoreAutomationStaticLambdaFunctionName"

@@ -1,0 +1,284 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Deployspec Lambda Function - Manages deployment specifications and configurations
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+  ZipFileName:
+    Type: String
+    Default: "core-automation-api.zip"
+
+Resources:
+  # CloudWatch Log Group for Deployspec Lambda
+  DeployspecLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Scope}core-automation-deployspec-lambda"
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-deployspec-lambda-logs"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: deployspec
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # IAM Execution Role for Deployspec Lambda
+  DeployspecLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Scope}core-automation-deployspec-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "DeployspecLambdaBasicExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt DeployspecLambdaLogGroup.Arn
+              # Permission to read/write Files bucket (deployment specifications)
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                  - "s3:ListBucket"
+                Resource: 
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+              # Permission to read/write Artifacts bucket (deployspec outputs)
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                  - "s3:ListBucket"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutBucketVersioning"
+                Resource: 
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-deployspec-lambda-execution-role"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: deployspec
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Deployspec Lambda Function
+  DeployspecLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: DeployspecLambdaLogGroup
+    Properties:
+      FunctionName: !Sub "${Scope}core-automation-deployspec-lambda"
+      Runtime: python3.11
+      Handler: core_deployspec.deployspec.handler:handler
+      Role: !GetAtt DeployspecLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: core-automation-ap-southeast-1
+        S3Key: !Sub "files/core-automation/deployspec/main/latest/${ZipFileName}"
+      Timeout: 900  # 15 minutes for deployspec operations
+      MemorySize: 1024  # Good memory for file operations
+      Environment:
+        Variables:
+          SCOPE: !Ref Scope
+          CLIENT: core
+          ENVIRONMENT: prod
+          PORTFOLIO: core-automation
+          APP: deployspec
+          BRANCH: main
+          BUILD: latest
+          LOG_LEVEL: INFO
+          # S3 bucket configuration
+          FILES_BUCKET_NAME: core-automation-ap-southeast-1
+          ARTIFACTS_BUCKET_NAME: core-automation-ap-southeast-1
+          # Deployspec-specific settings
+          DEPLOYSPEC_PREFIX: "deployspecs/"
+          TEMPLATE_PREFIX: "templates/"
+          CONFIG_PREFIX: "configurations/"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-deployspec-lambda"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: deployspec
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  # Access control - ONLY invoker and administrators can invoke
+  DeployspecLambdaControlledAccess:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeployspecLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: !Ref AWS::AccountId
+
+  # Specific permission for Invoker Lambda
+  DeployspecLambdaInvokerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeployspecLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: lambda.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Scope}core-automation-invoker-lambda"
+
+  # CloudWatch Alarms for Monitoring
+  DeployspecLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-deployspec-lambda-errors"
+      AlarmDescription: "Alarm for Deployspec Lambda function errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DeployspecLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-deployspec-lambda-errors"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: deployspec
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  DeployspecLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-deployspec-lambda-throttles"
+      AlarmDescription: "Alarm for Deployspec Lambda function throttles"
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DeployspecLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-deployspec-lambda-throttles"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: deployspec
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  DeployspecLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Scope}core-automation-deployspec-lambda-duration"
+      AlarmDescription: "Alarm for Deployspec Lambda function duration"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600000  # 10 minutes in milliseconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DeployspecLambdaFunction
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub "${Scope}core-automation-deployspec-lambda-duration"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: prod
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: deployspec
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+Outputs:
+  DeployspecLambdaFunctionArn:
+    Description: "ARN of the Deployspec Lambda function"
+    Value: !GetAtt DeployspecLambdaFunction.Arn
+    Export:
+      Name: "CoreAutomationDeployspecLambdaFunctionArn"
+
+  DeployspecLambdaFunctionName:
+    Description: "Name of the Deployspec Lambda function"
+    Value: !Ref DeployspecLambdaFunction
+    Export:
+      Name: "CoreAutomationDeployspecLambdaFunctionName"
+
+  DeployspecLambdaExecutionRoleArn:
+    Description: "ARN of the Deployspec Lambda execution role"
+    Value: !GetAtt DeployspecLambdaExecutionRole.Arn
+    Export:
+      Name: "CoreAutomationDeployspecLambdaExecutionRoleArn"
+
+  DeployspecLambdaLogGroupName:
+    Description: "Name of the Deployspec Lambda log group"
+    Value: !Ref DeployspecLambdaLogGroup
+    Export:
+      Name: "CoreAutomationDeployspecLambdaLogGroupName"
