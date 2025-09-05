@@ -635,20 +635,25 @@ def _queue_email_via_security_chain(client: str, email_type: str, to_email: str,
 
         send_email_action = SendEmailActionResource(metadata=metadata, spec=spec)
 
+        # Load the applications to the deployment package
         package_details = PackageDetails(actions=[send_email_action])
 
+        # Defines the applicationperforming the action
         deployment_details = DeploymentDetails(
             client=client,  # Customer: core, acme, bbr, etc.
-            portfolio="automation",  # System: automation (email system runs in automation portfolio)
+            portfolio="core-automation",  # System: automation (email system runs in automation portfolio)
             # branch=None, build=None (not specified for portfolio scope)
         )
 
+        # Build the task payload for the invoker.  Note, you can't put Jinja2 action payloads in this method.
+        # see the "compile" task for core_deployspec for that.
         task_payload = TaskPayload(
             correlation_id=log.get_correlation_id(),
             client=client,
-            task="deploy",  # "deploy" means "run this program"
+            task="deploy",  # "deploy" means "run the actions in this package"
             deployment_details=deployment_details,
             package=package_details,
+            type="deployspec",  # "deployspec" means "here is a full package spec"
         )
 
         log.debug("Email task queued:", details=task_payload.model_dump())
