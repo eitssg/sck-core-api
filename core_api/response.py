@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union, Any
+from jwcrypto.jwt import JWTInvalidClaimFormat
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import BaseModel, Field, computed_field
 from typing import Optional
@@ -388,7 +389,7 @@ class ProxyResponse(BaseModel):
     @classmethod
     def from_response(
         cls,
-        response: Union[Response, ErrorResponse],
+        response: Response,
         correlation_id: Optional[str] = None,
     ) -> "ProxyResponse":
         """Convert core_db Response/ErrorResponse to ProxyResponse.
