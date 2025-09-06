@@ -1,10 +1,13 @@
+from re import S
 from statistics import correlation
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import random
 import os
+from urllib.parse import urlencode
 import bcrypt
 from datetime import timedelta
+from botocore import response
 from core_db.registry import ClientFact
 import httpx
 
@@ -19,18 +22,28 @@ from core_execute.actionlib.actions.system.send_email import SendEmailActionReso
 from core_framework.models import DeploymentDetails, PackageDetails, TaskPayload
 from core_framework.models import ActionMetadata
 
-from core_db.response import ErrorResponse, Response, SuccessResponse
+from core_db.response import ErrorResponse, Response, SuccessResponse, cookie_opts
 from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
+
+from core_api.response import RedirectResponse
 
 from ..request import RouteEndpoint
 
 from ..email.smtp import send_password_updated_email
 
-from .constants import JWT_SECRET_KEY, JWT_ALGORITHM, JWT_SESSION_MINUTES
+from .constants import (
+    JWT_SECRET_KEY,
+    JWT_ALGORITHM,
+    SCK_TOKEN_SESSION_MINUTES,
+    SCK_TOKEN_COOKIE_NAME,
+    SCK_TOKEN_REFRESH_SECONDS,
+    SCK_SESSION_ABSOLUTE_MAX_MINUTES,
+)
 from .tools import (
     JwtPayload,
+    create_access_token_with_sts,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
@@ -39,6 +52,7 @@ from .tools import (
     create_basic_session_jwt,
     get_oauth_app_info,
     is_password_compliant,
+    revoke_access_token,
 )
 
 
@@ -265,7 +279,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
     try:
 
         # Create session JWT with proper parameter order
-        minutes = int(JWT_SESSION_MINUTES)
+        minutes = int(SCK_TOKEN_SESSION_MINUTES)
         jwt_token = create_basic_session_jwt(client_id, client, user_id, minutes)
 
         # Return a short-lived session token (no cookies) so SPA can call /authorize → /token
@@ -282,6 +296,36 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
 
     except Exception as e:
         return ErrorResponse(code=500, message="Issuing session failed", exception=e)
+
+
+def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """Get the authenticated user's profile.
+
+    Route:
+        GET /auth/v1/me
+
+    Behavior:
+        - Requires valid Authorization: Bearer token
+    """
+
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    if jwt_payload is None:
+        return ErrorResponse(code=401, message="Unauthorized")
+
+    if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
+        log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /auth/v1/me")
+        return ErrorResponse(code=429, message="rate_limited")
+
+    try:
+        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
+        data = UserProfile(**response.data).model_dump()
+    except Exception as e:
+        log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
+        return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
+
+    log.debug(f"Retrieved profile for user {jwt_payload.sub}", details=data)
+
+    return SuccessResponse(data=data)
 
 
 def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
@@ -533,30 +577,27 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
             log.debug(f"Password validation failed for user {user_id}")
             return ErrorResponse(code=401, message="Authorization Failed")
 
-        minutes = int(JWT_SESSION_MINUTES)
+        minutes = int(SCK_TOKEN_SESSION_MINUTES)
 
         # Create session JWT with NO AWS credentials - just user identity
         session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
-        seconds = int(timedelta(minutes=minutes).total_seconds())
 
-        resp_data = {
-            "token": session_jwt,
-            "expires_in": seconds,
-            "token_type": "Bearer",
-        }
+        resp_data = {}
         if returnTo:
             resp_data["returnTo"] = returnTo
 
         log.info(f"User {user_id} authenticated successfully for client '{client}'", details=resp_data)
 
-        return SuccessResponse(data=resp_data)
+        resp = SuccessResponse()
+        resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())
+        return resp
 
     except Exception as e:
         log.error(f"Login error for {user_id}: {e}")
         return ErrorResponse(code=500, message="Authentication processing error", exception=e)
 
 
-def forgot_password(*, body: dict = None, **kwargs):
+def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
     """Generate forgot password token and queue email via API→Invoker→Runner→StepFunction chain."""
 
     valid_characters = "0123456789"
@@ -565,6 +606,10 @@ def forgot_password(*, body: dict = None, **kwargs):
     email = body.get("email", None)
     client = body.get("client", "core")
     client_id = body.get("client_id", "")
+
+    if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
+        log.warning(f"Rate limit exceeded for on /auth/v1/forgot-password")
+        return ErrorResponse(code=429, message="rate_limited")
 
     if not email:
         return ErrorResponse(code=400, message="Email Address is required")
@@ -587,7 +632,8 @@ def forgot_password(*, body: dict = None, **kwargs):
         log.warn("Failed to create forgot password request for %s: %s", email, str(e))
         return ErrorResponse(code=500, message="Failed to create forgot password request", exception=e)
 
-    server_url = os.getenv("CLIENT_NEW_PASSWORD", "http://localhost:8080/new-password")
+    host = os.getenv("CLIENT_HOST", "http://localhost:8080")
+    server_url = host + os.getenv("CLIENT_NEW_PASSWORD", "/new-password")
 
     try:
         _queue_email_via_security_chain(
@@ -825,6 +871,125 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
         return ErrorResponse(code=500, message=f"Failed to set new password.  Please contact support.", exception=e)
 
 
+def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs):
+    """OAuth/OpenID Connect logout endpoint.
+
+    Route:
+        GET /auth/v1/logout
+    Query:
+        post_logout_redirect_uri (optional): Where to redirect after logout
+        state (optional): Opaque value to maintain state
+
+    Returns:
+        Response: Logout confirmation or redirect
+    """
+    post_logout_redirect_uri = query_params.get("post_logout_redirect_uri")
+    state = query_params.get("state")
+
+    # Rate limiting
+    if not check_rate_limit(headers, "oauth_logout", max_attempts=10, window_minutes=1):
+        log.warn("Rate limit exceeded on /auth/v1/logout")
+        return ErrorResponse(code=429, message="rate_limited")
+
+    # Get current user to validate logout
+    jwt_payload, _ = get_authenticated_user(cookies)
+    if jwt_payload is not None:
+        revoke_access_token(jwt_payload)
+
+    # Build logout redirect URL
+    if post_logout_redirect_uri:
+        # Validate redirect URI (you might want to check against registered URIs)
+        params = {}
+        if state:
+            params["state"] = state
+
+        redirect_url = post_logout_redirect_uri
+        if params:
+            separator = "&" if "?" in redirect_url else "?"
+            redirect_url = f"{redirect_url}{separator}{urlencode(params)}"
+
+        # Clear session cookies and redirect
+        response = RedirectResponse(url=redirect_url)
+    else:
+        response = SuccessResponse(code=204)
+
+    response.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
+    return response
+
+
+def refresh_access_token(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """Refresh access token using a valid refresh token.
+
+    Route:
+        POST /auth/v1/refresh
+
+    Behavior:
+        - Validates the provided refresh token
+        - Issues a new access token if the refresh token is valid
+        - Returns the new access token and its expiration time
+
+    JWT Claims (access token):
+        - sub: User ID (email)
+        - typ: "access"
+        - iss: "sck-core-api"
+        - iat/exp: Timestamps
+        - jti: Unique token ID
+        - cid: OAuth client ID
+        - cnm: Client name/slug for data operations
+
+    Response:
+        Success (204):
+    """
+
+    if not check_rate_limit(headers, "session_refresh", max_attempts=10, window_minutes=1):
+        log.warn("Rate limit exceeded on /auth/v1/session")
+        return ErrorResponse(code=429, message="rate_limited")
+
+    # Validate the refresh token
+    jwt_payload, _ = get_authenticated_user(cookies)
+    if not jwt_payload or jwt_payload.typ != "session":
+        resp = ErrorResponse(code=401, message="invalid_session")
+        resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
+        return resp
+
+    client = jwt_payload.cnm
+    user_id = jwt_payload.sub
+    client_id = jwt_payload.cid
+    scope = jwt_payload.scp or "read"
+    auth_time = jwt_payload.auth_time
+
+    now = int(datetime.now(tz=timezone.utc).timestamp())
+    seconds_left = jwt_payload.exp - now if jwt_payload.exp else 0
+    # If expired, require re-auth and clear cookie
+    if seconds_left <= 0:
+        resp = ErrorResponse(code=401, message="session_expired")
+        resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
+        return resp
+
+    if seconds_left > int(SCK_TOKEN_REFRESH_SECONDS):
+        return SuccessResponse(code=204)
+
+    # Enforce absolute session max age if auth_time is present
+    if auth_time:
+        absolute_deadline = int(auth_time) + int(SCK_SESSION_ABSOLUTE_MAX_MINUTES) * 60
+        if now >= absolute_deadline:
+            resp = ErrorResponse(code=401, message="session_too_old")
+            resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
+            return resp
+
+    minutes = int(SCK_TOKEN_SESSION_MINUTES)
+
+    # Create session JWT for session validation
+    # Ensure scope is a string
+    scope_str = scope if isinstance(scope, str) and scope else "read"
+
+    session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes, scope_str, auth_time)
+
+    resp = SuccessResponse(code=204)
+    resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())  # 30 minutes
+    return resp
+
+
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/signup": RouteEndpoint(
         oauth_signup,
@@ -832,7 +997,12 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
         allow_anonymous=True,
         client_isolation=False,
     ),
-    "PUT:/auth/v1/users/me": RouteEndpoint(
+    "GET:/auth/v1/me": RouteEndpoint(
+        get_user,
+        permissions=["user:read"],
+        client_isolation=False,
+    ),
+    "PUT:/auth/v1/me": RouteEndpoint(
         update_user,
         permissions=["user:update"],
         client_isolation=False,
@@ -840,6 +1010,12 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/login": RouteEndpoint(
         user_login,
         permissions=["user:login"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/refresh": RouteEndpoint(
+        refresh_access_token,
+        permissions=["user:refresh"],
         allow_anonymous=True,
         client_isolation=False,
     ),
@@ -858,6 +1034,12 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "PUT:/auth/v1/password": RouteEndpoint(
         set_new_password,
         permissions=["user:set_new_password"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/logout": RouteEndpoint(
+        user_logout,
+        permissions=["user:logout"],
         allow_anonymous=True,
         client_isolation=False,
     ),

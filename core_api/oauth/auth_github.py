@@ -17,6 +17,7 @@ from .constants import (
     GITHUB_CLIENT_SECRET,
     GITHUB_REDIRECT_URI,
     SCK_TOKEN_COOKIE_NAME,
+    SCK_TOKEN_SESSION_MINUTES,
 )
 
 from .tools import (
@@ -318,8 +319,9 @@ async def github_callback(
 
     # 7. CREATE SESSION JWT AND REDIRECT TO OAUTH FLOW
     try:
+        minutes = int(SCK_TOKEN_SESSION_MINUTES)
         # Create session JWT for OAuth server (30 minute expiry)
-        session_token = create_basic_session_jwt(client_id, client, user_id, minutes=30)
+        session_token = create_basic_session_jwt(client_id, client, user_id, minutes=minutes)
 
         # Create state parameter with AWS credential status
         credential_state = f"github_oauth:{aws_creds_status}"
@@ -356,7 +358,7 @@ async def github_callback(
         resp = RedirectResponse(url=oauth_url, status_code=302)
 
         # Set session cookie for OAuth server
-        resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_token, max_age=30 * 60, **cookie_opts())
+        resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_token, max_age=minutes * 60, **cookie_opts())
 
         # Clean up GitHub OAuth cookies
         resp.delete_cookie("github_oauth_state", path="/")

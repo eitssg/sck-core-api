@@ -279,6 +279,7 @@ def generate_proxy_event(
     query_params: Dict[str, str],
     body: str,
     headers: Dict[str, str],
+    cookies: Optional[Dict[str, str]] = None,
     is_base64_encoded: bool = False,
     stage: str = "local",
 ) -> ProxyEvent:
@@ -365,12 +366,15 @@ def generate_proxy_event(
         apiId="local",
     )
 
+    cookie_list = [f"{k}={v}" for k, v in (cookies or {}).items()] if cookies else None
+
     # Create complete ProxyEvent
     rv = ProxyEvent(
         resource=resource,
         path=path,
         httpMethod=method,
         headers=headers,
+        cookies=cookie_list,
         multiValueHeaders=multi_value_headers,
         queryStringParameters=query_params,
         multiValueQueryStringParameters=multi_value_query_params,

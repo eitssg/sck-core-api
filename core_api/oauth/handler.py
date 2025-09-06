@@ -262,10 +262,12 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             if endpoint_route.client_isolation:
                 validate_client_access(security_context, request)
 
+        cookie_dict = {c.split("=")[0]: c.split("=")[1] for c in request.cookies} if request.cookies else {}
+
         # Call the endpoint handler
         response: Response = endpoints[route_key].handler(
             headers=request.headers,
-            cookies=request.cookies or {},
+            cookies=cookie_dict,
             query_params=request.queryStringParameters or {},
             path_params=request.pathParameters or {},
             body=request.body or {},

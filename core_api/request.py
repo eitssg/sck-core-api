@@ -579,7 +579,7 @@ class ProxyEvent(BaseModel):
         description="Multi-value HTTP headers (AWS API Gateway format)",
         default_factory=dict,
     )
-    cookies: Optional[Dict[str, str]] = Field(None, description="Parsed cookies from request (AWS API Gateway v2.0+ format)")
+    cookies: Optional[list[str]] = Field(None, description="Parsed cookies from request (AWS API Gateway v2.0+ format)")
     isBase64Encoded: bool = Field(
         description="Whether the body content is base64 encoded (for binary data)",
         default=False,

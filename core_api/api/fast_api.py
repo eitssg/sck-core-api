@@ -47,7 +47,22 @@ from .headers import SimpleProxyHeadersMiddleware
 
 
 def get_static_dir() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "sck-core-ui", "dist"))
+    """Resolve the absolute path to the UI build (dist) folder.
+
+    Resolution order (first existing wins):
+    1. Env override SCK_UI_DIST or REACT_STATIC_DIR
+    2. Monorepo default: <repo_root>/sck-core-ui/dist (calculated relative to this file)
+    """
+
+    # 1) Environment override
+    env_static = os.getenv("SCK_UI_DIST") or os.getenv("REACT_STATIC_DIR")
+    if env_static and os.path.exists(env_static):
+        return os.path.abspath(env_static)
+
+    # 2) Monorepo default: .../simple-cloud-kit/sck-core-ui/dist
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    candidate = os.path.join(repo_root, "sck-core-ui", "dist")
+    return candidate
 
 
 # Read allowed origins from env (comma-separated), fall back to known UI origins
@@ -297,8 +312,11 @@ def get_app() -> FastAPI:
         if full_path == "health":
             raise HTTPException(status_code=404, detail="Health endpoint should be handled above")
 
-        # Skip assets routes - they're handled by the StaticFiles mount
+        # Assets: serve directly as a fallback (StaticFiles mount should handle this first)
         if full_path.startswith("assets/"):
+            asset_file = os.path.join(static_dir, full_path)
+            if os.path.exists(asset_file):
+                return FileResponse(asset_file)
             raise HTTPException(status_code=404, detail="Asset not found")
 
         # Check for root-level files first (favicon.ico, robots.txt, etc.)

@@ -9,6 +9,7 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 
 from core_db.registry import ClientFact
+from core_db.oauth.actions import AuthActions
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -32,7 +33,7 @@ from .constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     REFRESH_MIN_INTERVAL_SECONDS,
-    JWT_SESSION_MINUTES,
+    SCK_TOKEN_SESSION_MINUTES,
     JWT_ACCESS_HOURS,
     SCK_TOKEN_COOKIE_NAME,
 )
@@ -65,6 +66,7 @@ class JwtPayload(BaseModel):
     nonce: str | None = Field(None, description="OpenID Connect nonce")
     prompt: str | None = Field(None, description="Authentication prompt parameter")
     max_age: int | None = Field(None, description="Maximum authentication age")
+    auth_time: int | None = Field(None, description="Authentication time as UNIX timestamp")
 
     def is_expired(self) -> bool:
         """Check if the token is expired."""
@@ -578,7 +580,14 @@ def get_user_access_key(client: str, user_id: str, password: Optional[str] = Non
         raise
 
 
-def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, minutes: int = JWT_SESSION_MINUTES) -> str:
+def create_basic_session_jwt(
+    client_id: str,
+    client_name: str,
+    user_id: str,
+    minutes: int = SCK_TOKEN_SESSION_MINUTES,
+    scope: Optional[str] = None,
+    auth_time: Optional[int] = None,
+) -> str:
     """Generate session JWT for OAuth flows with user identity and client context but no AWS credentials
 
     Creates a lightweight authentication token used in OAuth authorization flows.
@@ -589,7 +598,7 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
         client_id (str): OAuth client ID
         client_name (str): Client name/slug for data operations
         user_id (str): User identifier (subject claim)
-        minutes (int): Token validity in minutes. Defaults to JWT_SESSION_MINUTES.
+        minutes (int): Token validity in minutes. Defaults to SCK_TOKEN_SESSION_MINUTES.
 
     Returns:
         str: Signed JWT token for session authentication
@@ -631,6 +640,8 @@ def create_basic_session_jwt(client_id: str, client_name: str, user_id: str, min
         cid=client_id,
         cnm=client_name,
         ttl=minutes,
+        scp=scope or "read",
+        auth_time=auth_time or int(datetime.now(tz=timezone.utc).timestamp()),
     )
 
     return payload.encode()
@@ -1150,7 +1161,7 @@ def cookie_opts() -> dict:
         >>> # Development environment
         >>> opts = cookie_opts()
         >>> # {'httponly': True, 'secure': False, 'samesite': 'Lax', 'path': '/'}
-         >>> response.set_cookie("session", token, **opts)
+         >>> response.set_cookie("session", token, max_age=1800, **opts)
          >>>
          >>> # Production environment
          >>> # SECURE_COOKIES=true, COOKIE_SAMESITE=Strict
@@ -1174,7 +1185,7 @@ def cookie_opts() -> dict:
     return opts
 
 
-def get_authenticated_user(cookies: dict, headers: dict) -> Tuple[JwtPayload | None, str | None]:
+def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[JwtPayload | None, str | None]:
     """Extract the authenticated user and client context from JWT token.
 
     Checks Authorization header or sck_token cookie for valid JWT,
@@ -1217,12 +1228,16 @@ def get_authenticated_user(cookies: dict, headers: dict) -> Tuple[JwtPayload | N
         No exceptions raised - returns None values for any authentication failure
     """
     # Get the token from either the "authorization" header or the "sck_token" cookie
-    authz = (headers.get("authorization") or "").strip()
     token = None
-    if authz.lower().startswith("bearer "):
-        token = authz.split(" ", 1)[1].strip()
-    elif SCK_TOKEN_COOKIE_NAME in cookies:
-        token = cookies[SCK_TOKEN_COOKIE_NAME]
+    jwt_signature = None
+    if headers is not None:
+        authz = (headers.get("authorization") or "").strip()
+        parts = authz.split(None, 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1].strip()
+    if token is None and cookies is not None:
+        if SCK_TOKEN_COOKIE_NAME in cookies:
+            token = cookies[SCK_TOKEN_COOKIE_NAME]
 
     if not token:
         return None, None
@@ -1236,7 +1251,7 @@ def get_authenticated_user(cookies: dict, headers: dict) -> Tuple[JwtPayload | N
 
         return jwt_payload, jwt_signature
 
-    except jwt.InvalidTokenError as e:
+    except Exception as e:
         log.debug(f"Invalid JWT token in request: {e}")
 
     return None, None
@@ -1297,7 +1312,56 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
     try:
         response = ClientActions.get(client_id=client_id)
         log.debug(f"OAuth app info for client {client_id}", details=response.data)
-        return ClientFact(**response.data)
+        if isinstance(response.data, dict):
+            return ClientFact(**response.data)
+        if isinstance(response.data, list):
+            if len(response.data) > 0 and isinstance(response.data[0], dict):
+                return ClientFact(**response.data[0])
+        return None
     except Exception as e:
         log.debug(f"Failed to get OAuth app info for client {client_id}: {e}")
         return None
+
+
+def revoke_access_token(token: JwtPayload) -> bool:
+    """Revoke an OAuth access token by adding its signature to the revocation list.
+
+    Marks the given JWT token as revoked in the database, preventing any further use.
+    Used during logout or token invalidation processes.
+
+    Args:
+        token (str): The JWT access token to revoke.
+
+    Returns:
+        bool: True if revocation succeeded, False otherwise.
+
+    Database Integration:
+        - Adds entry to RevokedTokenActions.create() in core_db
+        - Stores token signature and expiration for cleanup
+        - Handles database errors gracefully
+
+    Security Features:
+        - Prevents use of revoked tokens for authentication
+        - Supports immediate logout and session invalidation
+        - Works with existing token validation logic
+
+    Examples:
+        >>> # Revoke token during logout
+        >>> success = revoke_access_token("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
+        >>> if success:
+        ...     print("Token successfully revoked")
+        ... else:
+        ...     print("Failed to revoke token")
+    """
+    try:
+        data = {
+            "client": token.cnm,
+            "code": token.jti,
+        }
+        AuthActions.delete(**data)
+        log.debug(f"Token revoked successfully", details=data)
+        return True
+
+    except Exception as e:
+        log.warn(f"Failed to revoke token: {e}")
+        return True

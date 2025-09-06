@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List, Optional, Union, Any
 from jwcrypto.jwt import JWTInvalidClaimFormat
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -228,11 +229,11 @@ class ProxyResponse(BaseModel):
 
                 response = ProxyResponse(statusCode=200)
                 response.set_binary_body(pdf_data, "application/pdf")
-                response.add_header("Content-Disposition", "attachment; filename=report.pdf")
+                response.add_header("content-disposition", "attachment; filename=report.pdf")
         """
         self.body = base64.b64encode(content).decode("utf-8")
         self.isBase64Encoded = True
-        self.add_header("Content-Type", content_type)
+        self.add_header("content-type", content_type)
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -272,6 +273,9 @@ class ProxyResponse(BaseModel):
     ) -> "ProxyResponse":
         """Create a JSON response.
 
+        unless you specify SCK_API_NO_CACHE=false in the environment,
+        cache-control headers will be added to prevent caching by default.
+
         Args:
             data (Any): Data to serialize as JSON
             status_code (int): HTTP status code (default: 200)
@@ -291,6 +295,8 @@ class ProxyResponse(BaseModel):
                     cookies=["session=abc123; HttpOnly"]
                 )
         """
+        add_cache_control = os.getenv("SCK_API_NO_CACHE", "true").lower() in ("1", "true", "yes")
+
         response = cls(statusCode=status_code)
         response.set_json_body(data)
 
@@ -301,6 +307,11 @@ class ProxyResponse(BaseModel):
         if cookies:
             for cookie in cookies:
                 response.add_cookie(cookie)
+
+        if add_cache_control:
+            response.add_header("cache-control", "no-cache, no-store, must-revalidate")
+            response.add_header("pragma", "no-cache")
+            response.add_header("expires", "0")
 
         return response
 
@@ -332,8 +343,10 @@ class ProxyResponse(BaseModel):
                     cookies=["oauth_state=abc123; Max-Age=600; HttpOnly"]
                 )
         """
+        add_cache_control = os.getenv("SCK_API_NO_CACHE", "true").lower() in ("1", "true", "yes")
+
         response = cls(statusCode=status_code, body="")
-        response.add_header("Location", location)
+        response.add_header("location", location)
 
         if headers:
             for name, value in headers.items():
@@ -342,6 +355,11 @@ class ProxyResponse(BaseModel):
         if cookies:
             for cookie in cookies:
                 response.add_cookie(cookie)
+
+        if add_cache_control:
+            response.add_header("cache-control", "no-cache, no-store, must-revalidate")
+            response.add_header("pragma", "no-cache")
+            response.add_header("expires", "0")
 
         return response
 
@@ -420,7 +438,7 @@ class ProxyResponse(BaseModel):
             return cls.json(
                 data=error_data,
                 status_code=response.code,
-                headers={"X-Correlation-ID": correlation_id} if correlation_id else {},
+                headers={"x-correlation-id": correlation_id} if correlation_id else {},
             )
         else:
             response_data = response.data if hasattr(response, "data") else {}
@@ -430,7 +448,7 @@ class ProxyResponse(BaseModel):
             return cls.json(
                 data=response_data,
                 status_code=response.code,
-                headers={"X-Correlation-ID": correlation_id} if correlation_id else {},
+                headers={"x-correlation-id": correlation_id} if correlation_id else {},
             )
 
 
@@ -461,6 +479,24 @@ def get_proxy_response(response: Response) -> ProxyResponse:
         >>> proxy_response = get_proxy_response(response)
         >>> print(proxy_response.statusCode)  # 200
     """
+
+    # Normalize headers from Response (can be list[dict] or dict) into a single dict
+    def _normalize_headers(h) -> Dict[str, str]:
+        if not h:
+            return {}
+        if isinstance(h, dict):
+            return {str(k): str(v) for k, v in h.items()}
+        if isinstance(h, list):
+            out: Dict[str, str] = {}
+            for item in h:
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        out[str(k)] = str(v)
+            return out
+        return {}
+
+    headers_dict = _normalize_headers(getattr(response, "headers", None))
+
     # Handle redirect responses (3xx status codes)
     if 300 <= response.code < 400:
         # Determine redirect location from multiple possible sources
@@ -486,13 +522,15 @@ def get_proxy_response(response: Response) -> ProxyResponse:
             return ProxyResponse.json(
                 data=response.model_dump(),
                 status_code=response.code,
-                cookies=response.cookies,
+                cookies=response.cookies,  # Use cookies directly from Response
+                headers=headers_dict,  # Normalized single-value headers
             )
 
         return ProxyResponse.redirect(
             location=location,
             status_code=response.code,
             cookies=response.cookies,  # Use cookies directly from Response
+            headers=headers_dict,  # Normalized single-value headers
         )
 
     # Handle all other responses (1xx, 2xx, 4xx, 5xx) as JSON
@@ -500,6 +538,7 @@ def get_proxy_response(response: Response) -> ProxyResponse:
         data=response.model_dump(),
         status_code=response.code,
         cookies=response.cookies,  # Use cookies directly from Response
+        headers=headers_dict,  # Normalized single-value headers
     )
 
 

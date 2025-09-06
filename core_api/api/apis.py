@@ -179,6 +179,7 @@ async def generate_event_context(request: Request, identity: CognitoIdentity) ->
     query_params = dict(request.query_params)
     path_params = dict(request.path_params)
     headers = dict(request.headers)
+    cookies = dict(request.cookies)
     body = await request.body()
 
     # Handle binary vs text content properly
@@ -207,6 +208,7 @@ async def generate_event_context(request: Request, identity: CognitoIdentity) ->
         query_params=query_params,
         body=body_data,
         headers=headers,
+        cookies=cookies,
         is_base64_encoded=is_base64_encoded,
         stage="local",  # API Gateway stage
     )

@@ -4,9 +4,10 @@ from typing import Set
 
 # JWT Configuration
 SCK_TOKEN_COOKIE_NAME = "sck_token"
+SCK_TOKEN_REFRESH_SECONDS = 120  # 2 minutes
+SCK_TOKEN_SESSION_MINUTES = os.getenv("SCK_TOKEN_SESSION_MINUTES", "30")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")
-JWT_SESSION_MINUTES = os.getenv("JWT_SESSION_MINUTES", "30")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 # Validate algorithm is supported
 SUPPORTED_ALGORITHMS = ["HS256", "HS384", "HS512"]
@@ -36,6 +37,10 @@ CRED_ENC_KEY_B64 = os.getenv("CRED_ENC_KEY", "")
 
 # Abuse/cost controls (stateless; configurable via env)
 REFRESH_MIN_INTERVAL_SECONDS = int(os.getenv("REFRESH_MIN_INTERVAL_SECONDS", "300"))  # 5 minutes
+
+# Absolute session max age: after this many minutes from initial auth_time, refresh is denied
+# and the client must re-authenticate. Defaults to 8 hours.
+SCK_SESSION_ABSOLUTE_MAX_MINUTES = int(os.getenv("SCK_SESSION_ABSOLUTE_MAX_MINUTES", "480"))
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 API_HOST = os.getenv("API_HOST", "localhost")

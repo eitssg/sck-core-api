@@ -1,11 +1,12 @@
 from typing import Set, Optional, Tuple
 
+import os
 import hashlib
 import base64
 import uuid
 import secrets
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 from datetime import datetime, timedelta, timezone
 
@@ -27,11 +28,8 @@ from ..response import (
     OAuthTokenResponse,
     OAuthUserInfoResponse,
     OAuthJWKSResponse,
-    OAuthLogoutResponse,
     OAuthCredentialResponse,
 )
-
-
 from ..security import Permission
 
 from .tools import (
@@ -97,7 +95,7 @@ def _parse_basic_auth(
         raw = base64.b64decode(b64).decode("utf-8")
         client_id, client_secret = raw.split(":", 1)
         return client_id, client_secret
-    except Exception:
+    except Exception as e:
         return None, None
 
 
@@ -216,6 +214,20 @@ def oauth_authorize(
 ) -> Response:
     """OAuth 2.0 Authorization Code endpoint.
 
+
+    Code	When it triggers	                    Current message (summary)	UI label
+    mci 	Missing client_id param	                invalid_request: Missing required parameter: client_id	Missing client_id
+    mrt	    Missing response_type param	            invalid_request: Missing required parameter: response_type	Missing response_type
+    urt	    response_type != code	                unsupported_response_type	Unsupported response_type
+    mru	    Missing redirect_uri param	            invalid_request: Missing required parameter: redirect_uri	Missing redirect_uri
+    isf 	Invalid state format (too long/newlines)	invalid_request: Invalid state parameter format	Invalid state format
+    rle	    Rate limit exceeded	                    rate_limited	Rate limited
+    cmm	    Session token                           invalid/wrong type (not “session”)	invalid_token_type / invalid token for auth flow	Invalid session token
+    cmc	    client_id in request doesn’t            match token cid	client_mismatch	Client mismatch
+    cid	    client_id not found in DB	            invalid_request: Invalid client_id	Invalid OAuth Client ID
+    cnm	    jwt_payload.cnm != app_info.client	    invalid_request: Client mismatch: <cnm> != <client>	Client namespace mismatch
+    rnr	    redirect_uri not registered for client	invalid_request: redirect_uri not registered	Redirect URI not registered
+
     Route:
         GET /auth/v1/authorize
 
@@ -238,73 +250,65 @@ def oauth_authorize(
     code_challenge = query_params.get("code_challenge")
     code_challenge_method = query_params.get("code_challenge_method") or "S256"
 
-    log.debug(f"Received OAuth authorization request:", details=query_params)
+    log.debug("Received OAuth authorization request", details=query_params)
+
+    # Helper: build absolute UI URL for login redirects using CLIENT_HOST
+    def _ui_url(path_with_query: str) -> str:
+        base = (os.getenv("CLIENT_HOST") or "").strip()
+        if not base:
+            return path_with_query
+        base = base.rstrip("/")
+        if not path_with_query.startswith("/"):
+            path_with_query = "/" + path_with_query
+        return f"{base}{path_with_query}"
 
     # 1) Validate ALL required parameters BEFORE rate limiting or DB calls
     if not client_id:
-        return OAuthErrorResponse(code=400, error_description="invalid_request: Missing required parameter: client_id")
+        return RedirectResponse(url=_ui_url("/login?error=mci"))
 
     if not response_type:
-        return OAuthErrorResponse(code=400, error_description="invalid_request: Missing required parameter: response_type")
+        return RedirectResponse(url=_ui_url("/login?error=mrt"))
 
     if response_type != "code":
-        return OAuthErrorResponse(code=400, error_description="unsupported_response_type: Only response_type=code is supported")
+        return RedirectResponse(url=_ui_url("/login?error=urt"))
 
     if not redirect_uri:
-        return OAuthErrorResponse(code=400, error_description="invalid_request: Missing required parameter: redirect_uri")
+        return RedirectResponse(url=_ui_url("/login?error=mru"))
 
-    # Optional: Validate state parameter format if present
-    if state and (len(state) > 512 or "\n" in state or "\r" in state):
-        return OAuthErrorResponse(code=400, error_description="invalid_request: Invalid state parameter format")
+    # Optional: Validate state parameter format if present (length + printable chars)
+    if state:
+        invalid_state = len(state) > 512 or (not state.isprintable())
+        if invalid_state:
+            return RedirectResponse(url=_ui_url("/login?error=isf"))
 
-    # 2) Now check rate limiting (only for valid requests)
-    if not check_rate_limit(query_params, "oauth_authorize", max_attempts=10, window_minutes=15):
-        log.warn(f"Rate limit exceeded for client {client_id} on /auth/v1/authorize")
-        return OAuthErrorResponse(code=429, error_description="rate_limited")
+    # 2) Now check rate limiting (use headers for IP/UA-aware limiting)
+    headers = headers or {}
+    if not check_rate_limit(headers, "oauth_authorize", max_attempts=10, window_minutes=15):
+        log.warn("Rate limit exceeded for /auth/v1/authorize", details={"client_id": client_id})
+        return RedirectResponse(url=_ui_url("/login?error=rle"))
 
-    # 3) Require authenticated user with valid session token
-    jwt_payload, jwt_signature = get_authenticated_user(cookies, headers)
+    # 3) Require authenticated user with valid session token which is in cookies
+    jwt_payload, jwt_signature = get_authenticated_user(cookies)
+
     # Check for missing or invalid authentication
-    if not jwt_payload:
-        # No valid token at all - redirect to login
-        pass  # Continue to login redirect logic below
-    elif jwt_payload.typ != "session":
-        # Wrong token type - return error instead of redirect
-        log.warn(
-            "Invalid token type for authorization flow",
-            details={"client_id": client_id, "token_type": jwt_payload.typ, "expected": "session"},
-        )
-        token_type_name = {
-            "access_token": "access token",
-            "refresh": "refresh token",
-        }.get(jwt_payload.typ, f"'{jwt_payload.typ}' token")
-
-        return OAuthErrorResponse(
-            code=400,
-            error_description=f"invalid_token_type: Cannot use {token_type_name} for authorization flow. Please authenticate with session token from login.",
-        )
-    elif jwt_payload.cid != client_id:
-        # Client ID mismatch - return error
-        log.warn("Client ID mismatch in authorization flow", details={"request_client": client_id, "token_client": jwt_payload.cid})
-        return OAuthErrorResponse(
-            code=400,
-            error_description=f"client_mismatch: Token was issued for client '{jwt_payload.cid}' but request is for client '{client_id}'",
-        )
-    else:
-        # Valid session token with matching client - continue with OAuth flow
-        # Skip the login redirect logic
-        pass
+    if jwt_payload:
+        if jwt_payload.typ != "session":
+            # Wrong token type - return error instead of redirect
+            log.warn(
+                "Invalid token type for authorization flow",
+                details={"client_id": client_id, "token_type": jwt_payload.typ, "expected": "session"},
+            )
+            return RedirectResponse(url=_ui_url("/login?error=cmm"))
+        elif jwt_payload.cid != client_id:
+            # Client ID mismatch - return error
+            log.warn(
+                "Client ID mismatch in authorization flow", details={"request_client": client_id, "token_client": jwt_payload.cid}
+            )
+            return RedirectResponse(url=_ui_url("/login?error=cmc"))
 
     # Only redirect to login if no valid session token
     if not jwt_payload or jwt_payload.typ != "session" or jwt_payload.cid != client_id:
-
-        # If you have NOT signed in to THIS server, (I'm talking aboujt the oauth server)
-        # then redirect to this server's login page.
-
-        # Also, if the client_id you specified does not match the authenticated client's ID,
-        # you should handle that case (e.g., by showing an error or redirecting).
-
-        # Only replay allowed OAuth params (and an optional sanitized login_hint).
+        # Preserve the original authorize request so UX can resume post-login
         allowed = {
             "client_id",
             "response_type",
@@ -315,57 +319,31 @@ def oauth_authorize(
             "code_challenge_method",
             "login_hint",
         }
-        params = {k: v for k, v in query_params.items() if k in allowed}
-
-        # Optional: sanitize login_hint
-        if "login_hint" in params:
-            hint = params["login_hint"].strip()
-            if len(hint) > 256 or "\n" in hint or "\r" in hint:
-                params.pop("login_hint", None)
-            else:
-                params["login_hint"] = hint
-
-        login_url = f"/login?returnTo=/auth/v1/authorize&{urlencode(params)}"
-
-        log.debug(f"Unauthenticated request, redirecting to login: {login_url}")
-
-        return RedirectResponse(url=login_url)
+        auth_params = {k: v for k, v in (query_params or {}).items() if k in allowed}
+        authorize_url = "/auth/v1/authorize"
+        if auth_params:
+            authorize_url = f"{authorize_url}?{urlencode(auth_params)}"
+        encoded_return_to = quote(authorize_url, safe="")
+        login_url = f"/login?returnTo={encoded_return_to}"
+        ui_login = _ui_url(login_url)
+        log.debug("Unauthenticated request, redirecting to login", details={"login_url": ui_login})
+        return RedirectResponse(url=ui_login)
 
     # 4) Database validation (client lookup) - AFTER auth check and rate limiting
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
         log.warn("Unknown client attempted OAuth flow: %s", client_id)
-        return OAuthErrorResponse(
-            code=400,
-            error_description=f"invalid_request: Invalid client_id. Client '{client_id}' not found in database.",
-        )
+        return RedirectResponse(url=_ui_url("/login?error=cid"))
 
     if jwt_payload.cnm != app_info.client:
-        return OAuthErrorResponse(
-            code=400,
-            error_description=f"invalid_request: Client mismatch: {jwt_payload.cnm} != {app_info.client}",
-        )
+        return RedirectResponse(url=_ui_url("/login?error=cnm"))
 
     # 5) Validate redirect_uri against registration
     registered_uris = app_info.client_redirect_urls
     if redirect_uri not in [uri for uri in registered_uris if uri]:
-        return OAuthErrorResponse(
-            code=400,
-            error_description=f"invalid_request: redirect_uri not registered for this client: {redirect_uri}",
-        )
+        return RedirectResponse(url=_ui_url("/login?error=rnr"))
 
     # 6) Process scopes (request + policy => granted)
-    requested_scopes = _parse_scopes(scope_param)
-    granted_scopes = _grant_scopes(client_id, jwt_payload.sub, requested_scopes)
-
-    # 7) Generate and persist the code (tie it to user+client+scopes)
-    code = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-    authorization = {
-        "client": jwt_payload.cnm,
-        "code": code,
-        "client_id": client_id,
-    }
     requested_scopes = _parse_scopes(scope_param)
     granted_scopes = _grant_scopes(client_id, jwt_payload.sub, requested_scopes)
 
@@ -392,9 +370,9 @@ def oauth_authorize(
     sep = "&" if "?" in redirect_uri else "?"
     redirect_back = f"{redirect_uri}{sep}{urlencode({'code': code, 'state': state or ''})}"
 
-    log.debug(f"Redirecting to: {redirect_back}")
+    log.debug("Redirecting to client redirect_uri", details={"location": redirect_back})
 
-    return RedirectResponse(url=redirect_back, status_code=302)
+    return RedirectResponse(url=redirect_back)
 
 
 def _authorization_code_grant(
@@ -409,13 +387,13 @@ def _authorization_code_grant(
     code_verifier = (body.get("code_verifier") or "").strip()
 
     if not code or not redirect_uri:
-        log.debug(f"Missing code or redirect_uri for client {app_info.client_id}")
+        log.debug("Missing code or redirect_uri", details={"client_id": app_info.client_id})
         return OAuthErrorResponse(code=400, error_description="invalid_request: code and redirect_uri required")
 
     # Validate redirect_uri matches client registration (reuse app_info)
     registered_uris = app_info.client_redirect_urls or []
     if redirect_uri not in [uri for uri in registered_uris if uri]:
-        log.debug(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
+        log.debug("Invalid redirect_uri for client", details={"client_id": app_info.client_id, "redirect_uri": redirect_uri})
         return OAuthErrorResponse(code=400, error_description="invalid_request: redirect_uri not registered for this client")
 
     # Load authorization code record
@@ -448,7 +426,9 @@ def _authorization_code_grant(
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code client mismatch")
 
     if redirect_uri != authz.redirect_url:
-        log.debug(f"Invalid redirect_uri for client {app_info.client_id}: {redirect_uri}")
+        log.debug(
+            "Invalid redirect_uri does not match code", details={"client_id": app_info.client_id, "redirect_uri": redirect_uri}
+        )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: redirect_uri does not match code")
 
     if authz.expires_at is not None:
@@ -466,18 +446,19 @@ def _authorization_code_grant(
         )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code expired")
 
-    # PKCE verification for public clients
-    if app_info.client_type and app_info.client_type == "confidential":
+    # PKCE verification required for public clients (no client_secret). Confidential clients skip PKCE.
+    is_public_client = not bool(getattr(app_info, "client_secret", None))
+    if is_public_client:
         if not authz.code_challenge:
-            log.debug(f"Missing code_challenge for client {app_info.client_id}: {code}")
+            log.debug("Missing PKCE code_challenge", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: pkce required for public client")
         if not code_verifier:
-            log.debug(f"Missing code_verifier for client {app_info.client_id}: {code}")
+            log.debug("Missing PKCE code_verifier", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: code_verifier required")
         try:
             expected = _pkce_calc_challenge(code_verifier, code_challenge_method or "S256")
         except Exception:
-            log.debug(f"Failed to calculate PKCE challenge for client {app_info.client_id}: {code}")
+            log.debug("Failed to calculate PKCE challenge", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: invalid code_verifier/method")
         if expected != authz.code_challenge:
             log.warn("PKCE verification failed", details={"client_id": authz.client_id, "code": code[:8] + "..."})
@@ -618,33 +599,53 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
     Errors:
         400 invalid_request/invalid_grant, 401 invalid_client, 429 slow_down with Retry-After.
     """
+    # Normalize inputs
+    body = body or {}
+    headers = headers or {}
 
-    client_id = body.get("client_id", "")
+    # Support HTTP Basic client authentication (RFC 6749 §2.3.1)
+    basic_client_id, basic_client_secret = _parse_basic_auth(headers.get("authorization"))
+
+    # Prefer Authorization header if present; otherwise, fallback to form
+    form_client_id = (body.get("client_id") or "").strip()
+    form_client_secret = (body.get("client_secret") or "").strip()
+
+    if basic_client_id:
+        if form_client_id and form_client_id != basic_client_id:
+            return OAuthErrorResponse(code=400, error_description="invalid_request: client_id mismatch with Authorization header")
+        client_id = basic_client_id
+        client_secret = basic_client_secret or ""
+    else:
+        client_id = form_client_id
+        client_secret = form_client_secret
 
     if not client_id:
         return OAuthErrorResponse(code=400, error_description="invalid_request: client_id required")
 
-    jwt_payload, jwt_signature = get_authenticated_user(cookies=cookies, headers=headers)
-    if not jwt_payload or not client_id or client_id != jwt_payload.cid:
-        return OAuthErrorResponse(code=401, error_description="invalid_client: unauthenticated request")
-
-    client_secret = body.get("client_secret", "").strip()
+    jwt_payload, jwt_signature = get_authenticated_user(cookies)
+    if not jwt_payload:
+        log.debug("Unauthenticated request to /auth/v1/token")
+        return OAuthErrorResponse(code=400, error_description="invalid_request: unauthenticated request")
 
     if not check_rate_limit(headers, "oauth_token", max_attempts=10, window_minutes=15):
-        log.warn(f"Rate limit exceeded for client {client_id} on /auth/v1/token")
+        log.warn("Rate limit exceeded for /auth/v1/token", details={"client_id": client_id})
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate client registration once
-    app_info: ClientFact = get_oauth_app_info(client_id)
+    app_info: ClientFact = get_oauth_app_info(jwt_payload.cid)
     if not app_info:
-        log.warn("Unknown client attempted token exchange: %s", client_id)
-        return OAuthErrorResponse(code=401, error_description="invalid_client: unknown client")
+        log.warn("Unknown client attempted token exchange", details={"client_id": client_id})
+        resp = OAuthErrorResponse(code=401, error_description="invalid_client: unknown client")
+        resp.set_header("WWW-Authenticate", 'Basic realm="OAuth"')
+        return resp
 
     is_confidential = bool(app_info.client_secret)
     _, validated = _validate_client_credentials(client_secret, app_info)
     if is_confidential and not validated:
-        log.warn("Client authentication failed for %s on /auth/v1/token", client_id)
-        return OAuthErrorResponse(code=401, error_description="invalid_client: invalid credentials")
+        log.warn("Client authentication failed on /auth/v1/token", details={"client_id": client_id})
+        resp = OAuthErrorResponse(code=401, error_description="invalid_client: invalid credentials")
+        resp.set_header("WWW-Authenticate", 'Basic realm="OAuth"')
+        return resp
 
     grant_type = (body.get("grant_type") or "").strip()
     if grant_type == "authorization_code":
@@ -680,7 +681,8 @@ def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = Non
     if not token:
         return OAuthErrorResponse(code=400, error_description="invalid_request: token parameter required")
 
-    # Rate limiting
+    # Rate limiting (use headers; guard None)
+    headers = headers or {}
     if not check_rate_limit(headers, "oauth_revoke", max_attempts=10, window_minutes=1):
         log.warn("Rate limit exceeded on /auth/v1/revoke")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
@@ -721,7 +723,8 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs):
     if not token:
         return OAuthErrorResponse(code=400, error_description="invalid_request: token parameter required")
 
-    # Rate limiting
+    # Rate limiting (use headers; guard None)
+    headers = headers or {}
     if not check_rate_limit(headers, "oauth_introspect", max_attempts=20, window_minutes=1):
         log.warn("Rate limit exceeded on /auth/v1/introspect")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
@@ -760,7 +763,8 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
         Response: User profile information
     """
 
-    # Rate limiting
+    # Rate limiting (use headers; guard None)
+    headers = headers or {}
     if not check_rate_limit(headers, "oauth_userinfo", max_attempts=30, window_minutes=1):
         log.warn("Rate limit exceeded on /auth/v1/userinfo")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
@@ -800,7 +804,8 @@ def oauth_jwks(*, headers: dict = None, **kwargs):
     Returns:
         Response: JWKS containing public keys for token verification
     """
-    # Rate limiting
+    # Rate limiting (use headers; guard None)
+    headers = headers or {}
     if not check_rate_limit(headers, "oauth_jwks", max_attempts=50, window_minutes=1):
         log.warn("Rate limit exceeded on /auth/v1/jwks")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
@@ -824,50 +829,6 @@ def oauth_jwks(*, headers: dict = None, **kwargs):
     except Exception as e:
         log.error(f"JWKS endpoint error: {e}")
         return OAuthErrorResponse(code=500, error_description="jwks_failed", exception=e)
-
-
-def oauth_logout(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs):
-    """OAuth/OpenID Connect logout endpoint.
-
-    Route:
-        GET /auth/v1/logout
-    Query:
-        post_logout_redirect_uri (optional): Where to redirect after logout
-        state (optional): Opaque value to maintain state
-
-    Returns:
-        Response: Logout confirmation or redirect
-    """
-    post_logout_redirect_uri = query_params.get("post_logout_redirect_uri")
-    state = query_params.get("state")
-
-    # Rate limiting
-    if not check_rate_limit(headers, "oauth_logout", max_attempts=10, window_minutes=1):
-        log.warn("Rate limit exceeded on /auth/v1/logout")
-        return OAuthErrorResponse(code=429, error_description="rate_limited")
-
-    # Get current user to validate logout
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
-
-    # Build logout redirect URL
-    if post_logout_redirect_uri:
-        # Validate redirect URI (you might want to check against registered URIs)
-        params = {}
-        if state:
-            params["state"] = state
-
-        redirect_url = post_logout_redirect_uri
-        if params:
-            separator = "&" if "?" in redirect_url else "?"
-            redirect_url = f"{redirect_url}{separator}{urlencode(params)}"
-
-        # Clear session cookies and redirect
-        response = RedirectResponse(code=302, url=redirect_url)
-
-        # Add cookie clearing headers if needed
-        return response
-
-    return OAuthLogoutResponse(message="Logout successful", user=jwt_payload.sub if jwt_payload else None)
 
 
 auth_server_endpoints = {
@@ -908,12 +869,6 @@ auth_server_endpoints = {
     ),
     "GET:/auth/v1/jwks": RouteEndpoint(
         oauth_jwks,
-        permissions={Permission.DATA_READ},
-        allow_anonymous=True,
-        client_isolation=False,
-    ),
-    "GET:/auth/v1/logout": RouteEndpoint(
-        oauth_logout,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=False,
