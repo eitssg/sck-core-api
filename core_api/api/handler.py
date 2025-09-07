@@ -207,18 +207,9 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             response = handler(event, lambda_context)
             # Returns: {"statusCode": 401, "body": '{"message": "Authentication required"}'}
     """
-    correlation_id = None
-
     try:
-        # Validate event structure
-        if not isinstance(event, dict):
-            raise ValueError("Event is not a dictionary")
-
         # Parse and validate incoming request
         request = ProxyEvent(**event)
-
-        # Extract AWS credentials from Bearer JWT
-        aws_credentials = get_credentials(request)
 
         # Extract or generate correlation ID for tracing
         correlation_id = get_correlation_id(request)
@@ -229,6 +220,11 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             "Processing API Gateway request",
             details={"method": request.httpMethod, "resource": request.resource},
         )
+
+        cookie_dict = {c.split("=")[0]: c.split("=")[1] for c in request.cookies} if request.cookies else {}
+
+        # Extract AWS credentials from Bearer JWT
+        aws_credentials = get_credentials(cookie_dict, request.headers)
 
         # Build route key for handler lookup
         route_key = request.route_key
@@ -271,7 +267,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         # Call the endpoint handler with enhanced security context
         response: Response = api_endpoints[route_key].handler(
             headers=request.headers,
-            cookies=request.cookies or {},
+            cookies=cookie_dict,
             query_params=request.queryStringParameters or {},
             path_params=request.pathParameters or {},
             body=request.body or {},
@@ -308,18 +304,16 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
     except Exception as e:
         error_response = ErrorResponse(
-            message="Internal server error",
             code=500,
-            metadata={"correlation_id": correlation_id},
+            message="Internal server error",
+            metadata={"correlation_id": log.get_correlation_id(), "error": str(e)},
         )
         log.error("Unexpected error in API handler", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
     finally:
-        # ✅ CLEANUP: Clear user context at end of request
-        # This prevents credential leakage between requests in the same Lambda container
         try:
             aws_helper.clear_user_context()
-            log.debug("Cleared user context at request end", details={"correlation_id": correlation_id})
+            log.debug("Cleared user context at request end")
         except Exception as e:
-            log.warning("Error clearing user context", details={"correlation_id": correlation_id, "error": str(e)})
+            log.warning("Error clearing user context", details={"error": str(e)})

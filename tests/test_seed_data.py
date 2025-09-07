@@ -25,8 +25,37 @@ client_facts = [
         "client_id": client_id,
         "client_secret": client_secret_hash,
         "client_name": "Core Automation Team",
+        "client_description": "Core Automation Infrastructure Automation Team",
+        "client_status": "active",
+        "organization_name": "EITS Pte Ltd",
+        "domain": "eits.com.sg",
+        "homepage": "https://www.eits.com.sg",
         "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
-    }
+    },
+    {
+        "client": "acme",  # slug
+        "client_id": client_id,
+        "client_secret": client_secret_hash,
+        "client_name": "Acme Group",
+        "client_description": "Acme Group for developing AI services",
+        "client_status": "active",
+        "organization_name": "Acme Corporation",
+        "domain": "acme.com",
+        "homepage": "https://www.acme.com",
+        "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
+    },
+    {
+        "client": "beta",  # slug
+        "client_id": client_id,
+        "client_secret": client_secret_hash,
+        "client_name": "Beta Group",
+        "client_description": "Beta Group for developing Robotics services",
+        "client_status": "active",
+        "organization_name": "Beta Corporation",
+        "domain": "beta.com",
+        "homepage": "https://www.beta.com",
+        "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
+    },
 ]
 
 zone_facts = [
@@ -275,7 +304,7 @@ administrator = {
     "language": "en",
     "theme": "dark",
     "notifications_enabled": True,
-    "preferred_region": "en",
+    "preferred_region": "us-east-1",
     "permissions": {
         "*": ["read", "write", "delete", "admin"],
         "aws": [

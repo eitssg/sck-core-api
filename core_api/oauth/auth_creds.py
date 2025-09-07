@@ -5,12 +5,10 @@ import jwt
 import core_logging as log
 
 
-from ..request import ProxyEvent
-from .constants import JWT_SECRET_KEY, JWT_ALGORITHM
-from .tools import decrypt_creds
+from .tools import decrypt_creds, get_authenticated_user
 
 
-def get_credentials(event: ProxyEvent) -> Optional[Dict[str, Any]]:
+def get_credentials(cookies: dict, headers: dict) -> Optional[Dict[str, Any]]:
     """Extract and decrypt AWS credentials from a Bearer JWT in an API Gateway proxy event.
 
     Args:
@@ -20,53 +18,17 @@ def get_credentials(event: ProxyEvent) -> Optional[Dict[str, Any]]:
         Optional[Dict[str, Any]]: Decrypted STS credentials if present and valid; otherwise None.
     """
     try:
-        headers = event.headers
-        if not headers:
+        if not headers and not cookies:
             return None
 
-        authorization_header = None
-        for header_name, header_value in headers.items():
-            if header_name.lower() == "authorization":
-                authorization_header = str(header_value).strip()
-                break
-
-        if not authorization_header:
+        jwt_payload, _ = get_authenticated_user(cookies, headers)
+        if not jwt_payload:
+            log.debug("No JWT payload found in request")
             return None
 
-        if not authorization_header.lower().startswith("bearer "):
-            log.debug("Authorization header does not contain Bearer token")
-            return None
-
-        parts = authorization_header.split(" ", 1)
-        if len(parts) != 2 or not parts[1].strip():
-            log.debug("Malformed Authorization header format")
-            return None
-
-        log.debug("Received bearer token: %s", parts[1][:8] + "...")
-        token = parts[1].strip()
-
-        secret_key = JWT_SECRET_KEY
-        try:
-            payload = jwt.decode(
-                token,
-                secret_key,
-                algorithms=[JWT_ALGORITHM],
-                options={
-                    "verify_signature": True,
-                    "verify_exp": True,
-                    "verify_iat": True,
-                },
-            )
-        except jwt.ExpiredSignatureError:
-            log.debug("JWT token has expired")
-            return None
-        except jwt.InvalidTokenError as e:
-            log.debug(f"Invalid JWT token: {e}")
-            return None
-
-        enc = payload.get("enc_credentials")
+        enc = jwt_payload.enc
         if not enc:
-            log.debug("No credentials found in JWT payload")
+            log.warn("No credentials found in JWT payload")
             return None
 
         try:

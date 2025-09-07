@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 import random
 import os
 from urllib.parse import urlencode
+import uuid
 import bcrypt
 from datetime import timedelta
 from botocore import response
@@ -26,6 +27,7 @@ from core_db.response import ErrorResponse, Response, SuccessResponse, cookie_op
 from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
+from core_db.registry import ClientActions
 
 from core_api.response import RedirectResponse
 
@@ -43,7 +45,6 @@ from .constants import (
 )
 from .tools import (
     JwtPayload,
-    create_access_token_with_sts,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
@@ -142,7 +143,7 @@ def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
         return False
 
 
-def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def user_signup(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Create or update the default profile, then return a session token.
 
     Route:
@@ -239,6 +240,7 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
             first_name=first_name,
             last_name=last_name,
             credentials=encrypted_credentials,
+            email_verified=False,
         ).model_dump()
     except Exception as e:
         # Pydantic validation errors (including invalid email) are client errors
@@ -267,35 +269,20 @@ def oauth_signup(*, cookies: dict = None, headers: dict = None, body: dict = Non
                 return ErrorResponse(code=409, message=f"User '{user_id}' already exists")
 
             log.info("New user profile created", details={"user_id": user_id, "client": client, "mode": "email_signup"})
+
             response: SuccessResponse = ProfileActions.create(client=client, **data)
             if not response:
                 return ErrorResponse(code=500, message="Profile creation failed")
+
             if response.code != 200:
                 return ErrorResponse(code=response.code, message="Profile creation failed")
+
+            _send_email_verification(client, user_id, email)
 
     except Exception as e:
         return ErrorResponse(code=500, message="Profile update failed", exception=e)
 
-    try:
-
-        # Create session JWT with proper parameter order
-        minutes = int(SCK_TOKEN_SESSION_MINUTES)
-        jwt_token = create_basic_session_jwt(client_id, client, user_id, minutes)
-
-        # Return a short-lived session token (no cookies) so SPA can call /authorize → /token
-        return Response(
-            status="ok",
-            code=201,
-            data={
-                "user_id": user_id,
-                "profile_name": "default",
-                "token": jwt_token,
-                "token_type": "Bearer",
-            },
-        )
-
-    except Exception as e:
-        return ErrorResponse(code=500, message="Issuing session failed", exception=e)
+    return SuccessResponse()
 
 
 def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
@@ -312,13 +299,13 @@ def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, *
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
-    if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
+    if not check_rate_limit(headers, "oauth_login", max_attempts=100, window_minutes=15):
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /auth/v1/me")
         return ErrorResponse(code=429, message="rate_limited")
 
     try:
         response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
-        data = UserProfile(**response.data).model_dump()
+        data = UserProfile(**response.data).model_dump(by_alias=False)
     except Exception as e:
         log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
         return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
@@ -358,19 +345,19 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
         return ErrorResponse(code=429, message="rate_limited")
 
     # Extract update fields
-    aws_access_key = body.get("aws_access_key")
-    aws_secret_key = body.get("aws_secret_key")
-    first_name = body.get("first_name")
-    last_name = body.get("last_name")
-    email = body.get("email")
-    profile = body.get("profile_name", "default")
+    aws_access_key = body.pop("aws_access_key", None)
+    aws_secret_key = body.pop("aws_secret_key", None)
+    profile_name = body.pop("profile_name", None)
+
+    if not profile_name:
+        return ErrorResponse(code=400, message="profile_name cannot be empty")
 
     # Get current profile
     try:
         response: SuccessResponse = ProfileActions.get(
             client=jwt_payload.cnm,
             user_id=jwt_payload.sub,
-            profile_name="default",
+            profile_name=profile_name,
         )
         current_data = UserProfile(**response.data)
     except Exception as e:
@@ -378,15 +365,14 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
         return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
 
     # Prepare update data (only include fields that are provided)
-    update_data = {"user_id": jwt_payload.sub, "profile_name": profile}
+    update_data = {}
 
-    # Update basic profile fields if provided
-    if first_name is not None:
-        update_data["first_name"] = first_name
-    if last_name is not None:
-        update_data["last_name"] = last_name
-    if email is not None:
-        update_data["email"] = email
+    for k, v in body.items():
+        update_data[k] = v
+
+    if body.pop("logged_in", False):
+        update_data["last_login"] = datetime.now(timezone.utc)
+        update_data["session_count"] = (current_data.session_count or 0) + 1
 
     # Handle AWS credentials update
     if aws_access_key and aws_secret_key:
@@ -394,25 +380,26 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
             # Get existing credentials envelope or create new one
             existing_credentials = current_data.credentials
             if existing_credentials is None:
-                existing_credentials = {"CreatedAt": datetime.now(timezone.utc).isoformat()}
+                existing_credentials = {"created_at": datetime.now(timezone.utc).isoformat()}
 
-            existing_credentials["UpdatedAt"] = datetime.now(timezone.utc).isoformat()
+            existing_credentials["updated_at"] = datetime.now(timezone.utc).isoformat()
 
             new_aws_creds = encrypt_aws_credentials(aws_access_key, aws_secret_key)
             existing_credentials.update(new_aws_creds)
 
             # Preserve password hash if it exists
-            update_data["Credentials"] = existing_credentials
+            update_data["credentials"] = existing_credentials
 
-            update_data["Identity"] = _get_identity(existing_credentials)
+            update_data["identity"] = _get_identity(existing_credentials)
 
         except Exception as e:
-            log.error(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
-            return ErrorResponse(code=500, message="Failed to encrypt AWS credentials", exception=e)
+            log.warn(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
 
     # Perform the update
     try:
-        ProfileActions.patch(client=jwt_payload.cnm, **update_data)
+
+        log.debug(f"Updating profile for user {jwt_payload.sub}, profile {profile_name}", details=update_data)
+        ProfileActions.patch(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **update_data)
 
         response_data = {
             "message": "User updated successfully",
@@ -420,7 +407,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
         }
 
         # Include AWS credential status in response
-        if "Credentials" in update_data:
+        if "credentials" in update_data:
             response_data["has_aws_credentials"] = True
 
         return SuccessResponse(data=response_data)
@@ -542,7 +529,7 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         if not client_id:
             return ErrorResponse(code=400, message="The field client_id is required")
 
-        if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
+        if not check_rate_limit(headers, "oauth_login", max_attempts=100, window_minutes=15):
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
             return ErrorResponse(code=429, message="rate_limited")
 
@@ -607,7 +594,7 @@ def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
     client = body.get("client", "core")
     client_id = body.get("client_id", "")
 
-    if not check_rate_limit(headers, "oauth_login", max_attempts=10, window_minutes=15):
+    if not check_rate_limit(headers, "oauth_login", max_attempts=100, window_minutes=15):
         log.warning(f"Rate limit exceeded for on /auth/v1/forgot-password")
         return ErrorResponse(code=429, message="rate_limited")
 
@@ -621,7 +608,14 @@ def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
         token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=15, jti=code).encode()
 
         forgot_password_record = ForgotPassword(
-            **{"code": key, "email": email, "user_id": email, "client": client, "client_id": client_id, "reset_token": token}
+            **{
+                "code": key,
+                "email": email,
+                "user_id": email,
+                "client": client,
+                "client_id": client_id,
+                "reset_token": token,
+            }
         )
 
         ForgotPasswordActions.create(**forgot_password_record.model_dump())
@@ -643,7 +637,7 @@ def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
             template_data={
                 "auth_code": code,
                 "user_name": email.split("@")[0],
-                "company_name": "EITS",
+                "company_name": "Core",
                 "reset_url": f"{server_url}?code={code}&token={token}",
             },
         )
@@ -852,17 +846,17 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
 
         log.info("Password updated successfully", details={"email": email, "client": client})
 
-        # After successful password update:
-        email_sent = send_password_updated_email(
+        _queue_email_via_security_chain(
+            client=client,
+            email_type="passupdated",
             to_email=email,
-            user_name=email.split("@")[0],
-            ip_address=headers.get("source_ip"),
-            user_agent=headers.get("user_agent"),
+            template_data={
+                "user_name": email.split("@")[0],
+                "company_name": "Core",
+                "ip_address": headers.get("source_ip"),
+                "user_agent": headers.get("user_agent"),
+            },
         )
-
-        if not email_sent:
-            log.warning(f"Failed to send password update notification to {email}")
-            # Continue anyway - don't fail the password update
 
         return SuccessResponse(message="Password updated successfully")
 
@@ -990,9 +984,218 @@ def refresh_access_token(*, cookies: dict = None, headers: dict = None, body: di
     return resp
 
 
+def list_organizations(*, headers: dict = None, **kwargs) -> Response:
+    """List organizations the authenticated user belongs to.
+
+    Route:
+        GET /auth/v1/organizations
+
+    Behavior:
+        - Requires valid Authorization: Bearer token
+        - Returns a list of organizations associated with the user
+    """
+
+    if not check_rate_limit(headers, "list_organizations", max_attempts=10, window_minutes=1):
+        log.warning(f"Rate limit exceeded for /auth/v1/organizations")
+        return ErrorResponse(code=429, message="rate_limited")
+
+    try:
+        result = ClientActions.list(client="core", limit=1000)
+        clients = result.data
+    except Exception as e:
+        log.error(f"Failed to retrieve organizations: {e}")
+        return SuccessResponse(code=204)
+
+    data = []
+    for c in clients:
+        data.append(
+            {
+                "client": c.get("Client", "core"),
+                "client_name": c.get("ClientName", c.get("Client", "core").title()),
+            }
+        )
+    return SuccessResponse(data=data)
+
+
+def verify_email_address(*, headers: dict = None, query_params: dict = None, body: dict = None, **kwargs) -> Response:
+    """Verify email address using a token.
+
+    Route:
+        GET /auth/v1/verify
+
+    Request:
+        JSON: {
+            "token": string,           // Required - Verification token
+            "client": string           // Required - Client name/slug (defaults to "core")
+        }
+
+    Behavior:
+        - Validates the provided verification token
+        - Marks the user's email as verified if the token is valid
+        - Returns a success message upon successful verification
+
+    Response:
+        Success (200):
+          {
+            "message": "Email verified successfully"
+          }
+
+        Errors:
+          400 - Missing required fields
+          401 - Invalid or expired token
+          500 - Server processing error
+    """
+    token = body.get("token") or query_params.get("token")
+    client = body.get("client", "core") or query_params.get("client", "core")
+
+    if not token:
+        return ErrorResponse(code=400, message="Verification token is required")
+
+    if not check_rate_limit(headers, "email_verification", max_attempts=10, window_minutes=15):
+        log.warning(f"Rate limit exceeded on /auth/v1/verify")
+        return ErrorResponse(code=429, message="rate_limited")
+
+    try:
+        payload = JwtPayload.decode(token)
+        if payload.typ != "email_verification":
+            return ErrorResponse(code=401, message="Invalid token type")
+
+        user_id = payload.sub
+
+        # Retrieve user profile
+        response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
+        profile = UserProfile(**response.data)
+
+        if profile.email_verified:
+            return SuccessResponse(message="Email already verified")
+
+        # Mark email as verified
+        profile.email_verified = True
+        profile.email_verified_at = datetime.now(timezone.utc)
+        ProfileActions.patch(client=client, **profile.model_dump(by_alias=False))
+
+        log.info(f"Email verified successfully for user {user_id}", details={"client": client})
+
+        return SuccessResponse(message="Email verified successfully")
+
+    except Exception as e:
+        log.error(f"Failed to verify email: {e}")
+        return ErrorResponse(code=500, message="Failed to verify email", exception=e)
+
+
+def _send_email_verification(client: str, user_id: str, to_email: str, *, is_resend: bool = False) -> None:
+    """Send email verification email via security chain.
+
+    Args:
+        client: Client name/slug for data isolation
+        user_id: The user's id/email (used for token subject)
+        to_email: Destination email
+        is_resend: When True, signals the template to render resend-specific copy
+    """
+    host = os.getenv("CLIENT_HOST", "http://localhost:8080")
+    server_url = host + os.getenv("CLIENT_EMAIL_VERIFICATION", "/verify-email")
+
+    try:
+        # Token valid for 24 hours (in minutes)
+        minutes = 60 * 24
+        verification_token = JwtPayload(
+            sub=user_id,
+            typ="email_verification",
+            cid="",
+            cnm=client,
+            ttl=minutes,
+            jti=str(uuid.uuid4()),
+        ).encode()
+
+        verification_url = f"{server_url}?token={verification_token}&client={client}"
+
+        _queue_email_via_security_chain(
+            client=client,
+            email_type="welcome",
+            to_email=to_email,
+            template_data={
+                "user_name": user_id.split("@")[0],
+                "company_name": "Core",
+                "verification_url": verification_url,
+                "verification_expires_minutes": minutes,
+                "login_url": host + os.getenv("CLIENT_LOGIN", "/login"),
+                "support_email": os.getenv("SUPPORT_EMAIL", "support@eits.com.sg"),
+                "is_resend": is_resend,
+                # Always define 'features' for STRICT template rendering
+                # The welcome templates check `{% if features %}`; provide an empty list by default
+                "features": [],
+            },
+        )
+
+        log.info("Email verification queued successfully for %s", user_id)
+
+    except Exception as e:
+        log.warn("Failed to queue email verification for %s: %s", user_id, str(e))
+        # Don't raise - email failure shouldn't break the main operation
+
+
+def resend_verification_email(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """Resend email verification to user.
+
+    Route:
+        POST /auth/v1/verification/resend
+
+    Request:
+        JSON: {
+            "email": string,           // Required - User email address (user_id)
+            "client": string           // Required - Client name/slug (defaults to "core")
+        }
+
+    Behavior:
+        - Validates the provided email address
+        - Resends the email verification if the user exists and is not already verified
+        - Returns a success message upon successful queuing of the email
+
+    Response:
+        Success (200):
+          {
+            "message": "Verification email resent successfully"
+          }
+
+        Errors:
+          400 - Missing required fields
+          404 - User not found or already verified
+          429 - Rate limit exceeded
+          500 - Server processing error
+    """
+    email = body.get("email")
+    client = body.get("client", "core")
+
+    if not email:
+        return ErrorResponse(code=400, message="Email Address is required")
+
+    if not check_rate_limit(headers, "email_verification", max_attempts=10, window_minutes=15):
+        log.warning(f"Rate limit exceeded on /auth/v1/verification/resend")
+        return ErrorResponse(code=429, message="rate_limited")
+
+    try:
+        profile_name = "default"
+        response: SuccessResponse = ProfileActions.get(client=client, user_id=email, profile_name=profile_name)
+        profile = UserProfile(**response.data)
+    except Exception as e:
+        log.debug(f"Profile not found for user {email}: {e}")
+        return ErrorResponse(code=404, message="User not found")
+
+    if profile.email_verified:
+        return ErrorResponse(code=400, message="Email is already verified")
+
+    try:
+        _send_email_verification(client, email, profile.email, is_resend=True)
+        return SuccessResponse(message="Verification email resent successfully")
+
+    except Exception as e:
+        log.error(f"Failed to resend verification email to {email}: {e}")
+        return ErrorResponse(code=500, message="Failed to resend verification email", exception=e)
+
+
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/signup": RouteEndpoint(
-        oauth_signup,
+        user_signup,
         permissions=["user:signup"],
         allow_anonymous=True,
         client_isolation=False,
@@ -1003,6 +1206,11 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
         client_isolation=False,
     ),
     "PUT:/auth/v1/me": RouteEndpoint(
+        update_user,
+        permissions=["user:update"],
+        client_isolation=False,
+    ),
+    "PATCH:/auth/v1/me": RouteEndpoint(
         update_user,
         permissions=["user:update"],
         client_isolation=False,
@@ -1040,6 +1248,23 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/logout": RouteEndpoint(
         user_logout,
         permissions=["user:logout"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "GET:/auth/v1/organizations": RouteEndpoint(
+        list_organizations,
+        permissions=["org:list"],
+        client_isolation=False,
+    ),
+    "GET:/auth/v1/verify": RouteEndpoint(
+        verify_email_address,
+        permissions=["user:verify_email"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/verification/resend": RouteEndpoint(
+        resend_verification_email,
+        permissions=["user:resend_verification"],
         allow_anonymous=True,
         client_isolation=False,
     ),

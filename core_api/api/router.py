@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request, Response
 import core_framework as util
 import core_logging as log
 import core_helper.aws as aws
+from test.test_reprlib import r
 
 from ..oauth.tools import get_authenticated_user, decrypt_creds
 
@@ -48,14 +49,13 @@ async def proxy_forward(request: Request) -> Response:
     """
 
     # Read role for "get", Write role for other methods
-
     is_write_operation = request.method.lower() != "get"
     role = util.get_automation_api_role_arn(write=is_write_operation)
 
     log.debug("Using IAM Role for operation: %s", role)
 
     # Authorize the user for this operation
-    cognito_identity = await authorize_request(request, role)
+    cognito_identity = await authorize_request(request)
     lambda_event, context = await generate_event_context(request, cognito_identity)
 
     # Convert event to dict for Lambda invocation
