@@ -252,16 +252,12 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             aws_credentials = security_context.aws_credentials
 
             if not aws_credentials:
-                raise UnauthorizedException("AWS credentials missing in token")
+                raise UnauthorizedException("aws_credentials_missing")
 
             if aws_credentials and security_context.user_id:
                 # This now handles the optimization internally
                 aws_helper.set_user_context(security_context.user_id, aws_credentials)
                 log.debug("User context ready", details={"user_id": security_context.user_id})
-            elif aws_credentials and not security_context.user_id:
-                log.warning("AWS credentials found but no user_id in security context")
-            elif not aws_credentials and security_context.user_id:
-                log.warning("User_id found but no AWS credentials in JWT token")
 
             # Validate client access
             if endpoint_route.client_isolation:

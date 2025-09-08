@@ -1,14 +1,10 @@
-from re import S
-from statistics import correlation
 from typing import Optional
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import random
 import os
 from urllib.parse import urlencode
 import uuid
 import bcrypt
-from datetime import timedelta
-from botocore import response
 from core_db.registry import ClientFact
 import httpx
 
@@ -24,6 +20,7 @@ from core_framework.models import DeploymentDetails, PackageDetails, TaskPayload
 from core_framework.models import ActionMetadata
 
 from core_db.response import ErrorResponse, Response, SuccessResponse, cookie_opts
+from core_db.exceptions import OperationException
 from core_db.profile.actions import ProfileActions
 from core_db.profile.model import UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
@@ -310,6 +307,9 @@ def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, *
         log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
         return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
 
+    if "Password" in data.get("credentials", {}):
+        del data["credentials"]["Password"]
+
     log.debug(f"Retrieved profile for user {jwt_payload.sub}", details=data)
 
     return SuccessResponse(data=data)
@@ -348,21 +348,14 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     aws_access_key = body.pop("aws_access_key", None)
     aws_secret_key = body.pop("aws_secret_key", None)
     profile_name = body.pop("profile_name", None)
+    body.pop("user_id", None)  # Prevent user_id changes
+    body.pop("profile_name", None)  # Prevent profile_name changes
+    body.pop("credentials", None)  # Prevent direct credentials changes
 
     if not profile_name:
         return ErrorResponse(code=400, message="profile_name cannot be empty")
 
     # Get current profile
-    try:
-        response: SuccessResponse = ProfileActions.get(
-            client=jwt_payload.cnm,
-            user_id=jwt_payload.sub,
-            profile_name=profile_name,
-        )
-        current_data = UserProfile(**response.data)
-    except Exception as e:
-        log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
-        return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
 
     # Prepare update data (only include fields that are provided)
     update_data = {}
@@ -372,11 +365,22 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
 
     if body.pop("logged_in", False):
         update_data["last_login"] = datetime.now(timezone.utc)
-        update_data["session_count"] = (current_data.session_count or 0) + 1
+        update_data["increment_session"] = "true"
 
     # Handle AWS credentials update
     if aws_access_key and aws_secret_key:
         try:
+
+            response: SuccessResponse = ProfileActions.get(
+                client=jwt_payload.cnm,
+                user_id=jwt_payload.sub,
+                profile_name=profile_name,
+            )
+            if not response or response.code != 200:
+                return ErrorResponse(code=response.code, message="User profile not found")
+
+            current_data = UserProfile(**response.data)
+
             # Get existing credentials envelope or create new one
             existing_credentials = current_data.credentials
             if existing_credentials is None:
@@ -392,25 +396,25 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
 
             update_data["identity"] = _get_identity(existing_credentials)
 
+        except OperationException as e:
+            log.warn(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
+            return ErrorResponse(code=e.code, message="User profile read failure", exception=e)
         except Exception as e:
             log.warn(f"Failed to encrypt AWS credentials for {jwt_payload.sub}: {e}")
+            return ErrorResponse(code=500, message="Failed to encrypt AWS credentials", exception=e)
 
     # Perform the update
     try:
 
         log.debug(f"Updating profile for user {jwt_payload.sub}, profile {profile_name}", details=update_data)
-        ProfileActions.patch(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **update_data)
+        new_response = ProfileActions.patch(
+            client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **update_data
+        )
+        new_data = UserProfile(**new_response.data).model_dump(by_alias=False)
+        if "Password" in new_data.get("credentials", {}):
+            del new_data["credentials"]["Password"]
 
-        response_data = {
-            "message": "User updated successfully",
-            "updated_fields": list(update_data.keys()),
-        }
-
-        # Include AWS credential status in response
-        if "credentials" in update_data:
-            response_data["has_aws_credentials"] = True
-
-        return SuccessResponse(data=response_data)
+        return SuccessResponse(data=new_data)
 
     except Exception as e:
         log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
