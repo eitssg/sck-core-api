@@ -1,9 +1,7 @@
 import os
-from typing import Dict, List, Optional, Union, Any
-from jwcrypto.jwt import JWTInvalidClaimFormat
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic import BaseModel, Field, computed_field
-from typing import Optional
+from pydantic import computed_field
 import json
 import base64
 from enum import Enum
@@ -45,11 +43,16 @@ class HttpStatus(int, Enum):
 class ProxyResponse(BaseModel):
     """AWS API Gateway Lambda proxy integration response model.
 
-    This class ensures that Lambda function responses conform exactly to the
-    AWS API Gateway proxy integration response format. It provides validation,
-    helper methods, and automatic formatting to prevent integration failures.
+    Ensures Lambda function responses conform exactly to the AWS API Gateway
+    proxy integration response format. Provides validation, helper methods, and
+    automatic formatting to prevent integration issues.
 
     AWS API Gateway requires responses in this exact format:
+
+    Example Recommended Usage:
+
+        proxy = ProxyResponse.from_response(response)
+        return proxy.model_dump()
 
     .. code-block:: python
 
@@ -76,32 +79,6 @@ class ProxyResponse(BaseModel):
         multiValueHeaders (Dict[str, List[str]]): Multi-value headers (optional)
         isBase64Encoded (bool): Whether body is base64 encoded (optional)
 
-    Example:
-        .. code-block:: python
-
-            # JSON Response
-            response = ProxyResponse.json(
-                data={"users": [{"id": 1, "name": "John"}]},
-                status_code=200,
-                headers={"X-Total-Count": "1"}
-            )
-
-            # Redirect Response
-            response = ProxyResponse.redirect(
-                location="/auth/login",
-                status_code=302,
-                cookies=["session=abc123; HttpOnly"]
-            )
-
-            # Error Response
-            response = ProxyResponse.error(
-                error="invalid_request",
-                description="Missing required parameter",
-                status_code=400
-            )
-
-            # Convert to AWS API Gateway format
-            aws_response = response.to_dict()
     """
 
     statusCode: int = Field(..., description="HTTP status code required by AWS API Gateway")
@@ -145,7 +122,7 @@ class ProxyResponse(BaseModel):
                 response.add_header("Content-Type", "application/json")
                 response.add_header("Cache-Control", "no-cache")
         """
-        self.headers[name] = str(value)
+        self.headers[str(name)] = str(value)
         return self
 
     def add_multi_value_header(self, name: str, value: str) -> "ProxyResponse":
@@ -192,25 +169,6 @@ class ProxyResponse(BaseModel):
         """
         return self.add_multi_value_header("Set-Cookie", cookie_string)
 
-    def set_json_body(self, data: Any) -> "ProxyResponse":
-        """Set the response body to JSON and update Content-Type header.
-
-        Args:
-            data (Any): Data to serialize as JSON
-
-        Returns:
-            ProxyResponse: Self for method chaining
-
-        Example:
-            .. code-block:: python
-
-                response = ProxyResponse(statusCode=200)
-                response.set_json_body({"success": True, "data": [1, 2, 3]})
-        """
-        self.body = json.dumps(data, default=str)
-        self.add_header("Content-Type", "application/json")
-        return self
-
     def set_binary_body(self, content: bytes, content_type: str = "application/octet-stream") -> "ProxyResponse":
         """Set the response body to base64-encoded binary content.
 
@@ -233,381 +191,83 @@ class ProxyResponse(BaseModel):
         """
         self.body = base64.b64encode(content).decode("utf-8")
         self.isBase64Encoded = True
-        self.add_header("content-type", content_type)
+        self.add_header("Content-Type", content_type)
         return self
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to AWS API Gateway Lambda proxy integration response format.
-
-        Returns:
-            Dict[str, Any]: Response dictionary in exact format required by AWS API Gateway
-
-        Example:
-            .. code-block:: python
-
-                response = ProxyResponse.json({"message": "Hello"})
-                aws_response = response.to_dict()
-                # Returns: {
-                #     "statusCode": 200,
-                #     "headers": {"Content-Type": "application/json"},
-                #     "multiValueHeaders": {},
-                #     "body": '{"message": "Hello"}',
-                #     "isBase64Encoded": false
-                # }
-        """
-        return {
-            "statusCode": self.statusCode,
-            "headers": self.headers,
-            "multiValueHeaders": self.multiValueHeaders,
-            "body": self.body,
-            "isBase64Encoded": self.isBase64Encoded,
-        }
-
     @classmethod
-    def json(
-        cls,
-        data: Any,
-        status_code: int = 200,
-        headers: Optional[Dict[str, str]] = None,
-        cookies: Optional[List[str]] = None,
-    ) -> "ProxyResponse":
-        """Create a JSON response.
+    def from_response(cls, response: Response) -> "ProxyResponse":
+        """Create a ProxyResponse from a core Response/Error/Redirect.
 
-        unless you specify SCK_API_NO_CACHE=false in the environment,
-        cache-control headers will be added to prevent caching by default.
-
-        Args:
-            data (Any): Data to serialize as JSON
-            status_code (int): HTTP status code (default: 200)
-            headers (Optional[Dict[str, str]]): Additional headers
-            cookies (Optional[List[str]]): Set-Cookie header values
-
-        Returns:
-            ProxyResponse: Configured JSON response
-
-        Example:
-            .. code-block:: python
-
-                response = ProxyResponse.json(
-                    data={"portfolios": [{"id": 1, "name": "Portfolio 1"}]},
-                    status_code=200,
-                    headers={"X-Total-Count": "1"},
-                    cookies=["session=abc123; HttpOnly"]
-                )
+        Rules:
+        - 3xx -> redirect: set Location header and empty body
+        - otherwise -> JSON body from response.model_dump_json(by_alias=False)
+        - copy single-value headers and cookies
+        - add default no-cache headers unless SCK_API_NO_CACHE is false
         """
         add_cache_control = os.getenv("SCK_API_NO_CACHE", "true").lower() in ("1", "true", "yes")
 
-        response = cls(statusCode=status_code)
-        response.set_json_body(data)
+        # Instantiate ProxyResponse
+        proxy = cls(statusCode=response.code)
 
-        if headers:
-            for name, value in headers.items():
-                response.add_header(name, value)
+        # Add single-value headers directly
+        if response.headers:
+            for item in response.headers:
+                for name, value in item.items():
+                    proxy.add_header(name, value)
 
-        if cookies:
-            for cookie in cookies:
-                response.add_cookie(cookie)
+        # Redirect responses
+        if isinstance(response, RedirectResponse) and cls._is_valid_location_url(response.url):
 
-        if add_cache_control:
-            response.add_header("cache-control", "no-cache, no-store, must-revalidate")
-            response.add_header("pragma", "no-cache")
-            response.add_header("expires", "0")
+            # Add Redirect headers
+            proxy.add_header("Location", response.url)
 
-        return response
-
-    @classmethod
-    def redirect(
-        cls,
-        location: str,
-        status_code: int = 302,
-        headers: Optional[Dict[str, str]] = None,
-        cookies: Optional[List[str]] = None,
-    ) -> "ProxyResponse":
-        """Create a redirect response.
-
-        Args:
-            location (str): Redirect URL
-            status_code (int): HTTP status code (default: 302)
-            headers (Optional[Dict[str, str]]): Additional headers
-            cookies (Optional[List[str]]): Set-Cookie header values
-
-        Returns:
-            ProxyResponse: Configured redirect response
-
-        Example:
-            .. code-block:: python
-
-                response = ProxyResponse.redirect(
-                    location="/auth/v1/authorize?client_id=app&state=xyz",
-                    status_code=302,
-                    cookies=["oauth_state=abc123; Max-Age=600; HttpOnly"]
-                )
-        """
-        add_cache_control = os.getenv("SCK_API_NO_CACHE", "true").lower() in ("1", "true", "yes")
-
-        response = cls(statusCode=status_code, body="")
-        response.add_header("location", location)
-
-        if headers:
-            for name, value in headers.items():
-                response.add_header(name, value)
-
-        if cookies:
-            for cookie in cookies:
-                response.add_cookie(cookie)
-
-        if add_cache_control:
-            response.add_header("cache-control", "no-cache, no-store, must-revalidate")
-            response.add_header("pragma", "no-cache")
-            response.add_header("expires", "0")
-
-        return response
-
-    @classmethod
-    def error(
-        cls,
-        error: str,
-        description: str = "",
-        status_code: int = 400,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> "ProxyResponse":
-        """Create an OAuth-compatible error response.
-
-        Args:
-            error (str): Error code (e.g., "invalid_request", "invalid_client")
-            description (str): Human-readable error description
-            status_code (int): HTTP status code (default: 400)
-            headers (Optional[Dict[str, str]]): Additional headers
-
-        Returns:
-            ProxyResponse: Configured error response
-
-        Example:
-            .. code-block:: python
-
-                response = ProxyResponse.error(
-                    error="invalid_request",
-                    description="Missing required parameter: client_id",
-                    status_code=400
-                )
-        """
-        error_data = {"error": error}
-        if description:
-            error_data["error_description"] = description
-
-        response = cls(statusCode=status_code)
-        response.set_json_body(error_data)
-
-        if headers:
-            for name, value in headers.items():
-                response.add_header(name, value)
-
-        return response
-
-    @classmethod
-    def from_response(
-        cls,
-        response: Response,
-        correlation_id: Optional[str] = None,
-    ) -> "ProxyResponse":
-        """Convert core_db Response/ErrorResponse to ProxyResponse.
-
-        Args:
-            response (Union[Response, ErrorResponse]): Core database response object
-            correlation_id (Optional[str]): Request correlation ID for tracking
-
-        Returns:
-            ProxyResponse: AWS API Gateway compatible response
-
-        Example:
-            .. code-block:: python
-
-                # From successful Response
-                db_response = Response(data={"users": []}, code=200)
-                proxy_response = ProxyResponse.from_response(db_response)
-
-                # From ErrorResponse
-                error_response = ErrorResponse(message="Not found", code=404)
-                proxy_response = ProxyResponse.from_response(error_response)
-        """
-        if isinstance(response, ErrorResponse):
-            error_data = {"error": "api_error", "error_description": response.message}
-            if correlation_id:
-                error_data["correlation_id"] = correlation_id
-
-            return cls.json(
-                data=error_data,
-                status_code=response.code,
-                headers={"x-correlation-id": correlation_id} if correlation_id else {},
-            )
         else:
-            response_data = response.data if hasattr(response, "data") else {}
-            if correlation_id:
-                response_data["correlation_id"] = correlation_id
 
-            return cls.json(
-                data=response_data,
-                status_code=response.code,
-                headers={"x-correlation-id": correlation_id} if correlation_id else {},
-            )
+            # Add JSON headers
+            proxy.add_header("Content-Type", "application/json")
 
+            # Serialize body to JSON
+            try:
+                proxy.body = response.model_dump_json(by_alias=False)
+            except Exception:
+                if isinstance(response, BaseModel):
+                    obj = response.model_dump(by_alias=False, mode="json")
+                else:
+                    obj = response  # Fallback
+                proxy.body = json.dumps(obj, default=str)
 
-def get_proxy_response(response: Response) -> ProxyResponse:
-    """Convert generic Response to AWS API Gateway ProxyResponse.
+        # Add cookies
+        if response.cookies:
+            for cookie in response.cookies:
+                proxy.add_cookie(cookie)
 
-    Handles all HTTP status codes and response types including redirects,
-    JSON responses, and cookie management for OAuth flows. Properly extracts
-    cookies set via the Response.set_cookie() method.
+        # Add default no-cache headers
+        if add_cache_control:
+            proxy.add_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            proxy.add_header("Pragma", "no-cache")
+            proxy.add_header("Expires", "0")
 
-    Args:
-        response (Response): Generic response object from OAuth endpoint
+        return proxy
 
-    Returns:
-        ProxyResponse: AWS API Gateway compatible response
-
-    Examples:
-        >>> # OAuth redirect with cookies
-        >>> response = SuccessResponse(data="/auth/github/login")
-        >>> response.code = 302
-        >>> response.set_cookie("oauth_state", "abc123", max_age=600, httponly=True)
-        >>> proxy_response = get_proxy_response(response)
-        >>> print(proxy_response.statusCode)  # 302
-
-        >>> # JSON response with session cookie
-        >>> response = SuccessResponse(data={"access_token": "xyz789"})
-        >>> response.set_cookie("session", "abc123", httponly=True, secure=True)
-        >>> proxy_response = get_proxy_response(response)
-        >>> print(proxy_response.statusCode)  # 200
-    """
-
-    # Normalize headers from Response (can be list[dict] or dict) into a single dict
-    def _normalize_headers(h) -> Dict[str, str]:
-        if not h:
-            return {}
-        if isinstance(h, dict):
-            return {str(k): str(v) for k, v in h.items()}
-        if isinstance(h, list):
-            out: Dict[str, str] = {}
-            for item in h:
-                if isinstance(item, dict):
-                    for k, v in item.items():
-                        out[str(k)] = str(v)
-            return out
-        return {}
-
-    headers_dict = _normalize_headers(getattr(response, "headers", None))
-
-    # Handle redirect responses (3xx status codes)
-    if 300 <= response.code < 400:
-        # Determine redirect location from multiple possible sources
-        location = None
-
-        # 1. Check for RedirectResponse
-        if isinstance(response, RedirectResponse):
-            location = response.url
-        # 2. Check metadata for locaiotn field
-        elif isinstance(response.metadata, dict) and "location" in response.metadata:
-            location = response.metadata["location"]
-        # 3. Check data for location field
-        elif isinstance(response.data, dict) and "location" in response.data:
-            location = response.data["location"]
-        # 4. Check if data is a URL string
-        elif isinstance(response.data, str) and (
-            response.data.startswith(("http://", "https://", "/")) or "?" in response.data  # Query string indicates URL
-        ):
-            location = response.data
-
-        if not location:
-            # No valid location found, treat as JSON
-            return ProxyResponse.json(
-                data=response.model_dump(),
-                status_code=response.code,
-                cookies=response.cookies,  # Use cookies directly from Response
-                headers=headers_dict,  # Normalized single-value headers
-            )
-
-        return ProxyResponse.redirect(
-            location=location,
-            status_code=response.code,
-            cookies=response.cookies,  # Use cookies directly from Response
-            headers=headers_dict,  # Normalized single-value headers
-        )
-
-    # Handle all other responses (1xx, 2xx, 4xx, 5xx) as JSON
-    return ProxyResponse.json(
-        data=response.model_dump(),
-        status_code=response.code,
-        cookies=response.cookies,  # Use cookies directly from Response
-        headers=headers_dict,  # Normalized single-value headers
-    )
+    @classmethod
+    def _is_valid_location_url(cls, url: str) -> bool:
+        """Basic validation for redirect URLs."""
+        if not url or not isinstance(url, str):
+            return False
+        url = url.strip()
+        if url.startswith(("/", "http://", "https://")):
+            return True
+        return False
 
 
-def get_proxy_error_response(error: ErrorResponse) -> ProxyResponse:
-    """Convert ErrorResponse to AWS API Gateway ProxyResponse.
+def get_proxy_response(response: Response) -> dict:
+    """Return AWS proxy dict via ProxyResponse.from_response(response)."""
+    return ProxyResponse.from_response(response).model_dump()
 
-    Creates OAuth-compatible error responses with proper error codes and
-    descriptions. Preserves any cookies that may have been set before
-    the error occurred.
 
-    Args:
-        error (ErrorResponse): Error response object with exception details
-
-    Returns:
-        ProxyResponse: AWS API Gateway compatible error response
-
-    Examples:
-        >>> # OAuth error response
-        >>> error = ErrorResponse(
-        ...     status="error",
-        ...     code=400,
-        ...     message="Invalid client_id"
-        ... )
-        >>> proxy_response = get_proxy_error_response(error)
-        >>> print(proxy_response.statusCode)  # 400
-
-        >>> # Error with cookies (e.g., clearing invalid session)
-        >>> error = ErrorResponse(status="error", code=401, message="Unauthorized")
-        >>> error.set_cookie("session", "", max_age=0)  # Clear session
-        >>> proxy_response = get_proxy_error_response(error)
-    """
-    # Build OAuth-compatible error data structure
-    error_data = {"error": "api_error", "error_description": None}  # Generic error type
-
-    # Extract error message from various possible locations
-    if isinstance(error.data, dict) and "message" in error.data:
-        error_data["error_description"] = error.data["message"]
-    elif isinstance(error.data, str):
-        error_data["error_description"] = error.data
-    elif hasattr(error, "message") and error.message:
-        error_data["error_description"] = error.message
-    else:
-        error_data["error_description"] = "An error occurred"
-
-    # Add detailed error information if available
-    if error.errors and len(error.errors) > 0:
-        error_data["details"] = [
-            {
-                "type": err.type if hasattr(err, "type") else "unknown",
-                "message": err.message if hasattr(err, "message") else str(err),
-            }
-            for err in error.errors
-        ]
-
-    # For OAuth-specific errors, use more specific error codes
-    if error.code == 400:
-        error_data["error"] = "invalid_request"
-    elif error.code == 401:
-        error_data["error"] = "invalid_client"
-    elif error.code == 403:
-        error_data["error"] = "access_denied"
-    elif error.code == 404:
-        error_data["error"] = "not_found"
-
-    return ProxyResponse.json(
-        data=error_data,
-        status_code=error.code,
-        cookies=error.cookies,  # Use cookies directly from ErrorResponse
-    )
+def get_proxy_error_response(error: ErrorResponse) -> dict:
+    """Return AWS proxy dict via ProxyResponse.from_response(error)."""
+    return ProxyResponse.from_response(error).model_dump()
 
 
 class OAuthResponse(Response):

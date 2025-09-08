@@ -911,7 +911,7 @@ def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dic
     return response
 
 
-def refresh_access_token(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def refresh_session_cookie(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Refresh access token using a valid refresh token.
 
     Route:
@@ -936,15 +936,18 @@ def refresh_access_token(*, cookies: dict = None, headers: dict = None, body: di
     """
 
     if not check_rate_limit(headers, "session_refresh", max_attempts=10, window_minutes=1):
-        log.warn("Rate limit exceeded on /auth/v1/session")
+        log.warn("Rate limit exceeded on /auth/v1/refresh")
         return ErrorResponse(code=429, message="rate_limited")
 
     # Validate the refresh token
     jwt_payload, _ = get_authenticated_user(cookies)
     if not jwt_payload or jwt_payload.typ != "session":
+        log.warn("Invalid or missing session token on /auth/v1/refresh")
         resp = ErrorResponse(code=401, message="invalid_session")
         resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
         return resp
+
+    log.debug("Refresh token payload", details=jwt_payload.model_dump())
 
     client = jwt_payload.cnm
     user_id = jwt_payload.sub
@@ -978,6 +981,8 @@ def refresh_access_token(*, cookies: dict = None, headers: dict = None, body: di
     scope_str = scope if isinstance(scope, str) and scope else "read"
 
     session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes, scope_str, auth_time)
+
+    log.info(f"Session token refreshed for user {user_id}", details={"client": client, "client_id": client_id})
 
     resp = SuccessResponse(code=204)
     resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())  # 30 minutes
@@ -1222,7 +1227,7 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
         client_isolation=False,
     ),
     "POST:/auth/v1/refresh": RouteEndpoint(
-        refresh_access_token,
+        refresh_session_cookie,
         permissions=["user:refresh"],
         allow_anonymous=True,
         client_isolation=False,

@@ -32,7 +32,7 @@ Attributes:
         Route keys are in format "METHOD:resource" (e.g., "GET:/api/v1/portfolios").
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import core_framework as util
 
@@ -221,11 +221,6 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             details={"method": request.httpMethod, "resource": request.resource},
         )
 
-        cookie_dict = {c.split("=")[0]: c.split("=")[1] for c in request.cookies} if request.cookies else {}
-
-        # Extract AWS credentials from Bearer JWT
-        aws_credentials = get_credentials(cookie_dict, request.headers)
-
         # Build route key for handler lookup
         route_key = request.route_key
         endpoint_route = api_endpoints.get(route_key, None)
@@ -236,7 +231,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         security_context = None
         if not endpoint_route.allow_anonymous:
 
-            security_context = extract_security_context(request, role_arn=util.get_api_lambda_arn, require_aws_credentials=True)
+            security_context = extract_security_context(request, require_aws_credentials=True)
 
             # bale out if the security_context cannot be determined.
             if not security_context:
@@ -247,9 +242,17 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                 raise UnauthorizedException(f"Invalid token type for this operation: {security_context.token_type}")
 
             # Check permissions
-            missing_perms = check_permissions_with_wildcard(security_context.permissions, endpoint_route.required_permissions)
+            missing_perms: Set[str] = check_permissions_with_wildcard(
+                security_context.permissions, endpoint_route.required_permissions
+            )
             if missing_perms:
-                raise PermissionError(f"Missing permissions for this operation: {[p.value for p in missing_perms]}")
+                raise PermissionError(f"Missing permissions for this operation: {[p for p in missing_perms]}")
+
+            # Extract AWS credentials from Bearer JWT
+            aws_credentials = security_context.aws_credentials
+
+            if not aws_credentials:
+                raise UnauthorizedException("AWS credentials missing in token")
 
             if aws_credentials and security_context.user_id:
                 # This now handles the optimization internally
@@ -267,7 +270,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         # Call the endpoint handler with enhanced security context
         response: Response = api_endpoints[route_key].handler(
             headers=request.headers,
-            cookies=cookie_dict,
+            cookies=request.parsed_cookies,
             query_params=request.queryStringParameters or {},
             path_params=request.pathParameters or {},
             body=request.body or {},
@@ -284,22 +287,22 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         )
         log.debug("Action result data:", details=response.model_dump())
 
-        # Convert Response to ProxyResponse and return as dict
-        return get_proxy_response(response).model_dump()
+        # Convert Response to ProxyResponse (dict) and return for API Gateway
+        return get_proxy_response(response)
 
     except (ValueError, TypeError) as e:
         error_response = ErrorResponse(message=str(e), code=400, metadata={"correlation_id": correlation_id})
         log.warning("Client error in API request", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
-    except OperationException as e:
-        error_response = ErrorResponse(message=str(e), code=404, metadata={"correlation_id": correlation_id})
-        log.warning("Returning 404 response", details=error_response.model_dump())
-        return get_proxy_error_response(error_response)
-
     except UnauthorizedException as e:
         error_response = ErrorResponse(message=str(e), code=401, metadata={"correlation_id": correlation_id})
         log.warning("Authentication failed", details=error_response.model_dump())
+        return get_proxy_error_response(error_response)
+
+    except OperationException as e:
+        error_response = ErrorResponse(message=str(e), code=404, metadata={"correlation_id": correlation_id})
+        log.warning("Returning 404 response", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
     except Exception as e:

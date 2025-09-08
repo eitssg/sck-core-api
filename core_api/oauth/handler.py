@@ -238,7 +238,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         if route_key not in endpoints:
             # Return 404 for unknown routes
             error_response = ErrorResponse(code=404, message=f"Route not found: {route_key}")
-            return get_proxy_error_response(error_response).model_dump()
+            return get_proxy_error_response(error_response)
 
         endpoint_route = endpoints.get(route_key, None)
 
@@ -275,7 +275,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         )
 
         # Convert Response to ProxyResponse and return as dict for AWS API Gateway
-        return get_proxy_response(response).model_dump()
+        return get_proxy_response(response)
 
     except (ValueError, TypeError) as e:
         error_response = ErrorResponse(message=str(e), code=400, metadata={"correlation_id": correlation_id})
@@ -286,7 +286,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         # Handle known operation exceptions
         error_response = ErrorResponse(code=e.code, message=e.message, exception=e)
         log.error("Operation error in API request", details=error_response.model_dump())
-        return get_proxy_error_response(error_response).model_dump()
+        return get_proxy_error_response(error_response)
 
     except Exception as e:
         # Handle unexpected exceptions
@@ -297,4 +297,4 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
             exception=e,
         )
         log.error("Unexpected error in API request", details=error_response.model_dump())
-        return get_proxy_error_response(error_response).model_dump()
+        return get_proxy_error_response(error_response)

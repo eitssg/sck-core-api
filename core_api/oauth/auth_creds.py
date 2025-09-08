@@ -1,14 +1,13 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import jwt
 import core_logging as log
 
 
-from .tools import decrypt_creds, get_authenticated_user
+from .tools import JwtPayload, decrypt_creds
 
 
-def get_credentials(cookies: dict, headers: dict) -> Optional[Dict[str, Any]]:
+def get_credentials(jwt_payload: JwtPayload) -> Optional[Dict[str, Any]]:
     """Extract and decrypt AWS credentials from a Bearer JWT in an API Gateway proxy event.
 
     Args:
@@ -18,10 +17,6 @@ def get_credentials(cookies: dict, headers: dict) -> Optional[Dict[str, Any]]:
         Optional[Dict[str, Any]]: Decrypted STS credentials if present and valid; otherwise None.
     """
     try:
-        if not headers and not cookies:
-            return None
-
-        jwt_payload, _ = get_authenticated_user(cookies, headers)
         if not jwt_payload:
             log.debug("No JWT payload found in request")
             return None

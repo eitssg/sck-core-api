@@ -602,20 +602,15 @@ class ProxyEvent(BaseModel):
         """
         # If API Gateway v2.0+ provided parsed cookies, use them
         if self.cookies:
-            return self.cookies
+            return {cookie.split("=", 1)[0]: cookie.split("=", 1)[1] for cookie in self.cookies if "=" in cookie}
 
         # Otherwise parse from Cookie header (v1.0 format)
         cookie_header = self.headers.get("Cookie", "")
         if not cookie_header:
             return {}
 
-        cookies = {}
-        for cookie_pair in cookie_header.split(";"):
-            if "=" in cookie_pair:
-                name, value = cookie_pair.strip().split("=", 1)
-                cookies[name] = value
-
-        return cookies
+        cookies_list = cookie_header.split(";")
+        return {cookie.split("=", 1)[0].strip(): cookie.split("=", 1)[1].strip() for cookie in cookies_list if "=" in cookie}
 
     @property
     def content_type(self) -> str:
@@ -724,8 +719,6 @@ class RouteEndpoint:
         self.client_isolation: bool = kwargs.get("client_isolation", False if self.allow_anonymous else True)
 
 
-# Type aliases for handler function signatures
-ActionHandler = Callable[..., Response]
 ActionHandlerRoutes = Dict[str, RouteEndpoint]
 
 

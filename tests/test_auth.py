@@ -21,6 +21,7 @@ Example:
         pytest tests/test_auth.py::test_authenticate_success -v
 """
 
+from dotenv.cli import get
 import pytest
 import jwt
 import os
@@ -32,12 +33,13 @@ from botocore.exceptions import ClientError, BotoCoreError
 
 import core_framework as util  # CORRECTED: Import util for to_json()
 
+from core_api.oauth.auth_creds import get_credentials
 from core_api.oauth.constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     JWT_ACCESS_HOURS,
 )
-from core_api.oauth.tools import validate_token
+from core_api.oauth.tools import get_authenticated_user, validate_token
 
 from core_api.response import Response, ErrorResponse
 from core_api.constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
@@ -575,7 +577,8 @@ def test_get_credentials_success_with_authorization_header(valid_jwt_token):
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
 
     assert credentials is not None
     assert "AccessKeyId" in credentials
@@ -594,7 +597,8 @@ def test_get_credentials_case_insensitive_header(valid_jwt_token):
         }
     }  # lowercase
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
 
     assert credentials is not None
     assert credentials["AccessKeyId"] == "ASIA123456789"
@@ -610,7 +614,8 @@ def test_get_credentials_case_insensitive_header(valid_jwt_token):
 )
 def test_get_credentials_no_authorization(kwargs):
     """Test credential extraction when Authorization header is missing."""
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -623,7 +628,8 @@ def test_get_credentials_invalid_authorization_format(valid_jwt_token):
         }
     }  # Wrong type
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -631,7 +637,8 @@ def test_get_credentials_malformed_authorization_header():
     """Test credential extraction with malformed Authorization header."""
     kwargs = {"headers": {"Authorization": "Bearer", "Content-Type": "application/json"}}  # Missing token
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -644,7 +651,8 @@ def test_get_credentials_expired_jwt_token(expired_jwt_token):
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -657,7 +665,8 @@ def test_get_credentials_invalid_jwt_token():
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -679,7 +688,8 @@ def test_get_credentials_jwt_without_credentials():
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -704,7 +714,8 @@ def test_get_credentials_incomplete_credentials():
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -731,7 +742,8 @@ def test_get_credentials_expired_sts_credentials():
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
@@ -758,7 +770,8 @@ def test_get_credentials_invalid_expiration_format():
         }
     }
 
-    credentials = get_credentials(**kwargs)
+    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    credentials = get_credentials(jwt_payload)
     assert credentials is None
 
 
