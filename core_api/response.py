@@ -228,7 +228,7 @@ class ProxyResponse(BaseModel):
 
             # Serialize body to JSON
             try:
-                proxy.body = response.model_dump_json(by_alias=False)
+                proxy.body = response.model_dump_json(by_alias=False, exclude_none=True)
             except Exception:
                 if isinstance(response, BaseModel):
                     obj = response.model_dump(by_alias=False, mode="json")
@@ -273,18 +273,30 @@ def get_proxy_error_response(error: ErrorResponse) -> dict:
 class OAuthResponse(Response):
 
     def model_dump(self, **kwargs):
-        # If the exclude set() exists, add code to it
+
+        kwargs["exclude"] = self._get_exclude_fields(**kwargs)
+
+        return super().model_dump(**kwargs)
+
+    def model_dump_json(self, **kwargs):
+
+        kwargs["exclude"] = self._get_exclude_fields(**kwargs)
+
+        return super().model_dump_json(**kwargs)
+
+    def _get_exclude_fields(self, **kwargs) -> set:
+
         exclude = kwargs.get("exclude", set())
 
-        # Convert to set if needed and add 'code'
         if isinstance(exclude, str):
             exclude = {exclude}
         elif not isinstance(exclude, set):
             exclude = set(exclude) if exclude else set()
 
-        kwargs["exclude"] = exclude | {"code", "status", "message"}
+        return exclude | {"code", "status", "message", "data", "links", "metadata"}
 
-        return super().model_dump(**kwargs)
+    def __repr__(self):
+        return f"<OAuthResponse status={self.status or ''} code={self.code or ''}>"
 
 
 class OAuthSuccessResponse(OAuthResponse):
@@ -295,6 +307,9 @@ class OAuthSuccessResponse(OAuthResponse):
         values["status"] = "ok"
         values["code"] = 200
         return values
+
+    def __repr__(self):
+        return f"<OAuthSuccessResponse status={self.status or 'ok'} code={self.code or '200'}>"
 
 
 class OAuthErrorResponse(OAuthResponse):
@@ -325,6 +340,9 @@ class OAuthErrorResponse(OAuthResponse):
         values["status"] = "error"
         return values
 
+    def __repr__(self):
+        return f"<OAuthErrorResponse error={self.error} description={self.error_description}>"
+
 
 class OAuthTokenResponse(OAuthSuccessResponse):
     """OAuth token endpoint response (RFC 6749 Section 5.1)."""
@@ -334,6 +352,9 @@ class OAuthTokenResponse(OAuthSuccessResponse):
     expires_in: Optional[int] = Field(default=None, description="Token lifetime in seconds")
     scope: Optional[str] = Field(default=None, description="The scope of the access token")
     refresh_token: Optional[str] = Field(default=None, description="The refresh token for obtaining new access tokens")
+
+    def __repr__(self):
+        return f"<OAuthTokenResponse token_type={self.token_type} expires_in={self.expires_in} scope={self.scope}>"
 
 
 class OAuthIntrospectionResponse(OAuthSuccessResponse):

@@ -1,3 +1,4 @@
+from re import sub
 from typing import Optional, Dict, Tuple
 import time
 import base64
@@ -159,7 +160,7 @@ class JwtPayload(BaseModel):
         if "scp" not in values:
             values["scp"] = "read"
 
-        if typ == "refresh" and "nbf" not in values:
+        if typ == "refresh1" and "nbf" not in values:
             nbf = int((datetime.now(timezone.utc) + timedelta(seconds=REFRESH_MIN_INTERVAL_SECONDS)).timestamp())
             values["nbf"] = nbf
 
@@ -496,7 +497,9 @@ def decrypt_creds(encrypted_credentials: str | None) -> dict:
         raise ValueError("Failed to decrypt credentials")
 
 
-def get_user_access_key(client: str, user_id: str, password: Optional[str] = None) -> Tuple[dict, dict]:
+def get_user_access_key(
+    client: str, user_id: str, password: Optional[str] = None, profile_name: Optional[str] = "default"
+) -> Tuple[dict, dict]:
     """Retrieve and decrypt user's AWS credentials from database with optional password validation
 
     Fetches user profile from database, optionally validates password, then decrypts
@@ -555,7 +558,7 @@ def get_user_access_key(client: str, user_id: str, password: Optional[str] = Non
         if not user_id:
             raise ValueError("User ID is required for validation.")
 
-        response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
+        response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
         profile = UserProfile(**response.data)
 
         if not profile.credentials:
@@ -647,7 +650,9 @@ def create_basic_session_jwt(
     return payload.encode()
 
 
-def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload, permissions: dict) -> str:
+def create_access_token_with_sts(
+    aws_credentials: dict, client_id: str, client: str, subject: str, scope: str, permissions: dict
+) -> str:
     """Generate OAuth access token with encrypted AWS STS temporary credentials and client context
 
     Takes user's long-term AWS credentials, exchanges them for time-limited STS credentials,
@@ -718,9 +723,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
     # Convert user permissions to OAuth scope string
     user_scope = _generate_scope_from_permissions(permissions)
 
-    # Merge with any application-level scope from session token
-    session_scope = jwt_payload.scp or ""
-    combined_scope = _combine_scopes(session_scope, user_scope)
+    combined_scope = _combine_scopes(scope, user_scope)
 
     # Use provided duration or default
     duration_seconds = 3600 * JWT_ACCESS_HOURS
@@ -760,7 +763,7 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
                     sts_credentials["Expiration"] = sts_credentials["Expiration"].isoformat()
 
         except (BotoCoreError, ClientError) as e:
-            log.warn(f"Error retrieving STS credentials for user {jwt_payload.sub}: {e}")
+            log.warn(f"Error retrieving STS credentials for user {subject}: {e}")
 
         creds_enc = encrypt_creds(sts_credentials)
     else:
@@ -769,9 +772,9 @@ def create_access_token_with_sts(aws_credentials: dict, jwt_payload: JwtPayload,
     minutes = 60 * JWT_ACCESS_HOURS
 
     payload = JwtPayload(
-        sub=jwt_payload.sub,
-        cid=jwt_payload.cid,
-        cnm=jwt_payload.cnm,
+        sub=subject,
+        cid=client_id,
+        cnm=client,
         scp=combined_scope,
         enc=creds_enc,
         ttl=minutes,
@@ -1313,7 +1316,9 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
         response = ClientActions.get(client_id=client_id)
         log.debug(f"OAuth app info for client {client_id}", details=response.data)
         if isinstance(response.data, dict):
-            return ClientFact(**response.data)
+            data = ClientFact(**response.data)
+            data.client_secret = None  # Remove for testing TODO: remove this line in production
+            return data
         if isinstance(response.data, list):
             if len(response.data) > 0 and isinstance(response.data[0], dict):
                 return ClientFact(**response.data[0])

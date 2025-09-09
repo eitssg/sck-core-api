@@ -29,6 +29,8 @@ GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "http://localhost:8090/au
 ALLOWED_SCOPES: Set[str] = {
     "read",
     "write",
+    "read:profile",
+    "write:profile",
 }
 
 # Encryption key for credentials (32-byte base64url)

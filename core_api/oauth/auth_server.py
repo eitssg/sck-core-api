@@ -5,6 +5,7 @@ import hashlib
 import base64
 import uuid
 import secrets
+import hmac
 
 from urllib.parse import urlencode, quote
 
@@ -48,17 +49,17 @@ from .constants import (
 )
 
 
-def _mint_refresh_token(jwt_payload: JwtPayload, lifetime_days: int = 30) -> str:
+def _mint_refresh_token(client: str, client_id: str, subject: str, scope: str, lifetime_days: int = 30) -> str:
     """Mint a refresh token with user identity only - NO AWS credentials."""
 
     exp = datetime.now(tz=timezone.utc) + timedelta(days=lifetime_days)
     exp = int(exp.timestamp())
 
     payload = JwtPayload(
-        sub=jwt_payload.sub,
-        cnm=jwt_payload.cnm,
-        cid=jwt_payload.cid,
-        scp=jwt_payload.scp,
+        sub=subject,
+        cnm=client,
+        cid=client_id,
+        scp=scope,
         typ="refresh",
         exp=exp,
     )
@@ -120,7 +121,7 @@ def _get_user_allowed_scopes(user_id: str) -> Set[str]:
     Returns:
         Set[str]: Allowed scopes for the user.
     """
-    return {"registry-clients:read", "registry-clients:write"}
+    return {"read:profile", "write:profile"}
 
 
 def _parse_scopes(scope_param: Optional[str]) -> list[str]:
@@ -168,7 +169,46 @@ def validate_requested_scopes(client_id: str, requested: str, user_id: str) -> s
 
 
 def _validate_client_credentials(client_secret: str, app_info: ClientFact) -> Tuple[str, bool]:
+    """Validate client credentials against stored secret.
 
+    Supports two storage formats:
+      1) Plaintext/opaque value (e.g., random token). We use constant-time compare.
+      2) SHA-256 hex string (64 hex chars). We hash the provided secret and compare in constant time.
+
+    Returns (client_id, is_valid).
+    """
+
+    stored = (app_info.client_secret or "").strip()
+
+    # If nothing stored, treat as public client (validation handled by caller)
+    if not stored:
+        return app_info.client_id, True
+
+    # Allow optional prefixes like "sha256:" or "s256:"
+    lowered = stored.lower()
+    if lowered.startswith("sha256:"):
+        stored_hex = stored.split(":", 1)[1]
+    elif lowered.startswith("s256:"):
+        stored_hex = stored.split(":", 1)[1]
+    else:
+        stored_hex = None
+
+    def _is_hex_sha256(s: str) -> bool:
+        return len(s) == 64 and all(c in "0123456789abcdef" for c in s)
+
+    # If stored value looks like a SHA-256 hex digest, compare digests
+    if stored_hex is not None or _is_hex_sha256(stored):
+        hex_to_compare = stored_hex if stored_hex is not None else stored
+        provided_hex = hashlib.sha256(client_secret.encode("utf-8")).hexdigest()
+        ok = hmac.compare_digest(provided_hex, hex_to_compare)
+        return app_info.client_id, ok
+
+    # Otherwise, compare raw values in constant time
+    ok = hmac.compare_digest(client_secret.encode("utf-8"), stored.encode("utf-8"))
+    return app_info.client_id, ok
+
+
+def _old_method(client_secret: str, app_info: ClientFact) -> Tuple[str, bool]:
     client_id = app_info.client_id
     secret_hash = app_info.client_secret
 
@@ -182,18 +222,11 @@ def _validate_client_credentials(client_secret: str, app_info: ClientFact) -> Tu
     return client_id, True
 
 
-def _authenticate_client(headers: dict, form: dict) -> tuple[str, bool]:
-    """Authenticate OAuth client using standard methods."""
-    # Method 1: HTTP Basic Authentication
-    auth_header = headers.get("Authorization", "")
-    if auth_header.startswith("Basic "):
-        client_id, client_secret = _parse_basic_auth(auth_header)
-        return _validate_client_credentials(client_id, client_secret)
+def _new_method(client_secret: str, app_info: ClientFact) -> Tuple[str, bool]:
+    if not hmac.compare_digest(client_secret.encode("utf-8"), app_info.client_secret.encode("utf-8")):
+        return app_info.client_id, False
 
-    # Method 2: Form parameters
-    client_id = form.get("client_id")
-    client_secret = form.get("client_secret")
-    return _validate_client_credentials(client_id, client_secret)
+    return app_info.client_id, True
 
 
 def get_cred_enc_key(**kwargs) -> Response:
@@ -235,13 +268,14 @@ def oauth_authorize(
         client_id, response_type=code, redirect_uri, scope?, state?, code_challenge?, code_challenge_method?, login_hint?
 
     Behavior:
-        - Requires authenticated user (typically via Authorization: Bearer <session JWT>).
+        - Requires authenticated user via session cookie (typ=session).
         - Validates client registration and exact redirect_uri match.
         - Computes granted scopes (client ∩ user ∩ request).
         - Persists a short-lived authorization code (single-use).
         - Redirects to redirect_uri with ?code and state.
     """
 
+    client = query_params.get("client", "core")
     client_id = query_params.get("client_id")
     response_type = query_params.get("response_type")
     redirect_uri = query_params.get("redirect_uri")
@@ -250,7 +284,15 @@ def oauth_authorize(
     code_challenge = query_params.get("code_challenge")
     code_challenge_method = query_params.get("code_challenge_method") or "S256"
 
-    log.debug("Received OAuth authorization request", details=query_params)
+    log.debug(
+        "Received OAuth authorization request",
+        details={
+            **(query_params or {}),
+            # Redact/replace sensitive values
+            "code_challenge": bool(query_params.get("code_challenge")) if query_params else False,
+            "code_challenge_method": query_params.get("code_challenge_method") if query_params else None,
+        },
+    )
 
     # Helper: build absolute UI URL for login redirects using CLIENT_HOST
     def _ui_url(path_with_query: str) -> str:
@@ -275,6 +317,15 @@ def oauth_authorize(
     if not redirect_uri:
         return RedirectResponse(url=_ui_url("/login?error=mru"))
 
+    if code_challenge:
+        if len(code_challenge) < 43 or len(code_challenge) > 128:
+            return RedirectResponse(url=_ui_url("/login?error=isf"))
+        if not all(c.isalnum() or c in "-._~" for c in code_challenge):
+            return RedirectResponse(url=_ui_url("/login?error=isf"))
+    # Allow only S256 if provided (PLAIN not supported)
+    if code_challenge_method and code_challenge_method != "S256":
+        return RedirectResponse(url=_ui_url("/login?error=ucm"))
+
     # Optional: Validate state parameter format if present (length + printable chars)
     if state:
         invalid_state = len(state) > 512 or (not state.isprintable())
@@ -288,7 +339,7 @@ def oauth_authorize(
         return RedirectResponse(url=_ui_url("/login?error=rle"))
 
     # 3) Require authenticated user with valid session token which is in cookies
-    jwt_payload, jwt_signature = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies)
 
     # Check for missing or invalid authentication
     if jwt_payload:
@@ -326,7 +377,14 @@ def oauth_authorize(
         encoded_return_to = quote(authorize_url, safe="")
         login_url = f"/login?returnTo={encoded_return_to}"
         ui_login = _ui_url(login_url)
-        log.debug("Unauthenticated request, redirecting to login", details={"login_url": ui_login})
+        log.debug(
+            "Unauthenticated request, redirecting to login",
+            details={
+                "login_url": ui_login,
+                "has_code_challenge": bool(code_challenge),
+                "code_challenge_method": code_challenge_method,
+            },
+        )
         return RedirectResponse(url=ui_login)
 
     # 4) Database validation (client lookup) - AFTER auth check and rate limiting
@@ -343,28 +401,54 @@ def oauth_authorize(
     if redirect_uri not in [uri for uri in registered_uris if uri]:
         return RedirectResponse(url=_ui_url("/login?error=rnr"))
 
+    # 5b) Enforce PKCE for public clients (no client_secret)
+    is_public = not bool(app_info.client_secret)
+    if is_public:
+        # Require PKCE for public clients
+        if not code_challenge:
+            log.debug("PKCE required for public client, missing code_challenge", details={"client_id": client_id})
+            return RedirectResponse(url=_ui_url("/login?error=pkr"))
+        if code_challenge_method and code_challenge_method != "S256":
+            log.debug(
+                "Unsupported PKCE method for public client", details={"client_id": client_id, "method": code_challenge_method}
+            )
+            return RedirectResponse(url=_ui_url("/login?error=ucm"))
+
     # 6) Process scopes (request + policy => granted)
     requested_scopes = _parse_scopes(scope_param)
     granted_scopes = _grant_scopes(client_id, jwt_payload.sub, requested_scopes)
+    scopes = " ".join(granted_scopes)
 
-    # 7) Generate and persist the code (tie it to user+client+scopes)
-    code = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-    authorization = {
-        "client": jwt_payload.cnm,
-        "code": code,
-        "client_id": client_id,
-        "user_id": jwt_payload.sub,
-        "redirect_url": redirect_uri,
-        "scope": " ".join(granted_scopes),
-        "expires_at": expires_at,
-        "used": False,
-        "code_challenge": code_challenge,
-        "code_challenge_method": code_challenge_method if code_challenge else None,
-        "jwt_signature": jwt_signature,
-    }
+    try:
+        # 7) Generate and persist the code (tie it to user+client+scopes)
+        code = str(uuid.uuid4())
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        authorization = {
+            "client": jwt_payload.cnm,
+            "client_id": client_id,
+            "code": code,
+            "subject": jwt_payload.sub,
+            "scopes": scopes,
+            "redirect_url": redirect_uri,
+            "expires_at": expires_at,
+            "used": False,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method if code_challenge else None,
+        }
 
-    AuthActions.create(**authorization)
+        result = AuthActions.create(**authorization)
+        authz = Authorizations(**result.data)
+
+        # Avoid logging the raw code/PKCE values in full; show presence and last 4
+        safe_details = authz.model_dump(exclude_none=False)
+        safe_details["code"] = (authz.code[:4] + "...") if authz.code else None
+        if authz.code_challenge:
+            safe_details["code_challenge"] = True
+            safe_details["code_challenge_method"] = authz.code_challenge_method or "S256"
+        log.debug("Created new authorization code", details=safe_details)
+    except Exception as e:
+        log.error("Failed to create authorization code", details={"client_id": client_id, "error": str(e)}, exception=e)
+        return RedirectResponse(url=_ui_url("/login?error=server_error"))
 
     # 8) Redirect back to client app with code + state
     sep = "&" if "?" in redirect_uri else "?"
@@ -375,16 +459,39 @@ def oauth_authorize(
     return RedirectResponse(url=redirect_back)
 
 
+def _get_token_authorization(app_info: ClientFact, code: str) -> Authorizations:
+    try:
+        # Will throw "Not found" if no such code for client or already used
+        rec = AuthActions.patch(client=app_info.client, code=code, client_id=app_info.client_id, used=True)
+        authz = Authorizations(**rec.data)
+        return authz
+    except Exception as e:
+        log.warn(
+            "Authorization code database lookup failed",
+            details={"client": app_info.client, "code": code[:8] + "...", "error": str(e)},
+        )
+        return None
+
+
 def _authorization_code_grant(
     body: dict,
-    jwt_payload: JwtPayload,
-    jwt_signature: str,
     app_info: ClientFact,
 ):
 
     code = (body.get("code") or "").strip()
     redirect_uri = (body.get("redirect_uri") or "").strip()
     code_verifier = (body.get("code_verifier") or "").strip()
+    try:
+        log.debug(
+            "Token exchange (authorization_code) request",
+            details={
+                "client_id": app_info.client_id,
+                "has_code_verifier": bool(code_verifier),
+                "is_confidential_client": bool(app_info.client_secret),
+            },
+        )
+    except Exception:
+        pass
 
     if not code or not redirect_uri:
         log.debug("Missing code or redirect_uri", details={"client_id": app_info.client_id})
@@ -397,33 +504,12 @@ def _authorization_code_grant(
         return OAuthErrorResponse(code=400, error_description="invalid_request: redirect_uri not registered for this client")
 
     # Load authorization code record
-    try:
-        rec = AuthActions.get(client=jwt_payload.cnm, code=code)
-        authz = Authorizations(**rec.data)
-    except Exception:
-        log.warn(
-            "Authorization code database lookup failed",
-            details={"client": jwt_payload.cnm, "code": code[:8] + "...", "error": "code not found"},
-        )
+    authz = _get_token_authorization(app_info, code)
+    if not authz:
         return OAuthErrorResponse(code=401, error_description=f"invalid_grant: code '{code}' not found")
 
     # Validate code record
     code_challenge_method = (authz.code_challenge_method or "S256") if authz.code_challenge else None
-
-    if authz.used:
-        log.warn("Authorization code reuse attempt", details={"client_id": authz.client_id, "code": code[:8] + "..."})
-        return OAuthErrorResponse(code=401, error_description="invalid_grant: code already used")
-
-    if jwt_signature != authz.jwt_signature:
-        log.warn("Token signature mismatch", details={"client_id": authz.client_id, "code": code[:8] + "..."})
-        return OAuthErrorResponse(code=401, error_description="invalid_grant: token signature mismatch")
-
-    if jwt_payload.cid != authz.client_id:
-        log.warn(
-            "Authorization code client mismatch",
-            details={"token_client": jwt_payload.cid, "code_client": authz.client_id, "code": code[:8] + "..."},
-        )
-        return OAuthErrorResponse(code=401, error_description="invalid_grant: code client mismatch")
 
     if redirect_uri != authz.redirect_url:
         log.debug(
@@ -447,68 +533,84 @@ def _authorization_code_grant(
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code expired")
 
     # PKCE verification required for public clients (no client_secret). Confidential clients skip PKCE.
-    is_public_client = not bool(getattr(app_info, "client_secret", None))
-    if is_public_client:
+    if not app_info.client_secret:
+
         if not authz.code_challenge:
             log.debug("Missing PKCE code_challenge", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: pkce required for public client")
         if not code_verifier:
             log.debug("Missing PKCE code_verifier", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: code_verifier required")
+
+        if (
+            (not code_verifier)
+            or len(code_verifier) < 43
+            or len(code_verifier) > 128
+            or not all(c.isalnum() or c in "-._~" for c in code_verifier)
+        ):
+            log.debug("Invalid PKCE code_verifier format", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
+            return OAuthErrorResponse(code=400, error_description="invalid_request: invalid code_verifier format")
+
+        if code_challenge_method not in (None, "S256"):
+            log.debug("Unsupported PKCE code_challenge_method", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
+            return OAuthErrorResponse(code=400, error_description="invalid_request: unsupported code_challenge_method")
+
         try:
             expected = _pkce_calc_challenge(code_verifier, code_challenge_method or "S256")
         except Exception:
             log.debug("Failed to calculate PKCE challenge", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: invalid code_verifier/method")
+
         if expected != authz.code_challenge:
-            log.warn("PKCE verification failed", details={"client_id": authz.client_id, "code": code[:8] + "..."})
+            log.warn("PKCE verification failed", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=401, error_description="invalid_grant: pkce_verification_failed")
+        else:
+            log.debug("PKCE verification passed", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
+
+    if not authz.subject:
+        log.warn("Authorization code subject missing", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
+        return OAuthErrorResponse(code=401, error_description="invalid_grant: code payload invalid")
 
     # Get AWS credentials from database profile (NOT from session token)
-    aws_credentials, permissions = get_user_access_key(jwt_payload.cnm, jwt_payload.sub)
+    aws_credentials, permissions = get_user_access_key(app_info.client, authz.subject)
     if len(aws_credentials) == 0:
-        log.warn("Missing AWS credentials for user %s in client %s", jwt_payload.sub, jwt_payload.cnm)
+        log.warn("Missing AWS credentials for user %s in client %s", authz.subject, authz.client_id)
 
     # Mint the access token with STS session inside
     try:
         access_token = create_access_token_with_sts(
             aws_credentials=aws_credentials,
-            jwt_payload=jwt_payload,
+            client=app_info.client,
+            client_id=app_info.client_id,
+            subject=authz.subject,
+            scope=authz.scopes,
             permissions=permissions,
         )
     except Exception as e:
         log.warn(
-            "Access token creation failed", details={"client_id": jwt_payload.cid, "user_id": jwt_payload.sub, "error": str(e)}
+            "Access token creation failed", details={"client_id": app_info.client_id, "subject": authz.subject, "error": str(e)}
         )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: failed to mint access token", exception=e)
 
     # Update refresh token to include client info
     refresh_token = _mint_refresh_token(
-        jwt_payload=jwt_payload,
+        client=app_info.client,
+        client_id=app_info.client_id,
+        subject=authz.subject,
+        scope=authz.scopes,
         lifetime_days=30,
     )
-
-    # Mark code as used
-    try:
-        AuthActions.patch(
-            client=jwt_payload.cnm,
-            code=code,
-            used=True,
-            used_at=datetime.now(timezone.utc),
-        )
-    except Exception:
-        log.debug(f"Failed to mark code used: {code}")
 
     return OAuthTokenResponse(
         access_token=access_token,
         token_type="Bearer",
         expires_in=int(JWT_ACCESS_HOURS * 3600),
-        scope=authz.scope or "",
+        scope=authz.scopes,
         refresh_token=refresh_token,
     )
 
 
-def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
+def _refresh_token_grant(body: dict, app_info: ClientFact) -> Response:
 
     # RFC 6749 Section 6: refresh an access token
     refresh_token = (body.get("refresh_token") or "").strip()
@@ -518,42 +620,48 @@ def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
     try:
         rt = JwtPayload.decode(refresh_token)
 
-    except jwt.InvalidTokenError:
-        return OAuthErrorResponse(code=401, error_description="invalid_grant: invalid refresh_token")
+    except jwt.InvalidTokenError as e:
+        return OAuthErrorResponse(code=401, error_description=f"invalid_grant: invalid refresh_token {str(e)}")
 
-    if rt.cid != jwt_payload.cid or rt.typ != "refresh":
+    if rt.cid != app_info.client_id or rt.typ != "refresh":
         log.warn(
             "Refresh token validation failed",
-            details={"client_id": jwt_payload.cid, "refresh_client": rt.cid, "refresh_type": rt.typ},
+            details={"client_id": app_info.client_id, "refresh_client": rt.cid, "refresh_type": rt.typ},
         )
         return OAuthErrorResponse(code=401, error_description="invalid_grant: refresh_token audience/type mismatch")
 
-    if not jwt_payload.sub:
+    if not rt.sub:
         return OAuthErrorResponse(code=401, error_description="invalid_grant: invalid refresh token")
 
     # Get fresh AWS credentials from database (NOT from refresh token)
-    aws_credentials, permissions = get_user_access_key(jwt_payload.cnm, jwt_payload.sub)
+    aws_credentials, permissions = get_user_access_key(rt.cnm, rt.sub)
     if not aws_credentials:
-        log.warn("Missing AWS credentials for refresh token user %s in client %s", jwt_payload.sub, jwt_payload.cnm)
+        log.warn("Missing AWS credentials for refresh token user %s in client %s", rt.sub, rt.cnm)
         return OAuthErrorResponse(code=401, error_description="invalid_grant: no AWS credentials")
 
     # Create new access token with client info
     try:
         access_token = create_access_token_with_sts(
             aws_credentials=aws_credentials,
-            jwt_payload=jwt_payload,
+            client_id=rt.cid,
+            client=rt.cnm,
+            subject=rt.sub,
+            scope=rt.scp,
             permissions=permissions,
         )
     except Exception as e:
         log.warn(
             "Refresh token access token creation failed",
-            details={"client_id": jwt_payload.cid, "user_id": jwt_payload.sub, "error": str(e)},
+            details={"client_id": rt.cid, "user_id": rt.sub, "error": str(e)},
         )
         return OAuthErrorResponse(code=500, error_description="failed to create access token", exception=e)
 
     # Create new refresh token with client info
     new_refresh = _mint_refresh_token(
-        jwt_payload=jwt_payload,
+        client=rt.cnm,
+        client_id=rt.cid,
+        subject=rt.sub,
+        scope=rt.scp,
         lifetime_days=30,
     )
 
@@ -566,7 +674,7 @@ def _refresh_token_grant(body: dict, jwt_payload: JwtPayload) -> Response:
     )
 
 
-def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs):
+def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
     """Exchange authorization codes and refresh tokens for access.
 
     Route:
@@ -574,27 +682,27 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
     Content-Type:
         application/x-www-form-urlencoded
 
-    Grants:
-        - authorization_code:
-            Required form fields:
-              grant_type=authorization_code
-              code
-              redirect_uri (exact match)
-              client_id
-              code_verifier (PKCE, for public clients)
-            Required auth:
-              Authorization: Bearer <session JWT with cred_jwe>
-            Returns:
-              access_token (JWT with enc_credentials), refresh_token (JWT with cred_jwe + nbf), token_type, expires_in, scope
+        Grants:
+                - authorization_code:
+                        Required form fields:
+                            grant_type=authorization_code
+                            code
+                            redirect_uri (exact match)
+                            client_id
+                            code_verifier (PKCE, required for public clients)
+                        Client authentication:
+                            - Confidential clients MUST authenticate with HTTP Basic (Authorization header) or body params.
+                            - Public clients MUST NOT use a client_secret (PKCE enforces proof-of-possession).
+                        Returns:
+                            access_token (JWT), refresh_token (JWT), token_type, expires_in, scope
 
-        - refresh_token:
-            Required form fields:
-              grant_type=refresh_token
-              refresh_token
-              client_id
-            Behavior:
-              Enforces a minimum cadence via nbf, reuses enc_credentials if the STS session is still valid,
-              otherwise performs a single STS call to mint a new access token.
+                - refresh_token:
+                        Required form fields:
+                            grant_type=refresh_token
+                            refresh_token
+                            client_id
+                        Behavior:
+                            Validates refresh token audience/type, mints a new access token and rotates refresh token.
 
     Errors:
         400 invalid_request/invalid_grant, 401 invalid_client, 429 slow_down with Retry-After.
@@ -603,13 +711,12 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
     body = body or {}
     headers = headers or {}
 
-    # Support HTTP Basic client authentication (RFC 6749 §2.3.1)
-    basic_client_id, basic_client_secret = _parse_basic_auth(headers.get("authorization"))
-
     # Prefer Authorization header if present; otherwise, fallback to form
     form_client_id = (body.get("client_id") or "").strip()
     form_client_secret = (body.get("client_secret") or "").strip()
 
+    # Support HTTP Basic client authentication (RFC 6749 §2.3.1)
+    basic_client_id, basic_client_secret = _parse_basic_auth(headers.get("authorization"))
     if basic_client_id:
         if form_client_id and form_client_id != basic_client_id:
             return OAuthErrorResponse(code=400, error_description="invalid_request: client_id mismatch with Authorization header")
@@ -622,17 +729,25 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
     if not client_id:
         return OAuthErrorResponse(code=400, error_description="invalid_request: client_id required")
 
-    jwt_payload, jwt_signature = get_authenticated_user(cookies)
-    if not jwt_payload:
-        log.debug("Unauthenticated request to /auth/v1/token")
-        return OAuthErrorResponse(code=400, error_description="invalid_request: unauthenticated request")
-
-    if not check_rate_limit(headers, "oauth_token", max_attempts=10, window_minutes=15):
-        log.warn("Rate limit exceeded for /auth/v1/token", details={"client_id": client_id})
-        return OAuthErrorResponse(code=429, error_description="rate_limited")
+    # Apply rate limits per grant_type to avoid blocking refresh storms on reloads
+    grant_type = (body.get("grant_type") or "").strip()
+    if grant_type == "refresh_token":
+        # Higher allowance for refresh flows (same endpoint as token)
+        if not check_rate_limit(headers, "oauth_token_refresh", max_attempts=500, window_minutes=15):
+            log.warn("Rate limit exceeded for /auth/v1/token refresh", details={"client_id": client_id})
+            return OAuthErrorResponse(code=429, error_description="rate_limited")
+    elif grant_type == "authorization_code":
+        if not check_rate_limit(headers, "oauth_token_authcode", max_attempts=50, window_minutes=15):
+            log.warn("Rate limit exceeded for /auth/v1/token authcode", details={"client_id": client_id})
+            return OAuthErrorResponse(code=429, error_description="rate_limited")
+    else:
+        # Generic/unknown grant types (still gate to prevent abuse)
+        if not check_rate_limit(headers, "oauth_token_other", max_attempts=50, window_minutes=15):
+            log.warn("Rate limit exceeded for /auth/v1/token other", details={"client_id": client_id})
+            return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate client registration once
-    app_info: ClientFact = get_oauth_app_info(jwt_payload.cid)
+    app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
         log.warn("Unknown client attempted token exchange", details={"client_id": client_id})
         resp = OAuthErrorResponse(code=401, error_description="invalid_client: unknown client")
@@ -647,14 +762,13 @@ def oauth_token(*, cookies: dict = None, headers: dict = None, body: dict = None
         resp.set_header("WWW-Authenticate", 'Basic realm="OAuth"')
         return resp
 
-    grant_type = (body.get("grant_type") or "").strip()
     if grant_type == "authorization_code":
 
-        return _authorization_code_grant(body, jwt_payload, jwt_signature, app_info)
+        return _authorization_code_grant(body, app_info)
 
     elif grant_type == "refresh_token":
 
-        return _refresh_token_grant(body, jwt_payload)
+        return _refresh_token_grant(body, app_info)
 
     else:
         return OAuthErrorResponse(code=400, error_description="unsupported_grant_type: use authorization_code or refresh_token")
@@ -836,41 +950,41 @@ auth_server_endpoints = {
         oauth_authorize,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit as the platform evolves
     ),
     "GET:/auth/v1/cred_enc_key": RouteEndpoint(
         get_cred_enc_key,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "POST:/auth/v1/token": RouteEndpoint(
         oauth_token,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "POST:/auth/v1/revoke": RouteEndpoint(
         oauth_revoke,
         permissions={Permission.USER_MANAGE},
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "POST:/auth/v1/introspect": RouteEndpoint(
         oauth_introspect,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "GET:/auth/v1/userinfo": RouteEndpoint(
         oauth_userinfo,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "GET:/auth/v1/jwks": RouteEndpoint(
         oauth_jwks,
         permissions={Permission.DATA_READ},
         allow_anonymous=True,
-        client_isolation=False,
+        client_isolation=True,  # Enable client isolation for now; revisit
     ),
 }

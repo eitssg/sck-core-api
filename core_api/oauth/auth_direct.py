@@ -1,3 +1,4 @@
+from csv import Error
 from typing import Optional
 from datetime import datetime, timezone
 import random
@@ -7,6 +8,12 @@ import uuid
 import bcrypt
 from core_db.registry import ClientFact
 import httpx
+import base64
+import hmac
+import hashlib
+import struct
+import time
+from urllib.parse import quote as urlquote
 
 import jwt
 
@@ -52,6 +59,73 @@ from .tools import (
     is_password_compliant,
     revoke_access_token,
 )
+
+
+# ---- TOTP helpers -----------------------------------------------------------
+
+
+def _b32_secret_generate(num_bytes: int = 20) -> str:
+    """Generate a random base32-encoded secret without padding."""
+    secret = base64.b32encode(os.urandom(num_bytes)).decode("ascii")
+    return secret.rstrip("=")
+
+
+def _b32_secret_decode(secret: str) -> bytes:
+    s = secret.strip().replace(" ", "").upper()
+    # add padding back for decoding
+    pad = "=" * ((8 - (len(s) % 8)) % 8)
+    return base64.b32decode(s + pad, casefold=True)
+
+
+def _hotp(key: bytes, counter: int, digits: int = 6) -> str:
+    hm = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = hm[-1] & 0x0F
+    dbc = ((hm[offset] & 0x7F) << 24) | ((hm[offset + 1] & 0xFF) << 16) | ((hm[offset + 2] & 0xFF) << 8) | (hm[offset + 3] & 0xFF)
+    code = dbc % (10**digits)
+    return str(code).zfill(digits)
+
+
+def _totp_verify(secret: str, code: str, *, period: int = 30, skew: int = 1, digits: int = 6, now: Optional[int] = None) -> bool:
+    """Verify a TOTP code with ±skew time steps.
+
+    Args:
+        secret: base32 secret
+        code: code string from user
+        period: time step in seconds
+        skew: window of steps before/after to accept
+        digits: number of digits expected
+        now: optional epoch seconds for testing
+    """
+    if not code or not code.isdigit() or len(code) not in (6, 7, 8):
+        return False
+    try:
+        key = _b32_secret_decode(secret)
+    except Exception:
+        return False
+    ts = int(now if now is not None else time.time()) // period
+    for off in range(-skew, skew + 1):
+        if _hotp(key, ts + off, digits=digits) == code.zfill(digits):
+            return True
+    return False
+
+
+def _build_otpauth_uri(secret: str, *, account_name: str, issuer: str, digits: int = 6, period: int = 30) -> str:
+    label = f"{issuer}:{account_name}"
+    # Use urlquote for path label, urlencode for query
+    query = urlencode({"secret": secret, "issuer": issuer, "digits": str(digits), "period": str(period), "algorithm": "SHA1"})
+    return f"otpauth://totp/{urlquote(label)}?{query}"
+
+
+def _generate_recovery_codes(n: int = 10, length: int = 8) -> list[str]:
+    alphabet = "0123456789"
+    return ["".join(random.choices(alphabet, k=length)) for _ in range(n)]
+
+
+def _hash_codes(codes: list[str]) -> list[str]:
+    hashed: list[str] = []
+    for c in codes:
+        hashed.append(bcrypt.hashpw(c.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"))
+    return hashed
 
 
 def _read_identity_cookie(cookies: dict) -> Optional[dict]:
@@ -1202,6 +1276,239 @@ def resend_verification_email(*, headers: dict = None, body: dict = None, **kwar
         return ErrorResponse(code=500, message="Failed to resend verification email", exception=e)
 
 
+def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """Set up TOTP MFA for the authenticated user.
+
+    Route:
+        POST /auth/v1/mfa/totp/setup
+
+    Request:
+        JSON: {
+            "label": string,           // Optional - Label for the TOTP (e.g., "MyApp")
+            "issuer": string           // Optional - Issuer name for the TOTP (e.g., "MyCompany")
+        }
+
+    Behavior:
+        - Requires valid Authorization: Bearer token
+        - Generates a TOTP secret and provisioning URI
+        - Returns the TOTP secret and provisioning URI for the user to configure their authenticator app
+
+    Response:
+        Success (200):
+          {
+            "data": {
+                "secret": "<totp_secret>",          // Base32 encoded TOTP secret
+                "provisioning_uri": "<uri>"         // URI for QR code generation
+            },
+             "code": 200,
+              }
+    """
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    if not jwt_payload:
+        return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
+    if not check_rate_limit(headers, "mfa_setup", max_attempts=10, window_minutes=5):
+        return ErrorResponse(code=429, message="rate_limited")
+
+    body = body or {}
+    profile_name = body.get("profile_name", "default")
+    label = body.get("label") or jwt_payload.sub
+    issuer = body.get("issuer", "SimpleCloudKit")
+
+    # If a secret already exists and we aren't forcing reset, reuse it (idempotent)
+    try:
+        existing_resp: SuccessResponse = ProfileActions.get(
+            client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name
+        )
+        existing = UserProfile(**existing_resp.data)
+    except Exception:
+        existing = None  # treat as new
+
+    force_reset = bool(body.get("force_reset"))
+    if existing and existing.totp_secret and not force_reset:
+        secret = existing.totp_secret
+        provisioning_uri = _build_otpauth_uri(secret, account_name=label, issuer=issuer)
+        # Do not return recovery codes again (only on first generation)
+        return SuccessResponse(data={"secret": secret, "provisioning_uri": provisioning_uri, "recovery_codes": []})
+
+    # Generate TOTP secret and otpauth URI
+    secret = _b32_secret_generate()
+    provisioning_uri = _build_otpauth_uri(secret, account_name=label, issuer=issuer)
+
+    # Create recovery codes; store hashes, return plaintext once
+    recovery_codes_plain = _generate_recovery_codes()
+    recovery_codes_hashed = _hash_codes(recovery_codes_plain)
+
+    data = {
+        "mfa_enabled": False,
+        "mfa_methods": ["totp"],
+        "totp_secret": secret,
+        "recovery_codes": recovery_codes_hashed,
+    }
+    try:
+        result = ProfileActions.patch(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **data)
+        log.debug("Updated user profile with MFA data", details=result.data)
+    except Exception as e:
+        log.error(f"Failed to update user profile with MFA data: {e}")
+        return ErrorResponse(code=500, message="Failed to set up MFA", exception=e)
+
+    return SuccessResponse(data={"secret": secret, "provisioning_uri": provisioning_uri, "recovery_codes": recovery_codes_plain})
+
+
+def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """Confirm TOTP MFA setup by validating the provided TOTP code."""
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    if not jwt_payload:
+        return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
+    if not check_rate_limit(headers, "mfa_confirm", max_attempts=10, window_minutes=5):
+        return ErrorResponse(code=429, message="rate_limited")
+
+    body = body or {}
+    profile_name = body.get("profile_name", "default")
+    code = (body.get("code") or "").strip()
+    if not code:
+        return ErrorResponse(code=400, message="TOTP code is required")
+
+    try:
+        resp: SuccessResponse = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        profile = UserProfile(**resp.data)
+    except Exception as e:
+        log.error(f"Failed to retrieve profile for MFA confirm: {e}")
+        return ErrorResponse(code=404, message="profile_not_found")
+
+    if not profile.totp_secret:
+        return ErrorResponse(code=400, message="totp_not_initialized")
+
+    if not _totp_verify(profile.totp_secret, code):
+        return ErrorResponse(code=401, message="invalid_code")
+
+    try:
+        result = ProfileActions.patch(
+            client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"mfa_enabled": True}
+        )
+        log.debug("Updated user profile to enable MFA", details=result.data)
+    except Exception as e:
+        log.error(f"Failed to update user profile to enable MFA: {e}")
+        return ErrorResponse(code=500, message="Failed to confirm MFA setup", exception=e)
+
+    return SuccessResponse(message="MFA setup confirmed successfully")
+
+
+def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """Verify TOTP MFA code during login.
+
+    Route:
+        POST /auth/v1/mfa/verify
+
+    Request:
+        JSON: {
+            "code": string               // Required - TOTP code from the authenticator app
+        }
+
+    Behavior:
+        - Requires valid Authorization: Bearer token (session token)
+        - Validates the provided TOTP code against the stored secret
+        - Issues a new access token if the code is valid
+
+    Response:
+        Success (200):
+          {
+            "data": {
+                "token": "<access_jwt>",          // JWT access token
+                "expires_in": 3600,               // Token lifetime in seconds (1 hour)
+                "token_type": "Bearer"            // Token type for Authorization header
+            },
+             "code": 200
+    """
+
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    if not jwt_payload:
+        return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
+    if not check_rate_limit(headers, "mfa_verify", max_attempts=10, window_minutes=1):
+        return ErrorResponse(code=429, message="rate_limited")
+
+    body = body or {}
+    profile_name = body.get("profile_name", "default")
+    code = (body.get("code") or "").strip()
+    if not code:
+        return ErrorResponse(code=400, message="TOTP code is required")
+
+    try:
+        resp: SuccessResponse = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        profile = UserProfile(**resp.data)
+    except Exception as e:
+        log.error(f"Failed to load profile for MFA verify: {e}")
+        return ErrorResponse(code=404, message="profile_not_found")
+
+    verified = False
+    if profile.totp_secret and _totp_verify(profile.totp_secret, code):
+        verified = True
+
+    if not verified and profile.recovery_codes:
+        for hashed in list(profile.recovery_codes):
+            try:
+                if bcrypt.checkpw(code.encode("utf-8"), hashed.encode("utf-8")):
+                    verified = True
+                    remaining = [h for h in profile.recovery_codes if h != hashed]
+                    ProfileActions.patch(
+                        client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"recovery_codes": remaining}
+                    )
+                    break
+            except Exception:
+                continue
+
+    if not verified:
+        return ErrorResponse(code=401, message="invalid_code")
+
+    if not profile.mfa_enabled:
+        try:
+            ProfileActions.patch(
+                client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"mfa_enabled": True}
+            )
+        except Exception:
+            pass
+
+    return SuccessResponse(message="mfa_verified")
+
+
+def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:
+    """Get MFA status for the authenticated user.
+
+    Route:
+        GET /auth/v1/mfa/status
+
+    Behavior:
+        - Requires valid Authorization: Bearer token
+        - Returns the MFA status (enabled/disabled) for the user
+
+    Response:
+        Success (200):
+          {
+            "data": {
+                "mfa_enabled": boolean          // True if MFA is enabled, False otherwise
+            },
+             "code": 200
+    """
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    if not jwt_payload:
+        return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
+    query_params = query_params or {}
+    profile_name = query_params.get("profile_name", "default")
+
+    try:
+        result = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        profile = UserProfile(**result.data)
+        mfa_enabled = bool(profile.mfa_enabled)
+        methods = profile.mfa_methods or []
+        return SuccessResponse(data={"mfa_enabled": mfa_enabled, "mfa_methods": methods})
+    except Exception as e:
+        log.error(f"Failed to retrieve user profile for MFA status: {e}")
+        return ErrorResponse(code=500, message="Failed to retrieve MFA status", exception=e)
+
+
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/signup": RouteEndpoint(
         user_signup,
@@ -1275,6 +1582,28 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
         resend_verification_email,
         permissions=["user:resend_verification"],
         allow_anonymous=True,
+        client_isolation=False,
+    ),
+    # MFA endpoints are defined in core_api/oauth/auth_mfa.py
+    "POST:/auth/v1/mfa/totp/setup": RouteEndpoint(
+        mfa_totp_setup,
+        permissions=["mfa:setup"],
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/mfa/totp/confirm": RouteEndpoint(
+        mfa_totp_confirm,
+        permissions=["mfa:confirm"],
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/mfa/verify": RouteEndpoint(
+        mfa_verify,
+        permissions=["mfa:verify"],
+        allow_anonymous=True,
+        client_isolation=False,
+    ),
+    "GET:/auth/v1/mfa/status": RouteEndpoint(
+        mfa_status,  # Implemented in auth_mfa.py
+        permissions=["mfa:status"],
         client_isolation=False,
     ),
 }
