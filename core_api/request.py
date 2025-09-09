@@ -33,19 +33,17 @@ from enum import Enum
 from datetime import datetime, timezone
 import json
 import urllib.parse
-import uuid
 
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Field,
     ValidationInfo,
+    Field,
     field_validator,
     model_validator,
     PrivateAttr,
 )
 
-import core_logging as log
 import core_framework as util
 
 from core_db.response import Response

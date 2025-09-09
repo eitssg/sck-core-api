@@ -1,9 +1,11 @@
 import os
+from re import S
 from typing import Set
 
 
 # JWT Configuration
 SCK_TOKEN_COOKIE_NAME = "sck_token"
+SCK_MFA_COOKIE_NAME = "sck_mfa_token"
 SCK_TOKEN_REFRESH_SECONDS = 120  # 2 minutes
 SCK_TOKEN_SESSION_MINUTES = os.getenv("SCK_TOKEN_SESSION_MINUTES", "30")
 

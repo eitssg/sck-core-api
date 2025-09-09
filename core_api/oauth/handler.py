@@ -120,7 +120,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                         "oauth_state=xyz789; Max-Age=600; HttpOnly"
                     ]
                 },
-                "body": '{"access_token": "eyJhbGciOiJIUzI1NiIs..."}'
+                "body": '{"access": "eyJhbGciOiJIUzI1NiIs..."}'
             }
 
         **Required Response Fields**:
@@ -172,7 +172,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                     "Content-Type": "application/json",
                     "Cache-Control": "no-store"
                 },
-                "body": '{"access_token": "eyJhbGci...", "token_type": "Bearer", "expires_in": 3600}'
+                "body": '{"access": "eyJhbGci...", "token_type": "Bearer", "expires_in": 3600}'
             }
 
         **OAuth Error Response**:
@@ -247,7 +247,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
         security_context = None
         if not endpoint_route.allow_anonymous:
-            security_context = extract_security_context(request)
+            security_context = extract_security_context(request, endpoint_route)
 
             if not security_context:
                 raise UnauthorizedException("Authorization required")

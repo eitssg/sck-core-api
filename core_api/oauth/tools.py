@@ -34,6 +34,7 @@ from .constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     REFRESH_MIN_INTERVAL_SECONDS,
+    SCK_MFA_COOKIE_NAME,
     SCK_TOKEN_SESSION_MINUTES,
     JWT_ACCESS_HOURS,
     SCK_TOKEN_COOKIE_NAME,
@@ -583,9 +584,61 @@ def get_user_access_key(
         raise
 
 
+def create_mfa_challenge_id() -> str:
+    """Generate a unique MFA challenge identifier for tracking multi-factor authentication sessions
+
+    Creates a random UUID4 string to uniquely identify an MFA challenge session.
+    This ID is used to correlate MFA challenges with user sessions during OAuth flows.
+
+    Returns:
+        str: Unique MFA challenge identifier (UUID4 string)
+
+    Examples:
+        >>> challenge_id = create_mfa_challenge_id()
+        >>> # "3f50c1e2-8f1b-4d2a-9c3e-1a2b3c4d5e6f"
+    """
+    return str(uuid.uuid4())
+
+
+def create_mfa_session_jwt(
+    client_id: str,
+    client: str,
+    user_id: str,
+    minutes: int = 5,
+) -> str:
+    """Generate MFA session JWT for OAuth flows with user identity and client context but no AWS credentials
+
+    Creates a lightweight authentication token used in OAuth authorization flows.
+    Contains user identity and client information but deliberately excludes AWS credentials
+    for security - those are added later via create_access_token_with_sts().
+
+    Args:
+        client_id (str): OAuth client ID
+        client (str): Client name/slug for data operations
+        user_id (str): User identifier (subject claim)
+        minutes (int): Token validity in minutes. Defaults to 5.
+
+    Returns:
+        str: Signed JWT token for session authentication
+
+
+    """
+    payload = JwtPayload(
+        sub=user_id,
+        typ="mfa_pending",
+        cid=client_id,
+        cnm=client,
+        ttl=minutes,
+        scp="mfa",
+        auth_time=int(datetime.now(tz=timezone.utc).timestamp()),
+    )
+
+    return payload.encode()
+
+
 def create_basic_session_jwt(
     client_id: str,
-    client_name: str,
+    client: str,
     user_id: str,
     minutes: int = SCK_TOKEN_SESSION_MINUTES,
     scope: Optional[str] = None,
@@ -599,7 +652,7 @@ def create_basic_session_jwt(
 
     Args:
         client_id (str): OAuth client ID
-        client_name (str): Client name/slug for data operations
+        client (str): Client name/slug for data operations
         user_id (str): User identifier (subject claim)
         minutes (int): Token validity in minutes. Defaults to SCK_TOKEN_SESSION_MINUTES.
 
@@ -641,7 +694,7 @@ def create_basic_session_jwt(
         sub=user_id,
         typ="session",
         cid=client_id,
-        cnm=client_name,
+        cnm=client,
         ttl=minutes,
         scp=scope or "read",
         auth_time=auth_time or int(datetime.now(tz=timezone.utc).timestamp()),
@@ -675,7 +728,7 @@ def create_access_token_with_sts(
 
     JWT Claims (via JwtPayload model):
         - sub (str): User identifier
-        - typ (str): "access_token"
+        - typ (str): "access"
         - iss (str): "sck-core-api"
         - iat (int): Issued at timestamp
         - exp (int): Expiration timestamp
@@ -775,6 +828,7 @@ def create_access_token_with_sts(
         sub=subject,
         cid=client_id,
         cnm=client,
+        typ="access",
         scp=combined_scope,
         enc=creds_enc,
         ttl=minutes,
@@ -1188,6 +1242,30 @@ def cookie_opts() -> dict:
     return opts
 
 
+def get_mfa_token_user(cookies: dict) -> Tuple[JwtPayload | None, str | None]:
+    token = cookies.get(SCK_MFA_COOKIE_NAME)
+    if not token:
+        return None, None
+
+    try:
+        jwt_parts = token.split(".")
+        if len(jwt_parts) == 3:
+            jwt_signature = jwt_parts[2]
+
+        jwt_payload = JwtPayload.decode(token)
+
+        if jwt_payload.typ != "mfa_pending":
+            log.debug(f"Unsupported JWT token type: {jwt_payload.typ}")
+            return None, None
+
+        return jwt_payload, jwt_signature
+
+    except Exception as e:
+        log.debug(f"Invalid JWT token in request: {e}")
+
+    return None, None
+
+
 def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[JwtPayload | None, str | None]:
     """Extract the authenticated user and client context from JWT token.
 
@@ -1208,7 +1286,7 @@ def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[
     Example:
         >>> jwt_payload, jwt_signature = get_authenticated_user(request)
         >>> if jwt_payload:
-        ...     # User is authenticated, use client_name for data operations
+        ...     # User is authenticated, use client for data operations
         ...     client = jwt_payload.cnm or "core"
         ...     profile = ProfileActions.get(client=client, user_id=jwt_payload.sub, profile_name="default")
 
@@ -1218,7 +1296,7 @@ def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[
 
     JWT Token Types Supported:
         - Session tokens (typ="session") - from login flow
-        - Access tokens (typ="access_token") - from OAuth flow
+        - Access tokens (typ="access") - from OAuth flow
         - Refresh tokens (typ="refresh") - for token renewal
 
     Security:
@@ -1239,8 +1317,7 @@ def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[
         if len(parts) == 2 and parts[0].lower() == "bearer":
             token = parts[1].strip()
     if token is None and cookies is not None:
-        if SCK_TOKEN_COOKIE_NAME in cookies:
-            token = cookies[SCK_TOKEN_COOKIE_NAME]
+        token = cookies.get(SCK_TOKEN_COOKIE_NAME)
 
     if not token:
         return None, None
@@ -1251,6 +1328,10 @@ def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[
             jwt_signature = jwt_parts[2]
 
         jwt_payload = JwtPayload.decode(token)
+
+        if jwt_payload.typ not in ("session", "access"):
+            log.debug(f"Unsupported JWT token type: {jwt_payload.typ}")
+            return None, None
 
         return jwt_payload, jwt_signature
 
@@ -1275,7 +1356,7 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
                         "client_id": "coreui",
                         "Client": "core",
                         "redirect_uri": "http://localhost:3000/auth/callback",
-                        "client_name": "Core UI Application",
+                        "client": "Core UI Application",
                         ...
                     }
 
@@ -1301,7 +1382,7 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
         >>> app_info = get_oauth_app_info("coreui")
         >>> if app_info:
         ...     redirect_uri = app_info["redirect_uri"]
-        ...     client_name = app_info["Client"]
+        ...     client = app_info["Client"]
         >>>
         >>> # Unknown client
         >>> app_info = get_oauth_app_info("malicious_app")

@@ -1,4 +1,3 @@
-from csv import Error
 from typing import Optional
 from datetime import datetime, timezone
 import random
@@ -37,11 +36,10 @@ from core_api.response import RedirectResponse
 
 from ..request import RouteEndpoint
 
-from ..email.smtp import send_password_updated_email
-
 from .constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
+    SCK_MFA_COOKIE_NAME,
     SCK_TOKEN_SESSION_MINUTES,
     SCK_TOKEN_COOKIE_NAME,
     SCK_TOKEN_REFRESH_SECONDS,
@@ -49,12 +47,14 @@ from .constants import (
 )
 from .tools import (
     JwtPayload,
+    create_mfa_session_jwt,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
     check_rate_limit,
     encrypt_credentials,
     create_basic_session_jwt,
+    get_mfa_token_user,
     get_oauth_app_info,
     is_password_compliant,
     revoke_access_token,
@@ -421,7 +421,7 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     # Extract update fields
     aws_access_key = body.pop("aws_access_key", None)
     aws_secret_key = body.pop("aws_secret_key", None)
-    profile_name = body.pop("profile_name", None)
+    profile_name = body.pop("profile_name", "default")
     body.pop("user_id", None)  # Prevent user_id changes
     body.pop("profile_name", None)  # Prevent profile_name changes
     body.pop("credentials", None)  # Prevent direct credentials changes
@@ -641,6 +641,12 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
             log.warn("Password validation failed for user: %s", user_id)
             log.debug(f"Password validation failed for user {user_id}")
             return ErrorResponse(code=401, message="Authorization Failed")
+
+        if profile_data.mfa_enabled:
+            session_jwt = create_mfa_session_jwt(client_id, client, user_id, 5)
+            resp = SuccessResponse(code=202, message="mfa_required")
+            resp.set_cookie(SCK_MFA_COOKIE_NAME, session_jwt, max_age=5 * 60, **cookie_opts())
+            return resp
 
         minutes = int(SCK_TOKEN_SESSION_MINUTES)
 
@@ -1303,7 +1309,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
              "code": 200,
               }
     """
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
@@ -1357,7 +1363,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
 
 def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Confirm TOTP MFA setup by validating the provided TOTP code."""
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
@@ -1422,12 +1428,24 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
              "code": 200
     """
 
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
-    if not jwt_payload:
+    jwt_payload, _ = get_authenticated_user(cookies)
+
+    mfa_payload, _ = get_mfa_token_user(cookies)
+
+    if not jwt_payload and not mfa_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
     if not check_rate_limit(headers, "mfa_verify", max_attempts=10, window_minutes=1):
         return ErrorResponse(code=429, message="rate_limited")
+
+    if mfa_payload:
+        client_id = mfa_payload.cid
+        client = mfa_payload.cnm
+        user_id = mfa_payload.sub
+    else:
+        client_id = jwt_payload.cid
+        client = jwt_payload.cnm
+        user_id = jwt_payload.sub
 
     body = body or {}
     profile_name = body.get("profile_name", "default")
@@ -1436,7 +1454,7 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
         return ErrorResponse(code=400, message="TOTP code is required")
 
     try:
-        resp: SuccessResponse = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        resp: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
         profile = UserProfile(**resp.data)
     except Exception as e:
         log.error(f"Failed to load profile for MFA verify: {e}")
@@ -1452,9 +1470,7 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
                 if bcrypt.checkpw(code.encode("utf-8"), hashed.encode("utf-8")):
                     verified = True
                     remaining = [h for h in profile.recovery_codes if h != hashed]
-                    ProfileActions.patch(
-                        client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"recovery_codes": remaining}
-                    )
+                    ProfileActions.patch(client=client, user_id=user_id, profile_name=profile_name, **{"recovery_codes": remaining})
                     break
             except Exception:
                 continue
@@ -1464,13 +1480,19 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
 
     if not profile.mfa_enabled:
         try:
-            ProfileActions.patch(
-                client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"mfa_enabled": True}
-            )
+            ProfileActions.patch(client=client, user_id=user_id, profile_name=profile_name, **{"mfa_enabled": True})
         except Exception:
             pass
 
-    return SuccessResponse(message="mfa_verified")
+    resp = SuccessResponse(message="mfa_verified")
+
+    if mfa_payload and mfa_payload.typ == "mfa_pending":
+        minutes = int(SCK_TOKEN_SESSION_MINUTES)
+        session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
+        resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())
+        resp.delete_cookie(SCK_MFA_COOKIE_NAME, path="/")
+
+    return resp
 
 
 def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:
@@ -1491,7 +1513,7 @@ def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict
             },
              "code": 200
     """
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
@@ -1519,16 +1541,19 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "GET:/auth/v1/me": RouteEndpoint(
         get_user,
         permissions=["user:read"],
+        required_token_type="session",
         client_isolation=False,
     ),
     "PUT:/auth/v1/me": RouteEndpoint(
         update_user,
         permissions=["user:update"],
+        required_token_type="session",
         client_isolation=False,
     ),
     "PATCH:/auth/v1/me": RouteEndpoint(
         update_user,
         permissions=["user:update"],
+        required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/login": RouteEndpoint(
@@ -1570,6 +1595,7 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "GET:/auth/v1/organizations": RouteEndpoint(
         list_organizations,
         permissions=["org:list"],
+        required_token_type="session",
         client_isolation=False,
     ),
     "GET:/auth/v1/verify": RouteEndpoint(
@@ -1588,11 +1614,13 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/mfa/totp/setup": RouteEndpoint(
         mfa_totp_setup,
         permissions=["mfa:setup"],
+        required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/mfa/totp/confirm": RouteEndpoint(
         mfa_totp_confirm,
         permissions=["mfa:confirm"],
+        required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/mfa/verify": RouteEndpoint(
@@ -1604,6 +1632,7 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "GET:/auth/v1/mfa/status": RouteEndpoint(
         mfa_status,  # Implemented in auth_mfa.py
         permissions=["mfa:status"],
+        required_token_type="session",
         client_isolation=False,
     ),
 }

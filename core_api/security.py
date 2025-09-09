@@ -14,7 +14,7 @@ from core_db.exceptions import UnauthorizedException
 from .oauth.auth_creds import get_credentials
 
 from .oauth.tools import JwtPayload, get_authenticated_user
-from .request import ProxyEvent
+from .request import ProxyEvent, RouteEndpoint
 
 
 class Permission(str, Enum):
@@ -382,7 +382,9 @@ def validate_client_access(security_context: SecurityContext, request: ProxyEven
     log.debug(f"Client access granted for user {security_context.user_id} to client '{client_slug}'")
 
 
-def extract_security_context(request: ProxyEvent, require_aws_credentials: bool = False) -> Optional[EnhancedSecurityContext]:
+def extract_security_context(
+    request: ProxyEvent, endpoint: RouteEndpoint, require_aws_credentials: bool = False
+) -> Optional[EnhancedSecurityContext]:
     """Extract security context from JWT token with optional AWS role assumption.
 
     Args:
@@ -395,13 +397,13 @@ def extract_security_context(request: ProxyEvent, require_aws_credentials: bool 
         EnhancedSecurityContext with AWS clients if role assumption succeeded
     """
     # Extract JWT from cookies or headers
-    jwt_payload, _ = get_authenticated_user(request.parsed_cookies, request.headers)
+    if endpoint.required_token_type == "session":
+        jwt_payload, _ = get_authenticated_user(cookies=request.parsed_cookies)
+    elif endpoint.required_token_type == "access":
+        jwt_payload, _ = get_authenticated_user(headers=request.headers)
+
     if not jwt_payload:
         log.debug("No valid JWT token found in request")
-        return None
-
-    if jwt_payload.typ != "access":
-        log.warning(f"Invalid token type for API: {jwt_payload.typ}")
         return None
 
     # Extract permissions from OAuth scopes

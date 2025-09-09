@@ -665,13 +665,15 @@ def _refresh_token_grant(body: dict, app_info: ClientFact) -> Response:
         lifetime_days=30,
     )
 
-    return OAuthTokenResponse(
+    resp = OAuthTokenResponse(
         access_token=access_token,
         token_type="Bearer",
         expires_in=int(JWT_ACCESS_HOURS * 3600),
         scope=rt.scp or "",
         refresh_token=new_refresh,
     )
+    log.debug("Refreshed access token", details=resp.model_dump(exclude_none=True))
+    return resp
 
 
 def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
@@ -887,7 +889,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
     jwt_payload, _ = get_authenticated_user(cookies, headers)
 
     # Ensure this is an access token
-    if not jwt_payload or jwt_payload.typ != "access_token":
+    if not jwt_payload or jwt_payload.typ != "access":
         return OAuthErrorResponse(code=401, error_description="invalid_token: access token required")
 
     try:

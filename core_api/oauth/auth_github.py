@@ -198,7 +198,7 @@ async def github_callback(
             )
 
         token_json = token_res.json()
-        gh_access_token = token_json.get("access_token")
+        gh_access_token = token_json.get("access")
         if not gh_access_token:
             log.warn("No access token received from GitHub")
             return RedirectResponse(
