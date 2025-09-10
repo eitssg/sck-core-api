@@ -306,35 +306,44 @@ def oauth_authorize(
 
     # 1) Validate ALL required parameters BEFORE rate limiting or DB calls
     if not client_id:
+        log.warn("Authorize missing client_id", details={"query_keys": list((query_params or {}).keys())})
         return RedirectResponse(url=_ui_url("/login?error=mci"))
 
     if not response_type:
+        log.warn("Authorize missing response_type", details={"client_id": client_id})
         return RedirectResponse(url=_ui_url("/login?error=mrt"))
 
     if response_type != "code":
+        log.warn("Unsupported response_type", details={"client_id": client_id, "response_type": response_type})
         return RedirectResponse(url=_ui_url("/login?error=urt"))
 
     if not redirect_uri:
+        log.warn("Authorize missing redirect_uri", details={"client_id": client_id})
         return RedirectResponse(url=_ui_url("/login?error=mru"))
 
     if code_challenge:
         if len(code_challenge) < 43 or len(code_challenge) > 128:
+            log.debug("Invalid PKCE code_challenge length", details={"client_id": client_id, "length": len(code_challenge)})
             return RedirectResponse(url=_ui_url("/login?error=isf"))
         if not all(c.isalnum() or c in "-._~" for c in code_challenge):
+            log.debug("Invalid PKCE code_challenge characters", details={"client_id": client_id})
             return RedirectResponse(url=_ui_url("/login?error=isf"))
     # Allow only S256 if provided (PLAIN not supported)
     if code_challenge_method and code_challenge_method != "S256":
+        log.debug("Unsupported code_challenge_method", details={"client_id": client_id, "method": code_challenge_method})
         return RedirectResponse(url=_ui_url("/login?error=ucm"))
 
     # Optional: Validate state parameter format if present (length + printable chars)
     if state:
         invalid_state = len(state) > 512 or (not state.isprintable())
         if invalid_state:
+            log.debug("Invalid state parameter format", details={"client_id": client_id, "length": len(state)})
             return RedirectResponse(url=_ui_url("/login?error=isf"))
 
     # 2) Now check rate limiting (use headers for IP/UA-aware limiting)
     headers = headers or {}
-    if not check_rate_limit(headers, "oauth_authorize", max_attempts=10, window_minutes=15):
+    # Rate limit key standardized to auth:oauth:authorize
+    if not check_rate_limit(headers, "auth:oauth:authorize", max_attempts=10, window_minutes=15):
         log.warn("Rate limit exceeded for /auth/v1/authorize", details={"client_id": client_id})
         return RedirectResponse(url=_ui_url("/login?error=rle"))
 
@@ -390,7 +399,7 @@ def oauth_authorize(
     # 4) Database validation (client lookup) - AFTER auth check and rate limiting
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
-        log.warn("Unknown client attempted OAuth flow: %s", client_id)
+        log.warn("Unknown client in authorize", details={"client_id": client_id})
         return RedirectResponse(url=_ui_url("/login?error=cid"))
 
     if jwt_payload.cnm != app_info.client:
@@ -399,6 +408,7 @@ def oauth_authorize(
     # 5) Validate redirect_uri against registration
     registered_uris = app_info.client_redirect_urls
     if redirect_uri not in [uri for uri in registered_uris if uri]:
+        log.debug("Redirect URI not registered", details={"client_id": client_id, "redirect_uri": redirect_uri})
         return RedirectResponse(url=_ui_url("/login?error=rnr"))
 
     # 5b) Enforce PKCE for public clients (no client_secret)
@@ -406,7 +416,7 @@ def oauth_authorize(
     if is_public:
         # Require PKCE for public clients
         if not code_challenge:
-            log.debug("PKCE required for public client, missing code_challenge", details={"client_id": client_id})
+            log.debug("Missing PKCE for public client", details={"client_id": client_id})
             return RedirectResponse(url=_ui_url("/login?error=pkr"))
         if code_challenge_method and code_challenge_method != "S256":
             log.debug(
@@ -735,23 +745,26 @@ def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
     grant_type = (body.get("grant_type") or "").strip()
     if grant_type == "refresh_token":
         # Higher allowance for refresh flows (same endpoint as token)
-        if not check_rate_limit(headers, "oauth_token_refresh", max_attempts=500, window_minutes=15):
+        # Rate limit key standardized to auth:oauth:token:refresh
+        if not check_rate_limit(headers, "auth:oauth:token:refresh", max_attempts=500, window_minutes=15):
             log.warn("Rate limit exceeded for /auth/v1/token refresh", details={"client_id": client_id})
             return OAuthErrorResponse(code=429, error_description="rate_limited")
     elif grant_type == "authorization_code":
-        if not check_rate_limit(headers, "oauth_token_authcode", max_attempts=50, window_minutes=15):
+        # Rate limit key standardized to auth:oauth:token:auth_code
+        if not check_rate_limit(headers, "auth:oauth:token:auth_code", max_attempts=50, window_minutes=15):
             log.warn("Rate limit exceeded for /auth/v1/token authcode", details={"client_id": client_id})
             return OAuthErrorResponse(code=429, error_description="rate_limited")
     else:
         # Generic/unknown grant types (still gate to prevent abuse)
-        if not check_rate_limit(headers, "oauth_token_other", max_attempts=50, window_minutes=15):
+        # Rate limit key standardized to auth:oauth:token:other
+        if not check_rate_limit(headers, "auth:oauth:token:other", max_attempts=50, window_minutes=15):
             log.warn("Rate limit exceeded for /auth/v1/token other", details={"client_id": client_id})
             return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate client registration once
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
-        log.warn("Unknown client attempted token exchange", details={"client_id": client_id})
+        log.warn("Unknown client on token exchange", details={"client_id": client_id})
         resp = OAuthErrorResponse(code=401, error_description="invalid_client: unknown client")
         resp.set_header("WWW-Authenticate", 'Basic realm="OAuth"')
         return resp
@@ -759,7 +772,7 @@ def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
     is_confidential = bool(app_info.client_secret)
     _, validated = _validate_client_credentials(client_secret, app_info)
     if is_confidential and not validated:
-        log.warn("Client authentication failed on /auth/v1/token", details={"client_id": client_id})
+        log.warn("Client authentication failed on token endpoint", details={"client_id": client_id})
         resp = OAuthErrorResponse(code=401, error_description="invalid_client: invalid credentials")
         resp.set_header("WWW-Authenticate", 'Basic realm="OAuth"')
         return resp
@@ -799,8 +812,9 @@ def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = Non
 
     # Rate limiting (use headers; guard None)
     headers = headers or {}
-    if not check_rate_limit(headers, "oauth_revoke", max_attempts=10, window_minutes=1):
-        log.warn("Rate limit exceeded on /auth/v1/revoke")
+    # Rate limit key standardized to auth:oauth:revoke
+    if not check_rate_limit(headers, "auth:oauth:revoke", max_attempts=10, window_minutes=1):
+        log.warn("Rate limited token revocation", details={"token_type_hint": token_type_hint or None})
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Optional: Validate the token format (but don't require it to be valid)
@@ -841,8 +855,9 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs):
 
     # Rate limiting (use headers; guard None)
     headers = headers or {}
-    if not check_rate_limit(headers, "oauth_introspect", max_attempts=20, window_minutes=1):
-        log.warn("Rate limit exceeded on /auth/v1/introspect")
+    # Rate limit key standardized to auth:oauth:introspect
+    if not check_rate_limit(headers, "auth:oauth:introspect", max_attempts=20, window_minutes=1):
+        log.warn("Rate limited token introspection")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     try:
@@ -881,8 +896,9 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
 
     # Rate limiting (use headers; guard None)
     headers = headers or {}
-    if not check_rate_limit(headers, "oauth_userinfo", max_attempts=30, window_minutes=1):
-        log.warn("Rate limit exceeded on /auth/v1/userinfo")
+    # Rate limit key standardized to auth:oauth:userinfo
+    if not check_rate_limit(headers, "auth:oauth:userinfo", max_attempts=30, window_minutes=1):
+        log.warn("Rate limited userinfo")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate access token
@@ -922,8 +938,9 @@ def oauth_jwks(*, headers: dict = None, **kwargs):
     """
     # Rate limiting (use headers; guard None)
     headers = headers or {}
-    if not check_rate_limit(headers, "oauth_jwks", max_attempts=50, window_minutes=1):
-        log.warn("Rate limit exceeded on /auth/v1/jwks")
+    # Rate limit key standardized to auth:oauth:jwks
+    if not check_rate_limit(headers, "auth:oauth:jwks", max_attempts=50, window_minutes=1):
+        log.warn("Rate limited jwks")
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     try:

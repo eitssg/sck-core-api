@@ -1,10 +1,13 @@
+import profile
 from typing import Optional
 from datetime import datetime, timezone
 import random
 import os
+import re
 from urllib.parse import urlencode
 import uuid
 import bcrypt
+from core_db import ConflictException, NotFoundException
 from core_db.registry import ClientFact
 import httpx
 import base64
@@ -244,7 +247,8 @@ def user_signup(*, cookies: dict = None, headers: dict = None, body: dict = None
           when calling /auth/v1/authorize → /auth/v1/token or /auth/v1/refresh.
     """
 
-    if not check_rate_limit(headers, "oauth_signup", max_attempts=10, window_minutes=15):
+    # Rate limit key standardized to auth:signup
+    if not check_rate_limit(headers, "auth:signup", max_attempts=10, window_minutes=15):
         return ErrorResponse(code=429, message="rate_limited")
 
     # Common input
@@ -356,7 +360,9 @@ def user_signup(*, cookies: dict = None, headers: dict = None, body: dict = None
     return SuccessResponse()
 
 
-def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def get_user_profile(
+    *, cookies: dict = None, headers: dict = None, path_params: dict = None, query_params: dict = None, body: dict = None, **kwargs
+) -> Response:
     """Get the authenticated user's profile.
 
     Route:
@@ -370,12 +376,16 @@ def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, *
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
-    if not check_rate_limit(headers, "oauth_login", max_attempts=100, window_minutes=15):
+    # Rate limit key standardized to auth:login
+    if not check_rate_limit(headers, "auth:login", max_attempts=100, window_minutes=15):
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /auth/v1/me")
         return ErrorResponse(code=429, message="rate_limited")
 
+    profile_name = path_params.get("profile_name") if path_params else None
+    profile_name = query_params.get("profile_name", "default") if query_params else "default"
+
     try:
-        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
+        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
         data = UserProfile(**response.data).model_dump(by_alias=False)
     except Exception as e:
         log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
@@ -389,7 +399,9 @@ def get_user(*, cookies: dict = None, headers: dict = None, body: dict = None, *
     return SuccessResponse(data=data)
 
 
-def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def update_user_profile(
+    *, cookies: dict = None, headers: dict = None, path_params: dict | None = None, body: dict = None, **kwargs
+) -> Response:
     """Update user profile fields including AWS credentials.
 
     Route:
@@ -414,17 +426,23 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
-    if not check_rate_limit(headers, "update_user", max_attempts=20, window_minutes=1):
+    # Rate limit key standardized to auth:profile:update
+    if not check_rate_limit(headers, "auth:profile:update", max_attempts=20, window_minutes=1):
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /v1/users/me")
         return ErrorResponse(code=429, message="rate_limited")
+
+    if body is None:
+        body = {}
 
     # Extract update fields
     aws_access_key = body.pop("aws_access_key", None)
     aws_secret_key = body.pop("aws_secret_key", None)
-    profile_name = body.pop("profile_name", "default")
+    profile_name = body.pop("profile_name", "default").strip()
     body.pop("user_id", None)  # Prevent user_id changes
     body.pop("profile_name", None)  # Prevent profile_name changes
     body.pop("credentials", None)  # Prevent direct credentials changes
+
+    profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
 
     if not profile_name:
         return ErrorResponse(code=400, message="profile_name cannot be empty")
@@ -493,6 +511,234 @@ def update_user(*, cookies: dict = None, headers: dict = None, body: dict = None
     except Exception as e:
         log.error(f"Failed to update user profile for {jwt_payload.sub}: {e}")
         return ErrorResponse(code=500, message="Failed to update user profile", exception=e)
+
+
+def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+    """List all profiles for the authenticated user.
+
+    Route:
+        GET /auth/v1/users/me/profiles
+
+    Behavior:
+        - Requires valid Authorization
+    """
+
+    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    if jwt_payload is None:
+        return ErrorResponse(code=401, message="Unauthorized")
+
+    # Rate limit key standardized to auth:profile:list
+    if not check_rate_limit(headers, "auth:profile:list", max_attempts=20, window_minutes=1):
+        log.warning(
+            "Rate limit exceeded listing profiles",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "endpoint": "/auth/v1/users/me/profiles",
+                "action": "list_user_profiles",
+            },
+        )
+        return ErrorResponse(code=429, message="rate_limited")
+
+    try:
+        response = ProfileActions.list(client=jwt_payload.cnm, user_id=jwt_payload.sub)
+        # The response.data probably returned PascalCase, we need to convert to snake_case
+        profiles = [UserProfile(**item).model_dump(by_alias=False, exclude={"credentials"}) for item in response.data]
+        return SuccessResponse(data={"profiles": profiles})
+    except Exception as e:
+        log.error(f"Failed to list user profiles for {jwt_payload.sub}: {e}")
+        return ErrorResponse(code=500, message="Failed to list user profiles", exception=e)
+
+
+def create_user_profile(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+
+    jwt_payload, _ = get_authenticated_user(cookies)
+    if jwt_payload is None:
+        return ErrorResponse(code=401, message="Unauthorized")
+
+    # Rate limit key standardized to auth:profile:create
+    if not check_rate_limit(headers, "auth:profile:create", max_attempts=20, window_minutes=1):
+        log.warning(
+            "Rate limit exceeded creating profile",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "endpoint": "/auth/v1/me",
+                "action": "create_user_profile",
+            },
+        )
+        return ErrorResponse(code=429, message="rate_limited")
+
+    if body is None:
+        body = {}
+
+    body.pop("user_id", None)  # user_id comes from authentication session
+    body.pop("client", None)  # client comes from authentication session
+
+    # profile name is required, must be lowercase a-z and 1 to 12 characters in length
+    profile_name = body.pop("profile_name", "").strip()
+
+    if not profile_name:
+        log.warning(
+            "Empty profile_name on create",
+            details={"user": jwt_payload.sub, "client": jwt_payload.cnm},
+        )
+        return ErrorResponse(code=400, message="Profile name is required")
+
+    # Prevent user_id and client changes
+
+    if not re.match(r"^[a-z]{1,12}$", profile_name):
+        log.warning(
+            "Invalid profile_name format",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+                "rule": "^[a-z]{1,12}$",
+            },
+        )
+        return ErrorResponse(code=400, message="Invalid profile_name format")
+
+    try:
+
+        response: SuccessResponse = ProfileActions.create(
+            client=jwt_payload.cnm,
+            user_id=jwt_payload.sub,
+            profile_name=profile_name,
+        )
+        data = UserProfile(**response.data).model_dump(by_alias=False, exclude={"credentials"})
+        log.info(
+            "User profile created",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+            },
+        )
+        return SuccessResponse(code=201, data=data)
+
+    except ValueError as ve:
+        log.warning(
+            "Profile creation validation error",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+                "error": str(ve),
+            },
+        )
+        return ErrorResponse(code=400, message=str(ve))
+    except ConflictException:
+        log.info(
+            "Profile creation conflict",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+            },
+        )
+        return ErrorResponse(code=409, message="User profile already exists")
+    except Exception as e:
+        log.error(
+            f"Profile creation failed for user {jwt_payload.sub}",
+            details={
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+                "error": str(e),
+            },
+        )
+        return ErrorResponse(code=500, message="Profile creation failed", exception=e)
+
+
+def delete_user_profile(
+    *, cookies: dict = None, headers: dict = None, path_params: dict | None = None, body: dict = None, **kwargs
+) -> Response:
+
+    jwt_payload, _ = get_authenticated_user(cookies)
+
+    if jwt_payload is None:
+        return ErrorResponse(code=401, message="Unauthorized")
+
+    # Rate limit key standardized to auth:profile:delete
+    if not check_rate_limit(headers, "auth:profile:delete", max_attempts=5, window_minutes=1):
+        log.warning(
+            "Rate limit exceeded deleting profile",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "endpoint": "/auth/v1/me",
+                "action": "delete_user_profile",
+            },
+        )
+        return ErrorResponse(code=429, message="rate_limited")
+
+    if body is None:
+        body = {}
+
+    profile_name = body.get("profile_name", "").strip()
+    profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
+
+    if not profile_name:
+        log.warning(
+            "Empty profile_name on delete",
+            details={"user": jwt_payload.sub, "client": jwt_payload.cnm},
+        )
+        return ErrorResponse(code=400, message="Profile name is required")
+
+    if profile_name == "default":
+        log.warning(
+            "Attempt to delete default profile",
+            details={"user": jwt_payload.sub, "client": jwt_payload.cnm},
+        )
+        return ErrorResponse(code=400, message="Cannot delete default profile")
+
+    if not re.match(r"^[a-z]{1,12}$", profile_name):
+        log.warning(
+            "Invalid profile_name format on delete",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+                "rule": "^[a-z]{1,12}$",
+            },
+        )
+        return ErrorResponse(code=400, message="Invalid profile_name format")
+
+    try:
+        ProfileActions.delete(
+            client=jwt_payload.cnm,
+            user_id=jwt_payload.sub,
+            profile_name=profile_name,
+        )
+        log.info(
+            "User profile deleted",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+            },
+        )
+        return SuccessResponse(code=200, message="Profile deleted")
+    except NotFoundException:
+        log.info(
+            "Profile deletion not found",
+            details={
+                "user": jwt_payload.sub,
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+            },
+        )
+        return ErrorResponse(code=404, message="User profile not found")
+    except Exception as e:
+        log.error(
+            f"Profile deletion failed for user {jwt_payload.sub}",
+            details={
+                "client": jwt_payload.cnm,
+                "profile_name": profile_name,
+                "error": str(e),
+            },
+        )
+        return ErrorResponse(code=500, message="Profile deletion failed", exception=e)
 
 
 def _get_identity(aws_credentials: dict) -> dict:
@@ -607,7 +853,8 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         if not client_id:
             return ErrorResponse(code=400, message="The field client_id is required")
 
-        if not check_rate_limit(headers, "oauth_login", max_attempts=100, window_minutes=15):
+        # Rate limit key standardized to auth:login
+        if not check_rate_limit(headers, "auth:login", max_attempts=100, window_minutes=15):
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
             return ErrorResponse(code=429, message="rate_limited")
 
@@ -678,8 +925,9 @@ def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
     client = body.get("client", "core")
     client_id = body.get("client_id", "")
 
-    if not check_rate_limit(headers, "oauth_login", max_attempts=100, window_minutes=15):
-        log.warning(f"Rate limit exceeded for on /auth/v1/forgot-password")
+    # Rate limit key standardized to auth:forgot_password
+    if not check_rate_limit(headers, "auth:forgot_password", max_attempts=50, window_minutes=15):
+        log.warning("Rate limit exceeded for /auth/v1/forgot-password")
         return ErrorResponse(code=429, message="rate_limited")
 
     if not email:
@@ -965,7 +1213,8 @@ def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dic
     state = query_params.get("state")
 
     # Rate limiting
-    if not check_rate_limit(headers, "oauth_logout", max_attempts=10, window_minutes=1):
+    # Rate limit key standardized to auth:logout
+    if not check_rate_limit(headers, "auth:logout", max_attempts=10, window_minutes=1):
         log.warn("Rate limit exceeded on /auth/v1/logout")
         return ErrorResponse(code=429, message="rate_limited")
 
@@ -1019,7 +1268,8 @@ def refresh_session_cookie(*, cookies: dict = None, headers: dict = None, body: 
         Success (204):
     """
 
-    if not check_rate_limit(headers, "session_refresh", max_attempts=10, window_minutes=1):
+    # Rate limit key standardized to auth:session:refresh
+    if not check_rate_limit(headers, "auth:session:refresh", max_attempts=10, window_minutes=1):
         log.warn("Rate limit exceeded on /auth/v1/refresh")
         return ErrorResponse(code=429, message="rate_limited")
 
@@ -1084,7 +1334,8 @@ def list_organizations(*, headers: dict = None, **kwargs) -> Response:
         - Returns a list of organizations associated with the user
     """
 
-    if not check_rate_limit(headers, "list_organizations", max_attempts=10, window_minutes=1):
+    # Rate limit key standardized to auth:organization:list
+    if not check_rate_limit(headers, "auth:organization:list", max_attempts=10, window_minutes=1):
         log.warning(f"Rate limit exceeded for /auth/v1/organizations")
         return ErrorResponse(code=429, message="rate_limited")
 
@@ -1140,7 +1391,8 @@ def verify_email_address(*, headers: dict = None, query_params: dict = None, bod
     if not token:
         return ErrorResponse(code=400, message="Verification token is required")
 
-    if not check_rate_limit(headers, "email_verification", max_attempts=10, window_minutes=15):
+    # Rate limit key standardized to auth:email:verification
+    if not check_rate_limit(headers, "auth:email:verification", max_attempts=10, window_minutes=15):
         log.warning(f"Rate limit exceeded on /auth/v1/verify")
         return ErrorResponse(code=429, message="rate_limited")
 
@@ -1258,7 +1510,8 @@ def resend_verification_email(*, headers: dict = None, body: dict = None, **kwar
     if not email:
         return ErrorResponse(code=400, message="Email Address is required")
 
-    if not check_rate_limit(headers, "email_verification", max_attempts=10, window_minutes=15):
+    # Rate limit key standardized to auth:email:verification
+    if not check_rate_limit(headers, "auth:email:verification", max_attempts=10, window_minutes=15):
         log.warning(f"Rate limit exceeded on /auth/v1/verification/resend")
         return ErrorResponse(code=429, message="rate_limited")
 
@@ -1313,7 +1566,8 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
-    if not check_rate_limit(headers, "mfa_setup", max_attempts=10, window_minutes=5):
+    # Rate limit key standardized to auth:mfa:setup
+    if not check_rate_limit(headers, "auth:mfa:setup", max_attempts=10, window_minutes=5):
         return ErrorResponse(code=429, message="rate_limited")
 
     body = body or {}
@@ -1367,7 +1621,8 @@ def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict =
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
-    if not check_rate_limit(headers, "mfa_confirm", max_attempts=10, window_minutes=5):
+    # Rate limit key standardized to auth:mfa:confirm
+    if not check_rate_limit(headers, "auth:mfa:confirm", max_attempts=10, window_minutes=5):
         return ErrorResponse(code=429, message="rate_limited")
 
     body = body or {}
@@ -1435,7 +1690,8 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
     if not jwt_payload and not mfa_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
-    if not check_rate_limit(headers, "mfa_verify", max_attempts=10, window_minutes=1):
+    # Rate limit key standardized to auth:mfa:verify
+    if not check_rate_limit(headers, "auth:mfa:verify", max_attempts=10, window_minutes=1):
         return ErrorResponse(code=429, message="rate_limited")
 
     if mfa_payload:
@@ -1539,20 +1795,32 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
         client_isolation=False,
     ),
     "GET:/auth/v1/me": RouteEndpoint(
-        get_user,
+        get_user_profile,
         permissions=["user:read"],
         required_token_type="session",
         client_isolation=False,
     ),
     "PUT:/auth/v1/me": RouteEndpoint(
-        update_user,
+        update_user_profile,
         permissions=["user:update"],
         required_token_type="session",
         client_isolation=False,
     ),
     "PATCH:/auth/v1/me": RouteEndpoint(
-        update_user,
+        update_user_profile,
         permissions=["user:update"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/me": RouteEndpoint(
+        create_user_profile,
+        permissions=["user:update"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "DELETE:/auth/v1/me": RouteEndpoint(
+        delete_user_profile,
+        permissions=["user:delete"],
         required_token_type="session",
         client_isolation=False,
     ),
@@ -1632,6 +1900,36 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "GET:/auth/v1/mfa/status": RouteEndpoint(
         mfa_status,  # Implemented in auth_mfa.py
         permissions=["mfa:status"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "GET:/auth/v1/profiles": RouteEndpoint(
+        list_user_profiles,
+        permissions=["user:profile:list"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "POST:/auth/v1/profiles": RouteEndpoint(
+        create_user_profile,
+        permissions=["user:profile:create"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "GET:/auth/v1/profiles/{profile_name}": RouteEndpoint(
+        get_user_profile,
+        permissions=["user:profile:read"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "PATCH:/auth/v1/profiles/{profile_name}": RouteEndpoint(
+        update_user_profile,
+        permissions=["user:profile:update"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "DELETE:/auth/v1/profiles/{profile_name}": RouteEndpoint(
+        delete_user_profile,
+        permissions=["user:profile:delete"],
         required_token_type="session",
         client_isolation=False,
     ),
