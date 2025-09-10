@@ -381,8 +381,10 @@ def get_user_profile(
         log.warning(f"Rate limit exceeded for user {jwt_payload.sub} on /auth/v1/me")
         return ErrorResponse(code=429, message="rate_limited")
 
-    profile_name = path_params.get("profile_name") if path_params else None
     profile_name = query_params.get("profile_name", "default") if query_params else "default"
+
+    # path parameters override if supplied
+    profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
 
     try:
         response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
@@ -442,6 +444,7 @@ def update_user_profile(
     body.pop("profile_name", None)  # Prevent profile_name changes
     body.pop("credentials", None)  # Prevent direct credentials changes
 
+    # path parameters override if supplied
     profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
 
     if not profile_name:
@@ -540,10 +543,13 @@ def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict
         )
         return ErrorResponse(code=429, message="rate_limited")
 
+    include_fields = {"user_id", "profile_name"}
+
     try:
         response = ProfileActions.list(client=jwt_payload.cnm, user_id=jwt_payload.sub)
         # The response.data probably returned PascalCase, we need to convert to snake_case
-        profiles = [UserProfile(**item).model_dump(by_alias=False, exclude={"credentials"}) for item in response.data]
+        profiles = [UserProfile(**item).model_dump(by_alias=False, include=include_fields) for item in response.data]
+        log.debug(f"Listed {len(profiles)} profiles for user {jwt_payload.sub}", details={"profiles": profiles})
         return SuccessResponse(data={"profiles": profiles})
     except Exception as e:
         log.error(f"Failed to list user profiles for {jwt_payload.sub}: {e}")
@@ -676,6 +682,8 @@ def delete_user_profile(
         body = {}
 
     profile_name = body.get("profile_name", "").strip()
+
+    # path parameters override if supplied
     profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
 
     if not profile_name:
@@ -745,21 +753,26 @@ def _get_identity(aws_credentials: dict) -> dict:
     """Extract AWS identity information from encrypted credentials."""
     import boto3
 
-    client = boto3.client(
-        "sts",
-        aws_access_key_id=aws_credentials.get("AccessKeyId"),
-        aws_secret_access_key=aws_credentials.get("SecretAccessKey"),
-    )
+    try:
 
-    identity = client.get_caller_identity()
+        client = boto3.client(
+            "sts",
+            aws_access_key_id=aws_credentials.get("AccessKeyId"),
+            aws_secret_access_key=aws_credentials.get("SecretAccessKey"),
+        )
 
-    response = {
-        "UserId": identity.get("UserId"),
-        "Account": identity.get("Account"),
-        "Arn": identity.get("Arn"),
-    }
+        identity = client.get_caller_identity()
 
-    return response
+        response = {
+            "UserId": identity.get("UserId"),
+            "Account": identity.get("Account"),
+            "Arn": identity.get("Arn"),
+        }
+
+        return response
+    except Exception as e:
+        log.warning(f"Failed to get AWS identity: {e}")
+        return {}
 
 
 def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
