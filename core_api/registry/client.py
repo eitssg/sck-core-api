@@ -1,6 +1,11 @@
 from collections import ChainMap
+from time import perf_counter
 
-from core_db.response import Response
+import core_logging as log
+
+from core_db import SuccessResponse
+from core_db.registry import ClientFact
+from core_db.response import ErrorResponse, Response
 from core_db.registry.client.actions import ClientActions
 
 from core_api.security import Permission
@@ -29,24 +34,61 @@ def get_client_list_action(*, query_params: dict = None, path_params: dict = Non
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
-    return ApiRegClientActions.list(**dict(ChainMap(body, pp, qsp)))
+
+    start = perf_counter()
+    log.debug("registry.clients.list.start", extra={"query_params": qsp})
+    try:
+        security = kwargs.get("security")
+        client_id = getattr(security, "client_id", None) if security else None
+
+        response = ApiRegClientActions.list(client_id=client_id, **dict(ChainMap(body, pp, qsp)))
+        include_fields = {"client", "client_id", "client_name", "organization_name", "organization_account", "client_description"}
+        data = [
+            ClientFact(**item).model_dump(by_alias=False, mode="json", include=include_fields) for item in (response.data or [])
+        ]
+        duration = (perf_counter() - start) * 1000
+        log.info(
+            "registry.clients.list.success",
+            extra={"count": len(data), "duration_ms": round(duration, 2)},
+        )
+        return SuccessResponse(data=data, message="Clients retrieved successfully")
+    except Exception as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.error(
+            "registry.clients.list.error",
+            extra={"error": str(e), "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(f"Failed to list clients: {str(e)}")
 
 
 def get_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
-    """
-    Handler for GET /api/v1/client/{client} endpoint.
-    Retrieves details for a specific client.
+    """Get a single client.
 
-    Args:
-        event (dict): Lambda event object containing pathParameters with client name
-
-    Returns:
-        Response: Client details or 404 if not found
+    Path: GET /api/v1/registry/clients/{client}
     """
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
-    return ApiRegClientActions.get(**dict(ChainMap(body, pp, qsp)))
+    start = perf_counter()
+    log.debug("registry.client.get.start", extra={"path_params": pp})
+    try:
+        result = ApiRegClientActions.get(**dict(ChainMap(body, pp, qsp)))
+
+        exclude_fields = {"client_secret", "credentials"}
+
+        data = ClientFact(**result.data).model_dump(by_alias=False, mode="json", exclude=exclude_fields)
+
+        duration = (perf_counter() - start) * 1000
+        log.info("registry.client.get.success", extra={"client": data.get("client"), "duration_ms": round(duration, 2)})
+
+        return SuccessResponse(data=data, message="Client retrieved successfully")
+    except Exception as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.warning(
+            "registry.client.get.error",
+            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(f"Client not found: {str(e)}")
 
 
 def create_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
@@ -63,65 +105,141 @@ def create_client_action(*, query_params: dict = None, path_params: dict = None,
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
-    return ApiRegClientActions.create(**dict(ChainMap(body, pp, qsp)))
+    start = perf_counter()
+    log.debug("registry.client.create.start", extra={"body_keys": list(body.keys())})
+    try:
+        result = ApiRegClientActions.create(**dict(ChainMap(body, pp, qsp)))
+
+        exclude_fields = {"client_secret", "credentials"}
+
+        data = ClientFact(**result.data).model_dump(by_alias=False, mode="json", exclude=exclude_fields)
+
+        duration = (perf_counter() - start) * 1000
+        log.info("registry.client.create.success", extra={"client": data.get("client"), "duration_ms": round(duration, 2)})
+
+        return SuccessResponse(data=data, message="Client created successfully")
+    except Exception as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.error(
+            "registry.client.create.error",
+            extra={"error": str(e), "body_keys": list(body.keys()), "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(f"Failed to create client: {str(e)}")
 
 
 def update_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
-    """
-    Handler for PUT /api/v1/client/{client} endpoint.
-    Fully updates a client or creates if doesn't exist.
+    """Full update (idempotent) of a client.
 
-    Args:
-        event (dict): Lambda event object containing pathParameters and body
-
-    Returns:
-        Response: Updated client details
+    Path: PUT /api/v1/registry/clients/{client}
     """
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
-    return ApiRegClientActions.update(**dict(ChainMap(body, pp, qsp)))
+
+    start = perf_counter()
+    log.debug("registry.client.update.start", extra={"path_params": pp, "body_keys": list(body.keys())})
+    try:
+        result = ApiRegClientActions.update(**dict(ChainMap(body, pp, qsp)))
+
+        exclude_fields = {"client_secret", "credentials"}
+
+        data = ClientFact(**result.data).model_dump(by_alias=False, mode="json", exclude=exclude_fields)
+        duration = (perf_counter() - start) * 1000
+        log.info(
+            "registry.client.update.success",
+            extra={"client": data.get("client"), "duration_ms": round(duration, 2)},
+        )
+        return SuccessResponse(data=data, message="Client updated successfully")
+    except Exception as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.warning(
+            "registry.client.update.error",
+            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(f"Client not found for update: {str(e)}")
 
 
 def patch_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
-    """
-    Handler for PATCH /api/v1/client/{client} endpoint.
-    Partially updates an existing client.
+    """Partial update for a client.
 
-    Args:
-        event (dict): Lambda event object containing pathParameters and body
-
-    Returns:
-        Response: Updated client details or 404 if not found
+    Path: PATCH /api/v1/registry/clients/{client}
     """
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
-    return ApiRegClientActions.patch(**dict(ChainMap(body, pp, qsp)))
+    start = perf_counter()
+    log.debug("registry.client.patch.start", extra={"path_params": pp, "body_keys": list(body.keys())})
+    try:
+        result = ApiRegClientActions.patch(**dict(ChainMap(body, pp, qsp)))
+
+        exclude_fields = {"client_secret", "credentials"}
+
+        data = ClientFact(**result.data).model_dump(by_alias=False, mode="json", exclude=exclude_fields)
+
+        duration = (perf_counter() - start) * 1000
+        log.info(
+            "registry.client.patch.success",
+            extra={"client": data.get("client"), "duration_ms": round(duration, 2)},
+        )
+
+        return SuccessResponse(data=data, message="Client patched successfully")
+    except Exception as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.warning(
+            "registry.client.patch.error",
+            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(f"Client not found for patch: {str(e)}")
 
 
 def delete_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
-    """
-    Handler for DELETE /api/v1/client/{client} endpoint.
-    Deletes a client if it exists.
+    """Delete a client.
 
-    Args:
-        event (dict): Lambda event object containing pathParameters with client name
-
-    Returns:
-        Response: 204 No Content on success
+    Path: DELETE /api/v1/registry/clients/{client}
     """
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
-    return ApiRegClientActions.delete(**dict(ChainMap(body, pp, qsp)))
+    start = perf_counter()
+    log.debug("registry.client.delete.start", extra={"path_params": pp})
+    try:
+        ApiRegClientActions.delete(**dict(ChainMap(body, pp, qsp)))
+        duration = (perf_counter() - start) * 1000
+        log.info("registry.client.delete.success", extra={"path_params": pp, "duration_ms": round(duration, 2)})
+        return SuccessResponse(message="Client deleted successfully")
+    except Exception as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.error(
+            "registry.client.delete.error",
+            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(f"Failed to delete client: {str(e)}")
 
 
 registry_client_actions: dict[str, RouteEndpoint] = {
-    r"GET:/api/v1/registry/clients": RouteEndpoint(get_client_list_action, required_permissions={Permission.DATA_READ}),
-    r"POST:/api/v1/registry/clients": RouteEndpoint(create_client_action, required_permissions={Permission.DATA_WRITE}),
-    r"GET:/api/v1/registry/client/{client}": RouteEndpoint(get_client_action, required_permissions={Permission.DATA_READ}),
-    r"PUT:/api/v1/registry/client/{client}": RouteEndpoint(update_client_action, required_permissions={Permission.DATA_WRITE}),
-    r"DELETE:/api/v1/registry/client/{client}": RouteEndpoint(delete_client_action, required_permissions={Permission.DATA_WRITE}),
-    r"PATCH:/api/v1/registry/client/{client}": RouteEndpoint(patch_client_action, required_permissions={Permission.DATA_WRITE}),
+    # Collection endpoints
+    "GET:/api/v1/registry/clients": RouteEndpoint(
+        get_client_list_action,
+        required_permissions={Permission.DATA_READ},
+    ),
+    "POST:/api/v1/registry/clients": RouteEndpoint(
+        create_client_action,
+        required_permissions={Permission.CLIENT_MANAGE},
+    ),
+    "GET:/api/v1/registry/clients/{client}": RouteEndpoint(
+        get_client_action,
+        required_permissions={Permission.DATA_READ},
+    ),
+    "PUT:/api/v1/registry/clients/{client}": RouteEndpoint(
+        update_client_action,
+        required_permissions={Permission.CLIENT_WRITE},
+    ),
+    "DELETE:/api/v1/registry/clients/{client}": RouteEndpoint(
+        delete_client_action,
+        required_permissions={Permission.CLIENT_MANAGE},
+    ),
+    "PATCH:/api/v1/registry/clients/{client}": RouteEndpoint(
+        patch_client_action,
+        required_permissions={Permission.CLIENT_WRITE},
+    ),
 }

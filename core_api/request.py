@@ -28,6 +28,7 @@ Attributes:
     DOMAIN_PREFIX (str): Domain prefix for API Gateway endpoints.
 """
 
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 from enum import Enum
 from datetime import datetime, timezone

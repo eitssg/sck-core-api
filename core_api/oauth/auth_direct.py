@@ -1,6 +1,5 @@
-import profile
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import random
 import os
 import re
@@ -372,7 +371,7 @@ def get_user_profile(
         - Requires valid Authorization: Bearer token
     """
 
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
@@ -424,7 +423,7 @@ def update_user_profile(
         - Requires valid Authorization: Bearer token
     """
     # Get authenticated user first
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
@@ -526,7 +525,7 @@ def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict
         - Requires valid Authorization
     """
 
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
@@ -558,7 +557,7 @@ def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict
 
 def create_user_profile(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
 
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
 
@@ -660,7 +659,7 @@ def delete_user_profile(
     *, cookies: dict = None, headers: dict = None, path_params: dict | None = None, body: dict = None, **kwargs
 ) -> Response:
 
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
 
     if jwt_payload is None:
         return ErrorResponse(code=401, message="Unauthorized")
@@ -908,24 +907,35 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
             resp.set_cookie(SCK_MFA_COOKIE_NAME, session_jwt, max_age=5 * 60, **cookie_opts())
             return resp
 
-        minutes = int(SCK_TOKEN_SESSION_MINUTES)
-
-        # Create session JWT with NO AWS credentials - just user identity
-        session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
-
-        resp_data = {}
-        if returnTo:
-            resp_data["returnTo"] = returnTo
-
-        log.info(f"User {user_id} authenticated successfully for client '{client}'", details=resp_data)
-
-        resp = SuccessResponse()
-        resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())
-        return resp
+        return _emit_session_cookie(200, client_id, client, user_id)
 
     except Exception as e:
         log.error(f"Login error for {user_id}: {e}")
         return ErrorResponse(code=500, message="Authentication processing error", exception=e)
+
+
+def _emit_session_cookie(code: int, client_id, client, user_id) -> Response:
+    """Create session JWT and return in cookie and response headers."""
+
+    # Create session JWT with NO AWS credentials - just user identity
+
+    minutes = int(SCK_TOKEN_SESSION_MINUTES)
+    new_exp_dt = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    abs_deadline = int((datetime.now(timezone.utc) + timedelta(minutes=minutes)).timestamp())
+    refresh_threshold = int((datetime.now(timezone.utc) + timedelta(minutes=minutes / 2)).timestamp())
+    max_age = minutes * 60
+
+    session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
+
+    # All X-Session-* headers are epoch seconds timestamps
+
+    resp = SuccessResponse(code=code)
+    resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=max_age, **cookie_opts())
+    resp.set_header("X-Session-Exp", str(int(new_exp_dt.timestamp())))
+    resp.set_header("X-Session-Abs", str(int(abs_deadline)))
+    resp.set_header("X-Session-Refresh-Threshold", str(refresh_threshold))
+
+    return resp
 
 
 def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
@@ -1075,7 +1085,7 @@ def verify_secret(*, cookies: dict = None, headers: dict = None, body: dict = No
     log.info("Verify secret called")
 
     try:
-        jwt_token, _ = get_authenticated_user(cookies, headers)
+        jwt_token, _ = get_authenticated_user(cookies=cookies)
     except Exception as e:
         log.debug(f"Failed to get authenticated user: {str(e)}")
         return ErrorResponse(code=401, message=f"Unauthorized: {str(e)}")
@@ -1127,7 +1137,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
     log.info("Set new password called")
 
     try:
-        jwt_token, _ = get_authenticated_user(cookies, headers)
+        jwt_token, _ = get_authenticated_user(cookies=cookies)
     except Exception as e:
         log.debug(f"Failed to get authenticated password token: {str(e)}")
         return ErrorResponse(code=401, message=f"Unauthorized - missing or invalid token: {str(e)}")
@@ -1232,7 +1242,7 @@ def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dic
         return ErrorResponse(code=429, message="rate_limited")
 
     # Get current user to validate logout
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if jwt_payload is not None:
         revoke_access_token(jwt_payload)
 
@@ -1258,82 +1268,40 @@ def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dic
 
 
 def refresh_session_cookie(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
-    """Refresh access token using a valid refresh token.
+    """Sliding-window session refresh endpoint.
 
-    Route:
-        POST /auth/v1/refresh
+    Route: POST /auth/v1/refresh
 
     Behavior:
-        - Validates the provided refresh token
-        - Issues a new access token if the refresh token is valid
-        - Returns the new access token and its expiration time
+      - Validates existing session token (typ=session) in cookie.
+      - If token expired → 401 + cookie cleared.
+      - If not yet inside refresh threshold (seconds_left > SCK_TOKEN_REFRESH_SECONDS) → 204 no-op (idempotent).
+      - If inside refresh threshold → issue new session token extending window (SCK_TOKEN_SESSION_MINUTES) without exceeding
+        absolute max (SCK_SESSION_ABSOLUTE_MAX_MINUTES from original auth_time).
+      - Returns 204 on success (no body) for both rotate and no-op cases.
 
-    JWT Claims (access token):
-        - sub: User ID (email)
-        - typ: "access"
-        - iss: "sck-core-api"
-        - iat/exp: Timestamps
-        - jti: Unique token ID
-        - cid: OAuth client ID
-        - cnm: Client name/slug for data operations
-
-    Response:
-        Success (204):
+    Rate limiting: auth:session:refresh (low-cost, moderate allowance).
     """
 
-    # Rate limit key standardized to auth:session:refresh
-    if not check_rate_limit(headers, "auth:session:refresh", max_attempts=10, window_minutes=1):
+    headers = headers or {}
+    cookies = cookies or {}
+
+    if not check_rate_limit(headers, "auth:session:refresh", max_attempts=120, window_minutes=10):
         log.warn("Rate limit exceeded on /auth/v1/refresh")
         return ErrorResponse(code=429, message="rate_limited")
 
-    # Validate the refresh token
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload or jwt_payload.typ != "session":
-        log.warn("Invalid or missing session token on /auth/v1/refresh")
+        log.debug("/auth/v1/refresh missing/invalid session", details={"has_jwt": bool(jwt_payload)})
         resp = ErrorResponse(code=401, message="invalid_session")
         resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
         return resp
 
-    log.debug("Refresh token payload", details=jwt_payload.model_dump())
-
     client = jwt_payload.cnm
     user_id = jwt_payload.sub
     client_id = jwt_payload.cid
-    scope = jwt_payload.scp or "read"
-    auth_time = jwt_payload.auth_time
 
-    now = int(datetime.now(tz=timezone.utc).timestamp())
-    seconds_left = jwt_payload.exp - now if jwt_payload.exp else 0
-    # If expired, require re-auth and clear cookie
-    if seconds_left <= 0:
-        resp = ErrorResponse(code=401, message="session_expired")
-        resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
-        return resp
-
-    if seconds_left > int(SCK_TOKEN_REFRESH_SECONDS):
-        return SuccessResponse(code=204)
-
-    # Enforce absolute session max age if auth_time is present
-    if auth_time:
-        absolute_deadline = int(auth_time) + int(SCK_SESSION_ABSOLUTE_MAX_MINUTES) * 60
-        if now >= absolute_deadline:
-            resp = ErrorResponse(code=401, message="session_too_old")
-            resp.delete_cookie(SCK_TOKEN_COOKIE_NAME, path="/")
-            return resp
-
-    minutes = int(SCK_TOKEN_SESSION_MINUTES)
-
-    # Create session JWT for session validation
-    # Ensure scope is a string
-    scope_str = scope if isinstance(scope, str) and scope else "read"
-
-    session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes, scope_str, auth_time)
-
-    log.info(f"Session token refreshed for user {user_id}", details={"client": client, "client_id": client_id})
-
-    resp = SuccessResponse(code=204)
-    resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())  # 30 minutes
-    return resp
+    return _emit_session_cookie(204, client_id, client, user_id)
 
 
 def list_organizations(*, headers: dict = None, **kwargs) -> Response:
@@ -1575,7 +1543,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
              "code": 200,
               }
     """
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
@@ -1630,7 +1598,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
 
 def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
     """Confirm TOTP MFA setup by validating the provided TOTP code."""
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
@@ -1696,7 +1664,7 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
              "code": 200
     """
 
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
 
     mfa_payload, _ = get_mfa_token_user(cookies)
 
@@ -1782,7 +1750,7 @@ def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict
             },
              "code": 200
     """
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 

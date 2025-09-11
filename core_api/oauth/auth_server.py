@@ -348,7 +348,7 @@ def oauth_authorize(
         return RedirectResponse(url=_ui_url("/login?error=rle"))
 
     # 3) Require authenticated user with valid session token which is in cookies
-    jwt_payload, _ = get_authenticated_user(cookies)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
 
     # Check for missing or invalid authentication
     if jwt_payload:
@@ -902,7 +902,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate access token
-    jwt_payload, _ = get_authenticated_user(cookies, headers)
+    jwt_payload, _ = get_authenticated_user(cookies=cookies, headers=headers)
 
     # Ensure this is an access token
     if not jwt_payload or jwt_payload.typ != "access":

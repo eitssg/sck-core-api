@@ -9,10 +9,6 @@ This module provides helpers to:
 It mirrors API Gateway behavior locally so development and production behave
 the same (headers, multi-value headers, redirects, JSON detection, base64, etc.).
 
-Attributes:
-    MEDIA_TYPE: Default media type when none is provided (``"application/json"``).
-    STATUS_CODE: Key used by Lambda proxy responses for HTTP status (``"statusCode"``).
-    BODY: Key used by Lambda proxy responses for body content (``"body"``).
 """
 
 from typing import Optional
@@ -20,20 +16,16 @@ from typing import Optional
 import base64
 import json
 
-from dotenv.cli import get
 from fastapi.responses import JSONResponse, RedirectResponse
 
 import core_logging as log
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
-import jwt
 
 from core_api.oauth.auth_creds import decrypt_creds
 
 from ..oauth.tools import get_authenticated_user
-
-from core_framework.models.aws import AWSCredentials
 
 from ..request import ProxyEvent
 
@@ -45,10 +37,6 @@ from .tools import (
     get_ip_address,
     get_user_information,
 )
-
-MEDIA_TYPE = "application/json"
-STATUS_CODE = "statusCode"
-BODY = "body"
 
 
 def get_cognito_identity(session_token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
@@ -101,7 +89,7 @@ async def authorize_request(request: Request) -> CognitoIdentity:
     """
 
     # Your OAuth-based authentication
-    jwt_token, _ = get_authenticated_user(request.cookies, request.headers)
+    jwt_token, _ = get_authenticated_user(cookies=request.cookies, headers=request.headers)
 
     aws_credentials = decrypt_creds(jwt_token.enc) if jwt_token and jwt_token.enc else {}
 
@@ -213,8 +201,8 @@ async def generate_response_from_lambda(result: dict) -> Response:
     Returns:
         fastapi.Response: A suitable Response subclass matching the payload semantics.
     """
-    status_code = result.get(STATUS_CODE, 200)
-    body = result.get(BODY, "")
+    status_code = result.get("statusCode", 200)
+    body = result.get("body", "")
     headers = result.get("headers", {})
     multi_value_headers = result.get("multiValueHeaders", {})
     is_base64 = result.get("isBase64Encoded", False)
@@ -249,7 +237,7 @@ async def generate_response_from_lambda(result: dict) -> Response:
             final_headers[key] = str(values)
 
     # Determine content type (AWS API Gateway default behavior)
-    content_type = final_headers.get("content-type", final_headers.get("Content-Type", MEDIA_TYPE))
+    content_type = final_headers.get("content-type", final_headers.get("Content-Type", "application/json"))
 
     log.debug(
         "Processing Lambda response:",

@@ -1266,7 +1266,7 @@ def get_mfa_token_user(cookies: dict) -> Tuple[JwtPayload | None, str | None]:
     return None, None
 
 
-def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[JwtPayload | None, str | None]:
+def get_authenticated_user(*, cookies: dict | None = None, headers: dict | None = None) -> Tuple[JwtPayload | None, str | None]:
     """Extract the authenticated user and client context from JWT token.
 
     Checks Authorization header or sck_token cookie for valid JWT,
@@ -1284,7 +1284,7 @@ def get_authenticated_user(cookies: dict, headers: dict | None = None) -> Tuple[
                                               Returns (None, None) if no valid token found
 
     Example:
-        >>> jwt_payload, jwt_signature = get_authenticated_user(request)
+        >>> jwt_payload, jwt_signature = get_authenticated_user(cookies=cookies, headers=headers)
         >>> if jwt_payload:
         ...     # User is authenticated, use client for data operations
         ...     client = jwt_payload.cnm or "core"

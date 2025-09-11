@@ -231,7 +231,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         security_context = None
         if not endpoint_route.allow_anonymous:
 
-            security_context = extract_security_context(request, require_aws_credentials=True)
+            security_context = extract_security_context(request, endpoint_route, require_aws_credentials=True)
 
             # bale out if the security_context cannot be determined.
             if not security_context:
