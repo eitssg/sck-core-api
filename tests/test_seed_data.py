@@ -13,7 +13,7 @@ client = os.getenv("CLIENT")
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
 client_redirect_uri = os.getenv("CLIENT_CALLBACK")
-client_secret_hash = "31617f564fcc8688b8914655b72437dc31e93a7c498d0ebe94eef55af1b9f986"
+client_secret_hash = None
 
 ###############################
 # Infrastructure definitions
@@ -27,9 +27,28 @@ client_facts = [
         "client_name": "Core Automation Team",
         "client_description": "Core Automation Infrastructure Automation Team",
         "client_status": "active",
+        "client_type": "enterprise",
+        "client_scopes": ["openid", "profile", "email", "offline_access"],
         "organization_name": "EITS Pte Ltd",
+        "organization_id": "o-1234567890",
+        "organization_account": "123456789012",
+        "organization_email": "admin@eits.com.sg",
         "domain": "eits.com.sg",
         "homepage": "https://www.eits.com.sg",
+        "iam_account": "123456789012",
+        "audit_account": "123456789012",
+        "automation_account": "123456789012",
+        "security_account": "123456789012",
+        "network_account": "123456789012",
+        "master_region": "us-east-1",
+        "client_region": "us-east-1",
+        "bucket_region": "us-east-1",
+        "bucket_name": f"{client}-automation",
+        "docs_bucket_name": f"{client}-docs",
+        "artefact_bucket_name": f"{client}-artefacts",
+        "ui_bucket_name": f"{client}-ui",
+        "ui_bucket": f"{client}-ui",
+        "scope": "ca-",
         "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
     },
     {
@@ -39,9 +58,28 @@ client_facts = [
         "client_name": "Acme Group",
         "client_description": "Acme Group for developing AI services",
         "client_status": "active",
+        "client_type": "enterprise",
+        "client_scopes": ["openid", "profile", "email", "offline_access"],
         "organization_name": "Acme Corporation",
+        "organization_id": "o-acme000001",
+        "organization_account": "210987654321",
+        "organization_email": "admin@acme.com",
         "domain": "acme.com",
         "homepage": "https://www.acme.com",
+        "iam_account": "210987654321",
+        "audit_account": "210987654321",
+        "automation_account": "210987654321",
+        "security_account": "210987654321",
+        "network_account": "210987654321",
+        "master_region": "us-east-1",
+        "client_region": "us-east-1",
+        "bucket_region": "us-east-1",
+        "bucket_name": "acme-automation",
+        "docs_bucket_name": "acme-docs",
+        "artefact_bucket_name": "acme-artefacts",
+        "ui_bucket_name": "acme-ui",
+        "ui_bucket": "acme-ui",
+        "scope": "ac-",
         "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
     },
     {
@@ -51,9 +89,28 @@ client_facts = [
         "client_name": "Beta Group",
         "client_description": "Beta Group for developing Robotics services",
         "client_status": "active",
+        "client_type": "startup",
+        "client_scopes": ["openid", "profile", "email", "offline_access"],
         "organization_name": "Beta Corporation",
+        "organization_id": "o-beta000001",
+        "organization_account": "345678901234",
+        "organization_email": "admin@beta.com",
         "domain": "beta.com",
         "homepage": "https://www.beta.com",
+        "iam_account": "345678901234",
+        "audit_account": "345678901234",
+        "automation_account": "345678901234",
+        "security_account": "345678901234",
+        "network_account": "345678901234",
+        "master_region": "us-east-1",
+        "client_region": "us-east-1",
+        "bucket_region": "us-east-1",
+        "bucket_name": "beta-automation",
+        "docs_bucket_name": "beta-docs",
+        "artefact_bucket_name": "beta-artefacts",
+        "ui_bucket_name": "beta-ui",
+        "ui_bucket": "beta-ui",
+        "scope": "be-",
         "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
     },
 ]
@@ -62,20 +119,197 @@ zone_facts = [
     {
         "client": client,  # slug
         "zone": "core-automation-production",  # lowercase name
-        "account_facts": {"aws_account_id": "123456789012"},
-        "region_facts": {"us-east-1": {"aws_region": "us-east-1"}},
+        "account_facts": {
+            "organizational_unit": "Core",
+            "aws_account_id": "123456789012",
+            "account_name": "Core Automation Production",
+            "environment": "prod",
+            "kms": {
+                "aws_account_id": "123456789012",
+                "delegate_aws_account_ids": ["123456789012"],
+                "allow_sns": True,
+            },
+            "resource_namespace": "core-automation",
+            "network_name": "core-automation-network",
+            "vpc_aliases": ["vpc-main"],
+            "subnet_aliases": ["subnet-public", "subnet-private"],
+            "tags": {"Environment": "production", "Owner": "platform-team"},
+        },
+        "region_facts": {
+            "us-east-1": {
+                "aws_region": "us-east-1",
+                "az_count": 3,
+                "image_aliases": {"ubuntu-22": "ami-ubuntu22", "amazon-linux-2": "ami-amzn2"},
+                "min_successful_instances_percent": 100,
+                "security_aliases": {
+                    "corporate-cidrs": [{"type": "CIDR", "value": "10.0.0.0/8", "description": "Corporate network"}]
+                },
+                "security_group_aliases": {"web": "sg-web", "db": "sg-db"},
+                "proxy_host": "proxy.internal",
+                "proxy_port": 8080,
+                "proxy_url": "http://proxy.internal:8080",
+                "no_proxy": "*.internal,10.0.0.0/8",
+                "name_servers": ["8.8.8.8", "1.1.1.1"],
+                "tags": {"Environment": "production", "Region": "us-east-1"},
+            }
+        },
+        "tags": {"ZoneType": "production", "Owner": "platform-team"},
     },
     {
         "client": client,  # slug
         "zone": "core-automation-staging",
-        "account_facts": {"aws_account_id": "123456789012"},
-        "region_facts": {"us-east-1": {"aws_region": "us-east-1"}},
+        "account_facts": {
+            "organizational_unit": "Core",
+            "aws_account_id": "123456789012",
+            "account_name": "Core Automation Staging",
+            "environment": "staging",
+            "kms": {
+                "aws_account_id": "123456789012",
+                "delegate_aws_account_ids": ["123456789012"],
+                "allow_sns": True,
+            },
+            "resource_namespace": "core-automation",
+            "network_name": "core-automation-network",
+            "vpc_aliases": ["vpc-main"],
+            "subnet_aliases": ["subnet-public", "subnet-private"],
+            "tags": {"Environment": "staging", "Owner": "platform-team"},
+        },
+        "region_facts": {
+            "us-east-1": {
+                "aws_region": "us-east-1",
+                "az_count": 2,
+                "image_aliases": {"ubuntu-22": "ami-ubuntu22", "amazon-linux-2": "ami-amzn2"},
+                "min_successful_instances_percent": 90,
+                "security_aliases": {
+                    "corporate-cidrs": [{"type": "CIDR", "value": "10.0.0.0/8", "description": "Corporate network"}]
+                },
+                "security_group_aliases": {"web": "sg-web", "db": "sg-db"},
+                "proxy_host": "proxy.internal",
+                "proxy_port": 8080,
+                "proxy_url": "http://proxy.internal:8080",
+                "no_proxy": "*.internal,10.0.0.0/8",
+                "name_servers": ["8.8.4.4", "1.0.0.1"],
+                "tags": {"Environment": "staging", "Region": "us-east-1"},
+            }
+        },
+        "tags": {"ZoneType": "staging", "Owner": "platform-team"},
     },
     {
         "client": client,  # slug
         "zone": "core-automation-development",
-        "account_facts": {"aws_account_id": "123456789012"},
-        "region_facts": {"us-east-1": {"aws_region": "us-east-1"}},
+        "account_facts": {
+            "organizational_unit": "Core",
+            "aws_account_id": "123456789012",
+            "account_name": "Core Automation Development",
+            "environment": "dev",
+            "kms": {
+                "aws_account_id": "123456789012",
+                "delegate_aws_account_ids": ["123456789012"],
+                "allow_sns": True,
+            },
+            "resource_namespace": "core-automation",
+            "network_name": "core-automation-network",
+            "vpc_aliases": ["vpc-main"],
+            "subnet_aliases": ["subnet-public", "subnet-private"],
+            "tags": {"Environment": "development", "Owner": "platform-team"},
+        },
+        "region_facts": {
+            "us-east-1": {
+                "aws_region": "us-east-1",
+                "az_count": 2,
+                "image_aliases": {"ubuntu-22": "ami-ubuntu22", "amazon-linux-2": "ami-amzn2"},
+                "min_successful_instances_percent": 75,
+                "security_aliases": {
+                    "corporate-cidrs": [{"type": "CIDR", "value": "10.0.0.0/8", "description": "Corporate network"}]
+                },
+                "security_group_aliases": {"web": "sg-web", "db": "sg-db"},
+                "proxy_host": "proxy.internal",
+                "proxy_port": 8080,
+                "proxy_url": "http://proxy.internal:8080",
+                "no_proxy": "*.internal,10.0.0.0/8",
+                "name_servers": ["9.9.9.9", "149.112.112.112"],
+                "tags": {"Environment": "development", "Region": "us-east-1"},
+            }
+        },
+        "tags": {"ZoneType": "development", "Owner": "platform-team"},
+    },
+    {
+        "client": "acme",  # slug
+        "zone": "acme-production",
+        "account_facts": {
+            "organizational_unit": "Acme",
+            "aws_account_id": "210987654321",
+            "account_name": "Acme Production",
+            "environment": "prod",
+            "kms": {
+                "aws_account_id": "210987654321",
+                "delegate_aws_account_ids": ["210987654321"],
+                "allow_sns": True,
+            },
+            "resource_namespace": "acme",
+            "network_name": "acme-network",
+            "vpc_aliases": ["vpc-main"],
+            "subnet_aliases": ["subnet-public", "subnet-private"],
+            "tags": {"Environment": "production", "Owner": "platform-team"},
+        },
+        "region_facts": {
+            "us-east-1": {
+                "aws_region": "us-east-1",
+                "az_count": 3,
+                "image_aliases": {"ubuntu-22": "ami-ubuntu22", "amazon-linux-2": "ami-amzn2"},
+                "min_successful_instances_percent": 100,
+                "security_aliases": {
+                    "corporate-cidrs": [{"type": "CIDR", "value": "10.0.0.0/8", "description": "Corporate network"}]
+                },
+                "security_group_aliases": {"web": "sg-web", "db": "sg-db"},
+                "proxy_host": "proxy.internal",
+                "proxy_port": 8080,
+                "proxy_url": "http://proxy.internal:8080",
+                "no_proxy": "*.internal,10.0.0.0/8",
+                "name_servers": ["8.8.8.8", "1.1.1.1"],
+                "tags": {"Environment": "production", "Region": "us-east-1"},
+            }
+        },
+        "tags": {"ZoneType": "production", "Owner": "platform-team"},
+    },
+    {
+        "client": "beta",  # slug
+        "zone": "beta-development",
+        "account_facts": {
+            "organizational_unit": "Beta",
+            "aws_account_id": "345678901234",
+            "account_name": "Beta Development",
+            "environment": "dev",
+            "kms": {
+                "aws_account_id": "345678901234",
+                "delegate_aws_account_ids": ["345678901234"],
+                "allow_sns": True,
+            },
+            "resource_namespace": "beta",
+            "network_name": "beta-network",
+            "vpc_aliases": ["vpc-main"],
+            "subnet_aliases": ["subnet-public", "subnet-private"],
+            "tags": {"Environment": "development", "Owner": "platform-team"},
+        },
+        "region_facts": {
+            "us-east-1": {
+                "aws_region": "us-east-1",
+                "az_count": 2,
+                "image_aliases": {"ubuntu-22": "ami-ubuntu22", "amazon-linux-2": "ami-amzn2"},
+                "min_successful_instances_percent": 75,
+                "security_aliases": {
+                    "corporate-cidrs": [{"type": "CIDR", "value": "10.0.0.0/8", "description": "Corporate network"}]
+                },
+                "security_group_aliases": {"web": "sg-web", "db": "sg-db"},
+                "proxy_host": "proxy.internal",
+                "proxy_port": 8080,
+                "proxy_url": "http://proxy.internal:8080",
+                "no_proxy": "*.internal,10.0.0.0/8",
+                "name_servers": ["9.9.9.9", "149.112.112.112"],
+                "tags": {"Environment": "development", "Region": "us-east-1"},
+            }
+        },
+        "tags": {"ZoneType": "development", "Owner": "platform-team"},
     },
 ]
 
@@ -89,8 +323,80 @@ portfolio_facts = [
         "client": client,  # slug
         "portfolio": "core-automation",  # slug
         "name": "Core Automation Engine",
-        "project": {"code": "CORE", "name": "Core Automation"},
-    }
+        "contacts": [
+            {"name": "Tech Lead", "email": "techlead@eits.com.sg", "enabled": True},
+            {"name": "Product Manager", "email": "pm@eits.com.sg", "enabled": True},
+        ],
+        "approvers": [
+            {"sequence": 1, "name": "Manager", "email": "mgr@eits.com.sg", "roles": ["deployment"], "enabled": True},
+            {
+                "sequence": 2,
+                "name": "Director",
+                "email": "dir@eits.com.sg",
+                "depends_on": [1],
+                "roles": ["deployment", "approval"],
+                "enabled": True,
+            },
+        ],
+        "project": {
+            "code": "CORE",
+            "name": "Core Automation",
+            "repository": "https://github.com/eitssg/simple-cloud-kit",
+            "description": "Core Automation Engine",
+            "attributes": {"category": "platform"},
+        },
+        "domain": "automation.eits.com.sg",
+        "bizapp": {
+            "code": "CORE-APP",
+            "name": "Core Business App",
+            "description": "Business-facing application for Core Automation",
+            "attributes": {"owner": "platform"},
+        },
+        "owner": {"name": "Platform Team", "email": "platform@eits.com.sg", "phone": "+65-0000-0000"},
+        "tags": {"Environment": "production", "Team": "platform"},
+        "metadata": {"CostCenter": "CORE", "Owner": "platform"},
+        "attributes": {"Tier": "1", "Confidentiality": "internal"},
+        "user_instantiated": "seed-data",
+    },
+    {
+        "client": client,  # slug
+        "portfolio": "ocp",  # slug
+        "name": "OpenShift Cloud Platform",
+        "contacts": [
+            {"name": "OCP Lead", "email": "ocp-lead@eits.com.sg", "enabled": True},
+            {"name": "SRE", "email": "sre@eits.com.sg", "enabled": True},
+        ],
+        "approvers": [
+            {"sequence": 1, "name": "OCP Manager", "email": "ocp-mgr@eits.com.sg", "roles": ["deployment"], "enabled": True},
+            {
+                "sequence": 2,
+                "name": "CTO",
+                "email": "cto@eits.com.sg",
+                "depends_on": [1],
+                "roles": ["deployment", "approval"],
+                "enabled": True,
+            },
+        ],
+        "project": {
+            "code": "OCP",
+            "name": "OpenShift Cloud Platform",
+            "repository": "https://github.com/eitssg/openshift-cloud-platform",
+            "description": "OpenShift-based application platform",
+            "attributes": {"category": "platform"},
+        },
+        "domain": "ocp.eits.com.sg",
+        "bizapp": {
+            "code": "OCP-APP",
+            "name": "OCP Business App",
+            "description": "Business-facing application on OCP",
+            "attributes": {"owner": "cloud"},
+        },
+        "owner": {"name": "Cloud Team", "email": "cloud@eits.com.sg", "phone": "+65-0000-0001"},
+        "tags": {"Environment": "staging", "Team": "cloud"},
+        "metadata": {"CostCenter": "OCP", "Owner": "cloud"},
+        "attributes": {"Tier": "2", "Confidentiality": "internal"},
+        "user_instantiated": "seed-data",
+    },
 ]
 
 ############################

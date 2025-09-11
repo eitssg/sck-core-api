@@ -1,3 +1,4 @@
+from core_db.registry import client
 import pytest
 
 from .conftest import *
@@ -18,9 +19,6 @@ import core_logging as log
 
 def _delete_tables(client: str) -> None:
     try:
-        if ClientFactsFactory.exists(client):
-            ClientFactsFactory.delete_table(client, wait=True)
-
         if PortfolioModelFactory.exists(client):
             PortfolioModelFactory.delete_table(client, wait=True)
 
@@ -47,6 +45,23 @@ def _delete_tables(client: str) -> None:
         assert False
 
 
+def _create_client(client: str) -> None:
+    PortfolioModelFactory.create_table(client, wait=True)
+    ZoneFactsFactory.create_table(client, wait=True)
+    AppFactsFactory.create_table(client, wait=True)
+    PortfolioFactsFactory.create_table(client, wait=True)
+    EventModelFactory.create_table(client, wait=True)
+    ProfileModelFactory.create_table(client, wait=True)
+    AuthorizationsModelFactory.create_table(client, wait=True)
+
+
+def _create_client_facts():
+    client = "core"
+    if ClientFactsFactory.exists(client):
+        ClientFactsFactory.delete_table(client, wait=True)
+    ClientFactsFactory.create_table(client, wait=True)
+
+
 @pytest.fixture(scope="module")
 def bootstrap_dynamo():
 
@@ -57,18 +72,13 @@ def bootstrap_dynamo():
 
     try:
 
-        client = util.get_client()
+        _create_client_facts()
 
-        _delete_tables(client)
+        clients = ["core", "acme", "beta"]
 
-        ClientFactsFactory.create_table(client, wait=True)
-        PortfolioModelFactory.create_table(client, wait=True)
-        ZoneFactsFactory.create_table(client, wait=True)
-        AppFactsFactory.create_table(client, wait=True)
-        PortfolioFactsFactory.create_table(client, wait=True)
-        EventModelFactory.create_table(client, wait=True)
-        ProfileModelFactory.create_table(client, wait=True)
-        AuthorizationsModelFactory.create_table(client, wait=True)
+        for client in clients:
+            _delete_tables(client)
+            _create_client(client)
 
     except Exception as e:
         log.error(f"Error during bootstrap: {e}")

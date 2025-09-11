@@ -228,7 +228,8 @@ class ProxyResponse(BaseModel):
 
             # Serialize body to JSON
             try:
-                proxy.body = response.model_dump_json(by_alias=False, exclude_none=True)
+                if response.code != 204:  # No body for 204 No Content
+                    proxy.body = response.model_dump_json(by_alias=False, exclude_none=True)
             except Exception:
                 if isinstance(response, BaseModel):
                     obj = response.model_dump(by_alias=False, mode="json")

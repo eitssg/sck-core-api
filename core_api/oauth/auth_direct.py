@@ -960,7 +960,9 @@ def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
         return ErrorResponse(code=400, message="Client ID is required")
 
     try:
-        token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=15, jti=code).encode()
+
+        EXPIRATION_MINUTES = 15
+        token = JwtPayload(sub=email, typ="forgot_password", cid=client_id, cnm=client, ttl=EXPIRATION_MINUTES, jti=code).encode()
 
         forgot_password_record = ForgotPassword(
             **{
@@ -970,6 +972,8 @@ def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
                 "client": client,
                 "client_id": client_id,
                 "reset_token": token,
+                "used": False,
+                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=EXPIRATION_MINUTES),
             }
         )
 
@@ -1085,7 +1089,7 @@ def verify_secret(*, cookies: dict = None, headers: dict = None, body: dict = No
     log.info("Verify secret called")
 
     try:
-        jwt_token, _ = get_authenticated_user(cookies=cookies)
+        jwt_token, _ = get_authenticated_user(cookies=cookies, headers=headers)
     except Exception as e:
         log.debug(f"Failed to get authenticated user: {str(e)}")
         return ErrorResponse(code=401, message=f"Unauthorized: {str(e)}")
@@ -1137,7 +1141,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
     log.info("Set new password called")
 
     try:
-        jwt_token, _ = get_authenticated_user(cookies=cookies)
+        jwt_token, _ = get_authenticated_user(cookies=cookies, headers=headers)
     except Exception as e:
         log.debug(f"Failed to get authenticated password token: {str(e)}")
         return ErrorResponse(code=401, message=f"Unauthorized - missing or invalid token: {str(e)}")
@@ -1158,6 +1162,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
     client = jwt_token.cnm
     jti = jwt_token.jti
     token_type = jwt_token.typ
+    client_id = jwt_token.cid
 
     if token_type != "forgot_password":
         log.debug(f"Invalid token type for password reset: {token_type}")
@@ -1176,7 +1181,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
 
     forgot_password.used = True
     try:
-        ForgotPasswordActions.patch(client=client, **forgot_password.model_dump())
+        ForgotPasswordActions.patch(client=client, code=key, client_id=client_id, **forgot_password.model_dump())
     except Exception as e:
         log.debug(f"Failed to update forgot password request: {str(e)}")
         return ErrorResponse(code=500, message="Failed to update forgot password request")

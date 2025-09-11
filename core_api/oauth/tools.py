@@ -1329,7 +1329,7 @@ def get_authenticated_user(*, cookies: dict | None = None, headers: dict | None 
 
         jwt_payload = JwtPayload.decode(token)
 
-        if jwt_payload.typ not in ("session", "access"):
+        if jwt_payload.typ not in ("session", "access", "forgot_password"):
             log.debug(f"Unsupported JWT token type: {jwt_payload.typ}")
             return None, None
 
