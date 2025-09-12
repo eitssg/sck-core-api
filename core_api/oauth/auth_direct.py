@@ -876,7 +876,6 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
             return ErrorResponse(code=400, message="invalid_client")
 
         client = app_info.client
-        returnTo = body.get("returnTo")
 
         # Get user profile and validate password
         try:
@@ -914,7 +913,7 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         return ErrorResponse(code=500, message="Authentication processing error", exception=e)
 
 
-def _emit_session_cookie(code: int, client_id, client, user_id) -> Response:
+def _emit_session_cookie(code: int, client_id, client, user_id, mfa: bool = False) -> Response:
     """Create session JWT and return in cookie and response headers."""
 
     # Create session JWT with NO AWS credentials - just user identity
@@ -931,6 +930,8 @@ def _emit_session_cookie(code: int, client_id, client, user_id) -> Response:
 
     resp = SuccessResponse(code=code)
     resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=max_age, **cookie_opts())
+    if mfa:
+        resp.delete_cookie(SCK_MFA_COOKIE_NAME, path="/")
     resp.set_header("X-Session-Exp", str(int(new_exp_dt.timestamp())))
     resp.set_header("X-Session-Abs", str(int(abs_deadline)))
     resp.set_header("X-Session-Refresh-Threshold", str(refresh_threshold))
@@ -1726,15 +1727,10 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
         except Exception:
             pass
 
-    resp = SuccessResponse(message="mfa_verified")
-
     if mfa_payload and mfa_payload.typ == "mfa_pending":
-        minutes = int(SCK_TOKEN_SESSION_MINUTES)
-        session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
-        resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=minutes * 60, **cookie_opts())
-        resp.delete_cookie(SCK_MFA_COOKIE_NAME, path="/")
+        return _emit_session_cookie(200, client_id, client, user_id, mfa=True)
 
-    return resp
+    return SuccessResponse(message="mfa_verified")
 
 
 def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:

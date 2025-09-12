@@ -207,6 +207,23 @@ async def generate_response_from_lambda(result: dict) -> Response:
     multi_value_headers = result.get("multiValueHeaders", {})
     is_base64 = result.get("isBase64Encoded", False)
 
+    # Merge headers (multi-value headers take precedence)
+    final_headers = {}
+    final_headers.update(headers)
+
+    cookies = []
+    for key, values in multi_value_headers.items():
+        if key.lower() == "set-cookie":
+            cookies.extend(values if isinstance(values, list) else [values])
+        elif isinstance(values, list):
+            final_headers[key] = ", ".join(str(v) for v in values)
+        else:
+            final_headers[key] = str(values)
+
+    # Early return for 204/304: no body or entity headers
+    if status_code in (204, 304):
+        return _empty_entity_response(status_code, final_headers, cookies)
+
     # Handle base64 encoded responses (binary files, images, etc.)
     if is_base64 and body:
         try:
@@ -219,22 +236,6 @@ async def generate_response_from_lambda(result: dict) -> Response:
     else:
         content = body.encode("utf-8") if isinstance(body, str) else (body or b"")
         body_text = body if isinstance(body, str) else ""
-
-    # Merge headers (multi-value headers take precedence)
-    final_headers = {}
-    final_headers.update(headers)
-
-    # Handle multi-value headers (AWS API Gateway behavior)
-    cookies = []
-    for key, values in multi_value_headers.items():
-        if key.lower() == "set-cookie":
-            # Set-Cookie headers are special - never combine with commas
-            cookies.extend(values if isinstance(values, list) else [values])
-        elif isinstance(values, list):
-            # Other multi-value headers are combined with commas (HTTP standard)
-            final_headers[key] = ", ".join(str(v) for v in values)
-        else:
-            final_headers[key] = str(values)
 
     # Determine content type (AWS API Gateway default behavior)
     content_type = final_headers.get("content-type", final_headers.get("Content-Type", "application/json"))
@@ -317,6 +318,33 @@ async def generate_response_from_lambda(result: dict) -> Response:
         response.headers.append("Set-Cookie", cookie)
 
     return response
+
+
+def _strip_entity_headers(headers: dict) -> dict:
+    """Return a copy of headers without entity headers (Content-Type/Length, Transfer-Encoding).
+
+    HTTP 204 and 304 must not include a body or related entity headers in FastAPI/Starlette.
+    """
+    banned = {"content-type", "content-length", "transfer-encoding"}
+    cleaned = {}
+    for k, v in headers.items():
+        if k.lower() in banned:
+            continue
+        cleaned[k] = v
+    return cleaned
+
+
+def _empty_entity_response(status_code: int, headers: dict, cookies: list[str]) -> Response:
+    """Build a Response for 204/304 with no body and no entity headers.
+
+    Preserves non-entity headers and all Set-Cookie headers.
+    """
+    resp = Response(status_code=status_code)
+    for k, v in _strip_entity_headers(headers).items():
+        resp.headers[k] = v
+    for cookie in cookies:
+        resp.headers.append("Set-Cookie", cookie)
+    return resp
 
 
 def _is_valid_json(text: str) -> bool:

@@ -60,7 +60,9 @@ def get_zone_action(*, query_params: dict = None, path_params: dict = None, body
         result = ApiRegZoneActions.get(client=client, zone=zone, **merged)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
-        data = ZoneFact(**result).model_dump(by_alias=False)
+        data = ZoneFact(**result.data).model_dump(by_alias=False)
+
+        log.debug(f"Got zone for client '{client}' zone '{zone}'", details=data)
 
         return SuccessResponse(data=data)
 
@@ -83,6 +85,8 @@ def create_zones_action(*, query_params: dict = None, path_params: dict = None, 
         # The DB returns data in PascalCase, but we want to return in snake_case
         data = ZoneFact(**result).model_dump(by_alias=False)
 
+        log.debug(f"Created zone for client '{client}'", details=data)
+
         return SuccessResponse(data=data)
 
     except ConflictException as e:
@@ -96,14 +100,20 @@ def update_zones_action(*, query_params: dict = None, path_params: dict = None, 
 
     try:
         client = path_params.get("client")
+        if "client" in merged:
+            del merged["client"]
         zone = path_params.get("zone")
+        if "zone" in merged:
+            del merged["zone"]
 
         log.debug(f"Updating zone for client '{client}' zone '{zone}'", details={"params": merged})
 
         result = ApiRegZoneActions.update(client=client, zone=zone, **merged)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
-        data = ZoneFact(**result).model_dump(by_alias=False)
+        data = ZoneFact(**result.data).model_dump(by_alias=False)
+
+        log.debug(f"Updated zone for client '{client}'", details=data)
 
         return SuccessResponse(data=data)
 
@@ -127,7 +137,9 @@ def patch_zones_action(*, query_params: dict = None, path_params: dict = None, b
         result = ApiRegZoneActions.patch(client=client, zone=zone, **merged)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
-        data = ZoneFact(**result).model_dump(by_alias=False)
+        data = ZoneFact(**result.data).model_dump(by_alias=False)
+
+        log.debug(f"Patched zone for client '{client}'", details=data)
 
         return SuccessResponse(data=data)
 
@@ -149,12 +161,15 @@ def delete_zones_action(*, query_params: dict = None, path_params: dict = None, 
         log.debug(f"Deleting zone for client '{client}' zone '{zone}'", details={"params": merged})
 
         ApiRegZoneActions.delete(client=client, zone=zone, **merged)
+
+        log.debug(f"Deleted zone for client '{client}' zone '{zone}'")
+
+        return SuccessResponse(code=204, message="Zone deleted")
+
     except NotFoundException as e:
         return ErrorResponse(code=204)
     except Exception as e:
         return ErrorResponse(code=500, message="Internal server error", exception=e)
-
-    return SuccessResponse(code=204, message="Zone deleted")
 
 
 registry_zone_actions: ActionHandlerRoutes = {
