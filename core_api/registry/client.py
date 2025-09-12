@@ -51,7 +51,8 @@ def get_client_list_action(*, query_params: dict = None, path_params: dict = Non
             "registry.clients.list.success",
             extra={"count": len(data), "duration_ms": round(duration, 2)},
         )
-        return SuccessResponse(data=data, message="Clients retrieved successfully")
+        return SuccessResponse(data=data, metadata=response.metadata)
+
     except Exception as e:  # noqa: BLE001
         duration = (perf_counter() - start) * 1000
         log.error(

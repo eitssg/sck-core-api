@@ -42,7 +42,7 @@ def list_zones_action(*, query_params: dict = None, path_params: dict = None, bo
 
         log.debug(f"Listed {len(data)} zones for client '{client}'", details={"zones": data})
 
-        return SuccessResponse(data=data)
+        return SuccessResponse(data=data, metadata=result.metadata)
 
     except Exception as e:
         return ErrorResponse(code=500, message="Internal server error", exception=e)
