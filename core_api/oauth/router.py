@@ -1,6 +1,3 @@
-from csv import Error
-from math import e
-from botocore import auth
 from core_db.response import ErrorResponse
 from fastapi import APIRouter, Request, Response
 
@@ -15,6 +12,15 @@ from .handler import endpoints, handler
 
 
 async def auth_handler(request: Request) -> Response:
+    """FastAPI authentication and authorization endpoint router.
+
+    NIOTICE:  This is a bridge between FastAPI and AWS Lambda style handlers.
+    It emulates the API Gateway + Lambda proxy integration.
+
+    This will NOT be used in production. and is intended for local development
+    and testing only.
+
+    """
 
     try:
         # In our gateway emulator, we are going to generate the context identity
