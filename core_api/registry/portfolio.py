@@ -27,6 +27,7 @@ from ..actions import ApiActions
 import core_framework as util
 import core_helper.aws as aws
 from botocore.exceptions import ClientError
+from botocore.config import Config
 
 
 class ApiRegPortfolioActions(ApiActions, PortfolioActions):
@@ -322,7 +323,7 @@ def upload_portfolio_icon_action(*, path_params: dict = None, body: dict = None,
     # Generate presigned PUT URL
     try:
         session = aws.get_session(region=util.get_artefact_bucket_region())
-        s3 = session.client("s3")
+        s3 = session.client("s3", config=Config(signature_version="s3v4"))
 
         expires_seconds = 15 * 60
         params = {
@@ -383,7 +384,7 @@ def get_portfolio_icon_action(*, path_params: dict = None, **kwargs) -> Response
     region = util.get_artefact_bucket_region()
     bucket = util.get_artefact_bucket_name(client, region)
     session = aws.get_session(region=region)
-    s3 = session.client("s3")
+    s3 = session.client("s3", config=Config(signature_version="s3v4"))
 
     key_found = None
     for ext in exts:
