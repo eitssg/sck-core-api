@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Component Lambda Function - Manages component artifacts and metadata
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+
+Resources:
+  
+  AutomationBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: "{{ context.Scope }}{{ context.BucketName }}"
+      Tags:
+        - Key: Name
+          Value: "{{ context.Scope }}{{ context.BucketName }}"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+
+  {% if context.ArtefactsBucketName %}
+  ArtefactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: "{{ context.Scope }}{{ context.ArtefactsBucketName }}"
+      Tags:
+        - Key: Name
+          Value: "{{ context.Scope }}{{ context.ArtefactsBucketName }}"
+        - Key: Client
+          Value: {{ context.Client }}
+        - Key: Environment
+          Value: {{ context.Environment }}
+        - Key: Portfolio
+          Value: {{ context.Portfolio }}
+        - Key: App
+          Value: {{ context.App }}
+        - Key: Branch
+          Value: {{ context.Branch }}
+        - Key: Build
+          Value: {{ context.Build }}
+
+    {% endif %}
+
+Outputs:
+
+  CoreBucketName:
+    Description: "Core Automation S3 Bucket Name"
+    Value: !Ref AutomationBucket
+    Export:
+      Name: !Sub "${Scope}core-automation-bucket-name"
+
+  {% if not context.ArtefactsBucketName %}
+
+  ArtefactsBucketName:
+    Description: "Artefacts S3 Bucket Name"
+    Value: !Ref AutomationBucket
+    Export:
+      Name: !Sub "${Scope}artefacts-bucket-name"
+
+  {% endif %}
+      
+
+  {% if context.ArtefactsBucketName %}
+  ArtefactsBucketName:
+    Description: "Artefacts S3 Bucket Name"
+    Value: !Ref ArtefactsBucket
+    Export:
+      Name: !Sub "${Scope}artefacts-bucket-name"
+  {% endif %}

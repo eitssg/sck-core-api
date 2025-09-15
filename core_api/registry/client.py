@@ -37,20 +37,31 @@ def get_client_list_action(*, query_params: dict = None, path_params: dict = Non
 
     start = perf_counter()
     log.debug("registry.clients.list.start", extra={"query_params": qsp})
+
     try:
         security = kwargs.get("security")
         client_id = getattr(security, "client_id", None) if security else None
 
         response = ApiRegClientActions.list(client_id=client_id, **dict(ChainMap(body, pp, qsp)))
-        include_fields = {"client", "client_id", "client_name", "organization_name", "organization_account", "client_description"}
+        include_fields = {
+            "client",
+            "client_id",
+            "client_name",
+            "organization_name",
+            "organization_account",
+            "client_description",
+        }
+
         data = [
             ClientFact(**item).model_dump(by_alias=False, mode="json", include=include_fields) for item in (response.data or [])
         ]
+
         duration = (perf_counter() - start) * 1000
         log.info(
             "registry.clients.list.success",
             extra={"count": len(data), "duration_ms": round(duration, 2)},
         )
+
         return SuccessResponse(data=data, metadata=response.metadata)
 
     except Exception as e:  # noqa: BLE001

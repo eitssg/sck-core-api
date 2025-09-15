@@ -34,7 +34,7 @@ from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 import core_logging as log
 
@@ -206,6 +206,24 @@ def get_app() -> FastAPI:
     # OAUTH server endpoints and authentication
     __app.include_router(get_auth_router(), prefix="/auth", tags=["Login", "OAuth", "Github", "Users"])
 
+    # Dev-only metrics endpoint (Prometheus compatible)
+    dev_metrics_enabled = os.getenv("SCK_DEV_METRICS", "0").lower() in ("1", "true", "yes")
+    if dev_metrics_enabled:
+        try:
+            from core_api.dev.metrics import add_dev_metrics_endpoint  # type: ignore
+
+            add_dev_metrics_endpoint(__app)
+        except Exception as e:
+            # Provide a stub /metrics in dev if prometheus_client isn't available
+            log.warning(f"Dev metrics not enabled: {e}")
+
+            @__app.get("/metrics")
+            def metrics_disabled():  # type: ignore
+                return PlainTextResponse(
+                    "metrics disabled: set SCK_DEV_METRICS=true and install prometheus-client",
+                    status_code=503,
+                )
+
     static_dir = get_static_dir()
 
     @__app.get("/.well-known/oauth-authorization-server")
@@ -344,7 +362,10 @@ def get_app() -> FastAPI:
     return __app
 
 
-def handle_oauth_discovery(request: Request):
+# (Dev metrics implementation moved to core_api/dev/metrics.py)
+
+
+def handle_oauth_discovery(request: Request) -> Response:
     """OAuth 2.0 Authorization Server Metadata (RFC 8414)."""
 
     # Get the host and protocol from headers

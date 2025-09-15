@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, Response
+import os
 
 import core_framework as util
 import core_logging as log
@@ -58,6 +59,12 @@ def get_api_router() -> APIRouter:
 
     """
     router = APIRouter()
+
+    # Dev-only protection: allow opting out entirely
+    dev_api_enabled = os.getenv("SCK_DEV_API", "1").lower() in ("1", "true", "yes")
+    if not dev_api_enabled:
+        log.warning("SCK_DEV_API is disabled; returning empty API router")
+        return router
     for method_resource in api_endpoints.keys():
         method, resource = method_resource.split(":")
         # strip "/api" prefix if present

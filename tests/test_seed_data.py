@@ -9,11 +9,12 @@ from core_db.profile import UserProfile
 
 from .bootstrap import *
 
-client = os.getenv("CLIENT")
-client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_SECRET")
-client_redirect_uri = os.getenv("CLIENT_CALLBACK")
-client_secret_hash = None
+client_slug = os.getenv("CLIENT", "core")
+
+oauth_client_id = os.getenv("CLIENT_ID")
+oauth_client_secret = os.getenv("CLIENT_SECRET")
+oauth_client_redirect_uri = os.getenv("CLIENT_CALLBACK")
+oauth_client_secret_hash = None
 
 ###############################
 # Infrastructure definitions
@@ -21,9 +22,9 @@ client_secret_hash = None
 
 client_facts = [
     {
-        "client": client,  # slug
-        "client_id": client_id,
-        "client_secret": client_secret_hash,
+        "client": client_slug,  # slug
+        "client_id": oauth_client_id,
+        "client_secret": oauth_client_secret_hash,
         "client_name": "Core Automation Team",
         "client_description": "Core Automation Infrastructure Automation Team",
         "client_status": "active",
@@ -43,18 +44,40 @@ client_facts = [
         "master_region": "us-east-1",
         "client_region": "us-east-1",
         "bucket_region": "us-east-1",
-        "bucket_name": f"{client}-automation",
-        "docs_bucket_name": f"{client}-docs",
-        "artefact_bucket_name": f"{client}-artefacts",
-        "ui_bucket_name": f"{client}-ui",
-        "ui_bucket": f"{client}-ui",
+        "bucket_name": f"{client_slug}-automation",
+        "docs_bucket_name": f"{client_slug}-docs",
+        "artefact_bucket_name": f"{client_slug}-artefacts",
+        "ui_bucket_name": f"{client_slug}-ui",
+        "ui_bucket": f"{client_slug}-ui",
         "scope": "ca-",
-        "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
+        "client_redirect_urls": [uri.strip() for uri in oauth_client_redirect_uri.split(",")],
+        "tags": {"Client": "core"},
+        "tag_policy": [
+            {"tag_name": "Client", "required": True, "description": "Client identifier or tenant name"},
+            {"tag_name": "Portfolio", "required": True, "description": "Portfolio or project name"},
+            {"tag_name": "App", "required": True, "description": "Application name"},
+            {"tag_name": "Branch", "required": False, "description": "Source code branch"},
+            {"tag_name": "Build", "required": False, "description": "Build version or identifier"},
+            {"tag_name": "Environment", "required": False, "description": "Environment (e.g. dev, staging, prod)"},
+            {"tag_name": "Region", "required": False, "description": "AWS region"},
+            {"tag_name": "Team", "required": False, "description": "Team or department"},
+            {"tag_name": "Owner", "required": False, "description": "Resource owner"},
+            {"tag_name": "Project", "required": False, "description": "Project code or identifier"},
+            {"tag_name": "CostCenter", "required": False, "description": "Cost center code"},
+            {"tag_name": "Confidentiality", "required": False, "description": "Data confidentiality level"},
+            {"tag_name": "Tier", "required": False, "description": "Application tier or level"},
+            {"tag_name": "Compliance", "required": False, "description": "Compliance requirements"},
+            {"tag_name": "Criticality", "required": False, "description": "Business criticality level"},
+            {"tag_name": "Lifecycle", "required": False, "description": "Resource lifecycle stage"},
+            {"tag_name": "Version", "required": False, "description": "Resource version"},
+            {"tag_name": "Purpose", "required": False, "description": "Resource purpose or function"},
+            {"tag_name": "Confidentiality", "required": False, "description": "Data confidentiality level"},
+        ],
     },
     {
         "client": "acme",  # slug
-        "client_id": client_id,
-        "client_secret": client_secret_hash,
+        "client_id": oauth_client_id,
+        "client_secret": oauth_client_secret_hash,
         "client_name": "Acme Group",
         "client_description": "Acme Group for developing AI services",
         "client_status": "active",
@@ -80,12 +103,12 @@ client_facts = [
         "ui_bucket_name": "acme-ui",
         "ui_bucket": "acme-ui",
         "scope": "ac-",
-        "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
+        "client_redirect_urls": [uri.strip() for uri in oauth_client_redirect_uri.split(",")],
     },
     {
         "client": "beta",  # slug
-        "client_id": client_id,
-        "client_secret": client_secret_hash,
+        "client_id": oauth_client_id,
+        "client_secret": oauth_client_secret_hash,
         "client_name": "Beta Group",
         "client_description": "Beta Group for developing Robotics services",
         "client_status": "active",
@@ -111,13 +134,13 @@ client_facts = [
         "ui_bucket_name": "beta-ui",
         "ui_bucket": "beta-ui",
         "scope": "be-",
-        "client_redirect_urls": [uri.strip() for uri in client_redirect_uri.split(",")],
+        "client_redirect_urls": [uri.strip() for uri in oauth_client_redirect_uri.split(",")],
     },
 ]
 
 zone_facts = [
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "zone": "core-automation-production",  # lowercase name
         "account_facts": {
             "organizational_unit": "Core",
@@ -156,7 +179,7 @@ zone_facts = [
         "tags": {"ZoneType": "production", "Owner": "platform-team"},
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "zone": "core-automation-staging",
         "account_facts": {
             "organizational_unit": "Core",
@@ -195,7 +218,7 @@ zone_facts = [
         "tags": {"ZoneType": "staging", "Owner": "platform-team"},
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "zone": "core-automation-development",
         "account_facts": {
             "organizational_unit": "Core",
@@ -320,7 +343,7 @@ zone_facts = [
 
 portfolio_facts = [
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",  # slug
         "name": "Core Automation Engine",
         "contacts": [
@@ -359,7 +382,7 @@ portfolio_facts = [
         "user_instantiated": "seed-data",
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "ocp",  # slug
         "name": "OpenShift Cloud Platform",
         "contacts": [
@@ -405,7 +428,7 @@ portfolio_facts = [
 
 prod_app_facts = [
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:execute:main:[^:].*$",
         "name": "sck-core-execute",
@@ -417,7 +440,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:report:main:[^:].*$",
         "name": "sck-core-report",
@@ -429,7 +452,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:runner:main:[^:].*$",
         "name": "sck-core-runner",
@@ -441,7 +464,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:deployspec:main:[^:].*$",
         "name": "sck-core-deployspec",
@@ -453,7 +476,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:component:main:[^:].*$",
         "name": "sck-core-component",
@@ -465,7 +488,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:invoker:main:[^:].*$",
         "name": "sck-core-invoker",
@@ -477,7 +500,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:organization:main:[^:].*$",
         "name": "sck-core-organization",
@@ -489,7 +512,7 @@ prod_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:api-[^:]*:main:[^:].*$",
         "name": "sck-core-api",
@@ -504,7 +527,7 @@ prod_app_facts = [
 
 dev_app_facts = [
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:execute:develop:[^:].*$",
         "name": "sck-core-execute",
@@ -516,7 +539,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:report:develop:[^:].*$",
         "name": "sck-core-report",
@@ -528,7 +551,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:runner:develop:[^:].*$",
         "name": "sck-core-runner",
@@ -540,7 +563,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:deployspec:develop:[^:].*$",
         "name": "sck-core-deployspec",
@@ -552,7 +575,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:component:develop:[^:].*$",
         "name": "sck-core-component",
@@ -564,7 +587,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:invoker:develop:[^:].*$",
         "name": "sck-core-invoker",
@@ -576,7 +599,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:organization:develop:[^:].*$",
         "name": "sck-core-organization",
@@ -588,7 +611,7 @@ dev_app_facts = [
         },
     },
     {
-        "client": client,  # slug
+        "client": client_slug,  # slug
         "portfolio": "core-automation",
         "app_regex": "^prn:core-automation:api-[^:]*:develop:[^:].*$",
         "name": "sck-core-api",
@@ -661,3 +684,7 @@ def test_seed_data(bootstrap_dynamo):
     results = ProfileActions.create(**administrator)
     profile = UserProfile(**results.data)
     print(profile.model_dump_json(indent=2))
+
+
+if __name__ == "__main__":
+    test_seed_data()  # pragma: no cover
