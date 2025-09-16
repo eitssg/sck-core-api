@@ -11,8 +11,6 @@ The user will then perform action_get_item() to retrieve the deployment definiti
 """
 
 from collections import ChainMap
-import hashlib
-from datetime import datetime, timedelta
 
 import core_logging as log
 
@@ -92,6 +90,7 @@ def list_portfolios_action(*, query_params: dict = None, path_params: dict = Non
             "business_owner",  # owner summary
             "technical_owner",  # owner summary
             "domain",  # optional domain
+            "app_count",  # number of apps in portfolio
             "updated_at",  # for sorting
         }
 

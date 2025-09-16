@@ -118,7 +118,12 @@ def update_app_action(*, query_params: dict = None, path_params: dict = None, bo
     if "app" in merged:
         del merged["app"]
 
-    return ApiRegAppActions.update(client=client, portfolio=portfolio, app=app, **merged)
+    try:
+        response = ApiRegAppActions.update(client=client, portfolio=portfolio, app=app, **merged)
+        data = AppFact(**response.data).model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
 def patch_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
@@ -135,7 +140,12 @@ def patch_app_action(*, query_params: dict = None, path_params: dict = None, bod
     if "app" in merged:
         del merged["app"]
 
-    return ApiRegAppActions.patch(client=client, portfolio=portfolio, app=app, **merged)
+    try:
+        response = ApiRegAppActions.patch(client=client, portfolio=portfolio, app=app, **merged)
+        data = AppFact(**response.data).model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
 def delete_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
@@ -152,7 +162,12 @@ def delete_app_action(*, query_params: dict = None, path_params: dict = None, bo
     if "app" in merged:
         del merged["app"]
 
-    return ApiRegAppActions.delete(client=client, portfolio=portfolio, app=app, **merged)
+    try:
+        response = ApiRegAppActions.delete(client=client, portfolio=portfolio, app=app, **merged)
+        data = AppFact(**response.data).model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
 registry_app_actions: dict[str, RouteEndpoint] = {

@@ -1405,7 +1405,7 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
                 return ClientFact(**response.data[0])
         return None
     except Exception as e:
-        log.debug(f"Failed to get OAuth app info for client {client_id}: {e}")
+        log.debug(f"Failed to get OAuth app info for client {client_id}: {str(e)}")
         return None
 
 
