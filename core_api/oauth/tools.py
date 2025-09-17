@@ -1,4 +1,3 @@
-from re import sub
 from typing import Optional, Dict, Tuple
 import time
 import base64
@@ -43,7 +42,9 @@ from .constants import (
 
 class JwtPayload(BaseModel):
     sub: str = Field(..., description="Subject (user identifier, e.g. email)")
-    cid: str = Field(..., description="Client ID")
+
+    # Only required for access and refresh tokens.
+    cid: str | None = Field(None, description="Client ID")
 
     iat: int | None = Field(None, description="Issued at time as UNIX timestamp")
     exp: int | None = Field(None, description="Expiration time as UNIX timestamp")
@@ -125,9 +126,6 @@ class JwtPayload(BaseModel):
     @model_validator(mode="before")
     def validate_fields(cls, values: dict) -> dict:
 
-        if "cid" not in values:
-            raise ValueError("Client ID (cid) is required")
-
         cnm = values.get("cnm")
         if not cnm:
             raise ValueError("Client Name (cnm) is required")
@@ -140,6 +138,9 @@ class JwtPayload(BaseModel):
             values["typ"] = typ
         if "iss" not in values:
             values["iss"] = "sck-core-api"
+
+        if typ in ["access", "refresh"] and "cid" not in values:
+            raise ValueError("Client ID (cid) is required")
 
         ttl = int(values.get("ttl", 1440))
         if ttl > 1440:  # 24 hours max
@@ -173,6 +174,10 @@ class JwtPayload(BaseModel):
 
     def encode(self) -> str:
         """Encode the JWT payload as a JWT token."""
+        return jwt.encode(self.model_dump(), JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+    def create_token(self) -> str:
+        """Create a JWT token."""
         return jwt.encode(self.model_dump(), JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
     @classmethod

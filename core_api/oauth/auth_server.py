@@ -208,27 +208,6 @@ def _validate_client_credentials(client_secret: str, app_info: ClientFact) -> Tu
     return app_info.client_id, ok
 
 
-def _old_method(client_secret: str, app_info: ClientFact) -> Tuple[str, bool]:
-    client_id = app_info.client_id
-    secret_hash = app_info.client_secret
-
-    # Generate SHA-256 hash of provided secret to compare with stored hash
-    provided_hash = hashlib.sha256(client_secret.encode("utf-8")).hexdigest()
-
-    if provided_hash != secret_hash:
-        log.warn("Invalid client credentials for %s", client_id)
-        return client_id, False
-
-    return client_id, True
-
-
-def _new_method(client_secret: str, app_info: ClientFact) -> Tuple[str, bool]:
-    if not hmac.compare_digest(client_secret.encode("utf-8"), app_info.client_secret.encode("utf-8")):
-        return app_info.client_id, False
-
-    return app_info.client_id, True
-
-
 def get_cred_enc_key(**kwargs) -> Response:
     """Generate a new AWS credential encryption key."""
 
@@ -351,23 +330,16 @@ def oauth_authorize(
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
 
     # Check for missing or invalid authentication
-    if jwt_payload:
-        if jwt_payload.typ != "session":
-            # Wrong token type - return error instead of redirect
-            log.warn(
-                "Invalid token type for authorization flow",
-                details={"client_id": client_id, "token_type": jwt_payload.typ, "expected": "session"},
-            )
-            return RedirectResponse(url=_ui_url("/login?error=cmm"))
-        elif jwt_payload.cid != client_id:
-            # Client ID mismatch - return error
-            log.warn(
-                "Client ID mismatch in authorization flow", details={"request_client": client_id, "token_client": jwt_payload.cid}
-            )
-            return RedirectResponse(url=_ui_url("/login?error=cmc"))
+    if jwt_payload and jwt_payload.typ != "session":
+        # Wrong token type - return error instead of redirect
+        log.warn(
+            "Invalid token type for authorization flow",
+            details={"client_id": client_id, "token_type": jwt_payload.typ, "expected": "session"},
+        )
+        return RedirectResponse(url=_ui_url("/login?error=cmm"))
 
     # Only redirect to login if no valid session token
-    if not jwt_payload or jwt_payload.typ != "session" or jwt_payload.cid != client_id:
+    if not jwt_payload or jwt_payload.typ != "session":
         # Preserve the original authorize request so UX can resume post-login
         allowed = {
             "client_id",
@@ -455,7 +427,9 @@ def oauth_authorize(
         if authz.code_challenge:
             safe_details["code_challenge"] = True
             safe_details["code_challenge_method"] = authz.code_challenge_method or "S256"
+
         log.debug("Created new authorization code", details=safe_details)
+
     except Exception as e:
         log.error("Failed to create authorization code", details={"client_id": client_id, "error": str(e)}, exception=e)
         return RedirectResponse(url=_ui_url("/login?error=server_error"))
@@ -822,7 +796,7 @@ def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = Non
 
     try:
         jwt_payload = JwtPayload.decode(token)
-        log.debug(f"Token revoked for user {jwt_payload.sub}, client {jwt_payload.cid}")
+        log.debug(f"Token revoked for user {jwt_payload.sub}")
     except:
         # Token is invalid/expired - still return 200 per RFC 7009
         log.debug("Invalid token submitted for revocation")

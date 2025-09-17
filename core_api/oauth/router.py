@@ -8,7 +8,9 @@ import core_helper.aws as aws
 from core_api.response import get_proxy_response
 
 from ..api.apis import generate_event_context, generate_response_from_lambda, authorize_request
+
 from .handler import endpoints, handler
+from .auth_passkey import auth_passkey_endpoints
 
 
 async def auth_handler(request: Request) -> Response:
@@ -52,14 +54,21 @@ async def auth_handler(request: Request) -> Response:
 
 
 def get_auth_router() -> APIRouter:
+
     router = APIRouter()
-    for key in endpoints.keys():
-        method, route = key.split(":")
-        route = route[5:]  # strip /auth from the front
-        router.add_api_route(
-            route,
-            auth_handler,
-            methods=[method],
-            response_class=Response,
-        )
+
+    def add_endpoints(ep: dict) -> None:
+        for key in ep.keys():
+            method, route = key.split(":")
+            route = route[5:]  # strip /auth from the front
+            router.add_api_route(
+                route,
+                auth_handler,
+                methods=[method],
+                response_class=Response,
+            )
+
+    add_endpoints(endpoints)
+    add_endpoints(auth_passkey_endpoints)
+
     return router

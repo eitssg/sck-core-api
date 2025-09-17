@@ -44,8 +44,6 @@ from .constants import (
     SCK_MFA_COOKIE_NAME,
     SCK_TOKEN_SESSION_MINUTES,
     SCK_TOKEN_COOKIE_NAME,
-    SCK_TOKEN_REFRESH_SECONDS,
-    SCK_SESSION_ABSOLUTE_MAX_MINUTES,
 )
 from .tools import (
     JwtPayload,
