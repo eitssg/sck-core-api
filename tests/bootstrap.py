@@ -11,7 +11,7 @@ from core_db.registry.portfolio.models import PortfolioFactsFactory
 from core_db.registry.app.models import AppFactsFactory
 from core_db.registry.zone.models import ZoneFactsFactory
 from core_db.profile.model import ProfileModelFactory
-from core_db.auth.models import AuthorizationsModelFactory
+from core_db.oauth.models import AuthorizationsModelFactory
 from core_db.passkey.passkeys import PassKeysModelFactory
 
 import core_logging as log

@@ -634,7 +634,7 @@ administrator = {
     "theme": "dark",
     "notifications_enabled": True,
     "preferred_region": "us-east-1",
-    "permissions": {
+    "old_permissions": {
         "*": ["read", "write", "delete", "admin"],
         "aws": [
             "credentials:read",
@@ -645,6 +645,32 @@ administrator = {
         "billing": ["read", "write", "admin"],
         "admin": ["user:manage", "client:manage", "system:config"],
         "features": ["dashboard:advanced", "analytics", "billing:module"],
+    },
+    "permissions": {
+        "roles": ["tenant_admin", "portfolio_editor"],  # symbolic bundles
+        "grants": [  # explicit fine-grained allowances
+            {
+                "resource_type": "portfolio",
+                "resource_id": "*",  # wildcard or concrete key
+                "actions": ["read", "write", "admin"],  # action verbs
+                "effect": "allow",
+            },
+            {
+                "resource_type": "app",
+                "resource_id": "billing-ui",
+                "actions": ["read"],
+                "effect": "allow",
+            },
+        ],
+        "denies": [  # optional explicit denies (wins over allow)
+            {
+                "resource_type": "portfolio",
+                "resource_id": "secret-ops",
+                "actions": ["read", "write"],
+                "effect": "deny",
+            },
+        ],
+        "effective_hash": "sha256-of-expanded-set",  # server-generated; lets you short-circuit recompute
     },
     "is_active": True,
 }

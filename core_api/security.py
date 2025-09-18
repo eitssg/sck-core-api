@@ -21,58 +21,90 @@ class Permission(str, Enum):
     """System permissions that can be granted to users."""
 
     # Wildcard permissions
-    WILDCARD_ADMIN = "*:admin"
-    WILDCARD_READ = "*:read"
-    WILDCARD_WRITE = "*:write"
+    WILDCARD_READ = "*:read"  # view
+    WILDCARD_WRITE = "*:write"  # edit/view
+    WILDCARD_ADMIN = "*:admin"  # create/delete/edit/view
 
-    # Profile permissions
-    PROFILE_READ = "profile:read"  # Maps to read:profile OAuth scope
-    PROFILE_WRITE = "profile:write"  # Maps to write:profile OAuth scope
+    # User Profile permissions
+    PROFILE_READ = "profile:read"  # view
+    PROFILE_WRITE = "profile:write"  # edit/view
+    PROFILE_ADMIN = "profile:admin"  # create/delete/edit/view
 
-    # Portfolio permissions
-    PORTFOLIO_READ = "portfolio:read"
-    PORTFOLIO_WRITE = "portfolio:write"
-    PORTFOLIO_ADMIN = "portfolio:admin"
+    # All Deployment permissions (all deployed items... portfolios, apps, branches, builds, components)
+    DEPLOYMENT_ITEM_READ = "item:*:read"  # view
+    DEPLOYMENT_ITEM_WRITE = "item:*:write"  # edit/view
+    DEPLOYMENT_ITEM_ADMIN = "item:*:admin"  # create/delete/edit/view
+
+    # Deployed Portfolio permissions
+    ITEM_PORTFOLIO_READ = "item:portfolio:read"  # view
+    ITEM_PORTFOLIO_WRITE = "item:portfolio:write"  # edit/view
+    ITEM_PORTFOLIO_ADMIN = "item:portfolio:admin"  # create/delete/edit/view
+
+    # Deployed App permissions
+    ITEM_APP_READ = "item:app:read"  # view
+    ITEM_APP_WRITE = "item:app:write"  # edit/view
+    ITEM_APP_ADMIN = "item:app:admin"  # create/delete/edit/view
+
+    # Deployed Branch permissions
+    ITEM_BRANCH_READ = "item:branch:read"  # view
+    ITEM_BRANCH_WRITE = "item:branch:write"  # edit/view
+    ITEM_BRANCH_ADMIN = "item:branch:admin"  # create/delete/edit/view
+
+    # Deployed Build permissions
+    ITEM_BUILD_READ = "item:build:read"  # view
+    ITEM_BUILD_WRITE = "item:build:write"  # edit/view
+    ITEM_BUILD_ADMIN = "item:build:admin"  # create/delete/edit/view
+
+    # Deployed Component permissions
+    ITEM_COMPONENT_READ = "item:component:read"  # view
+    ITEM_COMPONENT_WRITE = "item:component:write"  # edit/view
+    ITEM_COMPONENT_ADMIN = "item:component:admin"  # create/delete/edit/view
 
     # Registry permissions
-    REGISTRY_READ = "registry:read"
-    REGISTRY_WRITE = "registry:write"
-    REGISTRY_ADMIN = "registry:admin"
-    REGISTRY_CLIENT_READ = "registry:client:read"
-    REGISTRY_CLIENT_WRITE = "registry:client:write"
-    REGISTRY_PORTFOLIO_READ = "registry:portfolio:read"
-    REGISTRY_PORTFOLIO_WRITE = "registry:portfolio:write"
+    REGISTRY_READ = "registry:*:read"  # view
+    REGISTRY_WRITE = "registry:*:write"  # edit/view
+    REGISTRY_ADMIN = "registry:*:admin"  # create/delete/edit/view
 
-    # App permissions
-    APP_READ = "app:read"
-    APP_WRITE = "app:write"
-    APP_ADMIN = "app:admin"
+    # Registry Client permissions
+    REGISTRY_CLIENT_READ = "registry:client:read"  # view
+    REGISTRY_CLIENT_WRITE = "registry:client:write"  # edit/view
+    REGISTRY_CLIENT_ADMIN = "registry:client:admin"  # create/delete/edit/view
 
-    # Component permissions
-    COMPONENT_READ = "component:read"
-    COMPONENT_WRITE = "component:write"
-    COMPONENT_ADMIN = "component:admin"
+    # Registry Portfolio permissions
+    REGISTRY_PORTFOLIO_READ = "registry:portfolio:read"  # view
+    REGISTRY_PORTFOLIO_WRITE = "registry:portfolio:write"  # edit/view
+    REGISTRY_PORTFOLIO_MANAGE = "registry:portfolio:manage"  # edit approvers, etc.
+    REGISTRY_PORTFOLIO_ADMIN = "registry:portfolio:admin"  # create/delete/edit/view
+
+    # Registry App permissions
+    REGISTRY_APP_READ = "registry:app:read"  # view
+    REGISTRY_APP_MANAGE = "registry:app:manage"  # deploy, run pipeline, etc.
+    REGISTRY_APP_WRITE = "registry:app:write"  # edit/view
+    REGISTRY_APP_ADMIN = "registry:app:admin"  # create/delete/edit/view
+
+    # Registry Zone permissions
+    REGISTRY_ZONE_READ = "registry:zone:read"  # view
+    REGISTRY_ZONE_WRITE = "registry:zone:write"  # edit/view
+    REGISTRY_ZONE_ADMIN = "registry:zone:admin"  # create/delete/edit/view
 
     # User management permissions
-    USER_READ = "user:read"
-    USER_WRITE = "user:write"
-    USER_MANAGE = "user:manage"
-
-    # Client management permissions
-    CLIENT_READ = "client:read"
-    CLIENT_WRITE = "client:write"
-    CLIENT_MANAGE = "client:manage"
-
-    # AWS permissions
-    AWS_READ = "aws:read"
-    AWS_WRITE = "aws:write"
-    AWS_ADMIN = "aws:admin"
-    AWS_BILLING_READ = "aws:billing:read"
+    USER_READ = "user:read"  # view
+    USER_WRITE = "user:write"  # edit/view
+    USER_MANAGE = "user:manage"  # edit roles/permissions
+    USER_ADMIN = "user:admin"  # create/delete/edit/view
 
     # System permissions
-    SYSTEM_CONFIG = "system:config"
-    SYSTEM_MONITOR = "system:monitor"
+    SYSTEM_CONFIG = "system:config"  # edit/view system config
+    SYSTEM_AUDIT = "system:audit"  # view audit logs
+    SYSTEM_MONITOR = "system:monitor"  # view system metrics
+    SYSTEM_ADMIN = "system:admin"  # full system access (same as *:admin)??
 
+    # SPA Oauth Client Registry permissions
+    OAUTH_CLIENT_READ = "client:read"  # view spa/web/app oauth clients
+    OAUTH_CLIENT_WRITE = "client:write"  # edit/view spa/web/app oauth clients
+    OAUTH_CLIENT_MANAGE = "client:manage"  # manage spa/web/app oauth clients
+
+    # OLD - to be removed
     DATA_READ = "data:read"
     DATA_WRITE = "data:write"
     DATA_ADMIN = "data:admin"
@@ -83,9 +115,8 @@ class Role(str, Enum):
 
     USER = "user"
     ADMIN = "admin"
+    APPROVER = "approver"
     SERVICE = "service"
-    READONLY = "readonly"
-    BILLING_ADMIN = "billing_admin"
 
 
 @dataclass

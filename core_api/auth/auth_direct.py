@@ -1,3 +1,4 @@
+from profile import Profile
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 import random
@@ -1747,6 +1748,89 @@ def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict
         return ErrorResponse(code=500, message="Failed to retrieve MFA status", exception=e)
 
 
+def get_permissions(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:
+    """
+    Docstring for get_permissions
+    Provide /auth/v1/permissions/explain?resource=portfolio:billing&action=write returning: { "allowed": true, "matched_grant": {...}, "implied_by_role": "portfolio_editor", "denied_overrides": [] }
+    """
+
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
+    if not jwt_payload:
+        return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
+    resource = query_params.get("resource")
+    action = query_params.get("action")
+    profile_name = query_params.get("profile_name", "default")
+
+    try:
+        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        profile = UserProfile(**response.data)
+
+        explaination = _explain_permissions(profile.permissions, resource, action)
+
+        return SuccessResponse(data=explaination)
+    except Exception as e:
+        log.error(f"Failed to retrieve profile for permissions: {e}")
+        return ErrorResponse(code=404, message="profile_not_found")
+
+
+def _explain_permissions(permissions: list[str], resource: str, action: str) -> dict:
+    """
+    Explain how a set of permissions allows or denies a specific action on a resource.
+    """
+
+    allowed = False
+    matched_grant = None
+    implied_by_role = None
+    denied_overrides = []
+
+    # Define role-based permission implications
+    role_implications = {
+        "admin": ["*:*"],
+        "portfolio_admin": [f"portfolio:{action}" for action in ["read", "write", "delete"]],
+        "portfolio_editor": [f"portfolio:{action}" for action in ["read", "write"]],
+        "portfolio_viewer": [f"portfolio:read"],
+        "user_admin": [f"user:{action}" for action in ["create", "read", "update", "delete"]],
+        "user_viewer": [f"user:read"],
+    }
+
+    # Check direct permissions first
+    for perm in permissions:
+        if perm == "*:*":
+            allowed = True
+            matched_grant = perm
+            break
+        if perm == f"{resource}:{action}" or perm == f"{resource}:*":
+            allowed = True
+            matched_grant = perm
+            break
+        if perm.startswith("-"):
+            denied_overrides.append(perm[1:])
+            if perm[1:] == f"{resource}:{action}" or perm[1:] == f"{resource}:*":
+                allowed = False
+                matched_grant = perm
+                break
+
+    # If not directly allowed, check role implications
+    if not allowed:
+        for role, implied_perms in role_implications.items():
+            for implied in implied_perms:
+                if implied == "*:*" or implied == f"{resource}:{action}" or implied == f"{resource}:*":
+                    allowed = True
+                    matched_grant = implied
+                    implied_by_role = role
+                    break
+            if allowed:
+                break
+
+    return {
+        "allowed": allowed,
+        "matched_grant": matched_grant,
+        "implied_by_role": implied_by_role,
+        "denied_overrides": denied_overrides,
+    }
+
+
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/signup": RouteEndpoint(
         user_signup,
@@ -1890,6 +1974,12 @@ auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "DELETE:/auth/v1/profiles/{profile_name}": RouteEndpoint(
         delete_user_profile,
         permissions=["user:profile:delete"],
+        required_token_type="session",
+        client_isolation=False,
+    ),
+    "GET:/auth/v1/permissions/explain": RouteEndpoint(
+        get_permissions,
+        permissions=["user:permissions:explain"],
         required_token_type="session",
         client_isolation=False,
     ),

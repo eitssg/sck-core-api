@@ -16,6 +16,7 @@ from core_db.registry.client import ClientFact, ClientActions
 from core_db.profile import UserProfile, ProfileActions
 
 from core_api.request import RouteEndpoint
+from core_api.security import Permission
 
 from ..constants import (
     GITHUB_CLIENT_ID,
@@ -413,6 +414,7 @@ def _get_or_create_user_profile(client: str, user_id: str, gh_user: dict, primar
             "last_name": (
                 " ".join(gh_user.get("name", "").split(" ")[1:]) if gh_user.get("name") and " " in gh_user.get("name", "") else ""
             ),
+            "permissions": [str(Permission.DATA_READ), str(Permission.DATA_WRITE)],
         }
 
         try:
