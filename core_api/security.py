@@ -225,6 +225,11 @@ class EnhancedSecurityContext:
         return role_str in self.roles
 
 
+def get_allowed_permissions() -> Set[str]:
+    """Get all defined permission strings."""
+    return {perm.value for perm in Permission}
+
+
 def get_permissions_from_scopes(scopes: str) -> Set[str]:
     """Convert OAuth scopes to permission strings, supporting wildcard permissions."""
     if not scopes:

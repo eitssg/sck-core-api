@@ -31,7 +31,7 @@ from ..response import (
     OAuthJWKSResponse,
     OAuthCredentialResponse,
 )
-from ..security import Permission
+from ..security import Permission, get_allowed_permissions
 
 from .tools import (
     JwtPayload,
@@ -43,11 +43,7 @@ from .tools import (
     ui_url,
 )
 
-from ..constants import (
-    JWT_ALGORITHM,
-    JWT_ACCESS_HOURS,
-    ALLOWED_SCOPES,
-)
+from ..constants import JWT_ALGORITHM, JWT_ACCESS_HOURS
 
 ###########################################################
 #
@@ -117,7 +113,7 @@ def _get_client_allowed_scopes(client_id: str) -> Set[str]:
     Returns:
         Set[str]: Allowed scopes for the client.
     """
-    return ALLOWED_SCOPES
+    return get_allowed_permissions()
 
 
 def _get_user_allowed_scopes(user_id: str) -> Set[str]:
@@ -129,7 +125,7 @@ def _get_user_allowed_scopes(user_id: str) -> Set[str]:
     Returns:
         Set[str]: Allowed scopes for the user.
     """
-    return {"read:profile", "write:profile"}
+    return get_allowed_permissions()
 
 
 def _error_bridge(path_error: str, redirect_path: str = "/login") -> str:
@@ -164,7 +160,7 @@ def _parse_scopes(scope_param: Optional[str]) -> list[str]:
     if not scope_param:
         return []
     parts = [s.strip() for s in scope_param.replace(",", " ").split(" ") if s.strip()]
-    return [s for s in parts if s in ALLOWED_SCOPES]
+    return [s for s in parts if s in get_allowed_permissions()]
 
 
 def _grant_scopes(client_id: str, user_id: str, requested: list[str]) -> list[str]:

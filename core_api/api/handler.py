@@ -289,7 +289,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         return get_proxy_error_response(error_response)
 
     except UnauthorizedException as e:
-        error_response = ErrorResponse(message=str(e), code=401, metadata={"correlation_id": correlation_id})
+        error_response = ErrorResponse(message=str(e), code=403, metadata={"correlation_id": correlation_id})
         log.warning("Authentication failed", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
