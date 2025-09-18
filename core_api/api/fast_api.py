@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 import core_logging as log
 
 from .router import get_api_router
-from ..oauth.router import get_auth_router
+from ..auth.router import get_auth_router
 
 from .headers import SimpleProxyHeadersMiddleware
 

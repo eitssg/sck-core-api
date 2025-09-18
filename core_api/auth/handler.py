@@ -22,11 +22,11 @@ from ..security import (
 from .auth_client import auth_client_endpoints
 from .auth_direct import auth_direct_endpoints
 from .auth_github import auth_github_endpoints
-from .auth_server import auth_server_endpoints
+from .auth_oauth import auth_oauth_endpoints
 from .auth_passkey import auth_passkey_endpoints
 
 endpoints: dict[str, RouteEndpoint] = {
-    **auth_server_endpoints,
+    **auth_oauth_endpoints,
     **auth_client_endpoints,
     **auth_direct_endpoints,
     **auth_github_endpoints,

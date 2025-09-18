@@ -1,4 +1,4 @@
-from core_api.oauth.tools import encrypt_credentials, decrypt_credentials
+from core_api.auth.tools import encrypt_credentials, decrypt_credentials
 
 
 def test_encrypt_decrypt_credentials():

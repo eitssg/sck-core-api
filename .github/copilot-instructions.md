@@ -23,3 +23,24 @@ If you cloned this submodule by itself (outside the parent monorepo), refer to t
 - UI/backend conventions: https://github.com/eitssg/simple-cloud-kit/tree/develop/sck-core-ui/docs
 - Root Copilot guidance: https://github.com/eitssg/simple-cloud-kit/blob/develop/.github/copilot-instructions.md
 
+
+
+# Repo guardrails for Copilot (Python)
+
+Runtime model
+- All Python in this repo runs in AWS Lambda. Handlers must be synchronous.
+- Do NOT introduce `async def`/`await` in Lambda code. Use threads if concurrency is necessary.
+
+Local dev
+- The local FastAPI router may await handlers, but the handler interfaces remain sync.
+
+Networking/HTTP
+- Use `httpx.Client` (blocking). Avoid `httpx.AsyncClient` and `asyncio`.
+
+OAuth modules (e.g., `core_api/oauth/*`)
+- Keep everything synchronous.
+- For redirects, construct with just `RedirectResponse(url=...)` — the code is implied/forced by the type; do not pass `code` or `status_code`.
+
+General guidance
+- Prefer small, stateless functions suitable for Lambda.
+- If a suggestion conflicts with these rules, prefer these rules.

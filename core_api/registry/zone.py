@@ -6,8 +6,6 @@ from core_db.response import ErrorResponse, Response, SuccessResponse
 from core_db.registry.zone import ZoneActions, ZoneFact
 from core_db.exceptions import NotFoundException, ConflictException
 
-from ..constants import PATH_PARAMETERS, BODY_PARAMETER, QUERY_STRING_PARAMETERS
-
 from ..request import ActionHandlerRoutes, RouteEndpoint
 
 from ..actions import ApiActions

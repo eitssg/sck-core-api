@@ -23,19 +23,28 @@ from webauthn.helpers.structs import (
 )
 from webauthn.authentication.verify_authentication_response import VerifiedAuthentication
 
+import core_logging as log
+
 from core_db.passkey import PassKeyActions, PassKey
 from core_db.profile import ProfileActions, UserProfile
-from core_db.response import Response, SuccessResponse, ErrorResponse, cookie_opts
+from core_db.response import Response, SuccessResponse, ErrorResponse, RedirectResponse, cookie_opts
 from webauthn.registration.verify_registration_response import VerifiedRegistration
 
 from core_api.security import get_authenticated_user
 
 from ..request import RouteEndpoint
-from ..oauth.tools import JwtPayload, create_basic_session_jwt
-from ..oauth.constants import SCK_MFA_COOKIE_NAME, SCK_TOKEN_COOKIE_NAME, SCK_TOKEN_SESSION_MINUTES
+from ..auth.tools import JwtPayload, check_rate_limit, emit_session_cookie
 
 PASSKEY_CHALLENGE_COOKIE = "sck_passkey_challenge"
 AUTH_CLIENT = "core"
+AUTH_CLIENT_ID = ""
+
+###########################################################
+#
+# THIS FILE IS RUN INSIDE A LAMBDA FUNCTION IT IS NOT A
+# FASTAPI ASYNC HANDLER
+#
+###########################################################
 
 
 def _merge_params(query_params: dict = None, body: dict = None) -> dict:
@@ -233,37 +242,18 @@ def _authenticate_complete(**kwargs) -> dict:
     return {k: v for k, v in data.items() if v is not None}
 
 
-def _emit_session_cookie(code: int, client_id: str, client: str, user_id: str, mfa: bool = False) -> Response:
-    """Create session JWT and return in cookie and response headers."""
-
-    # Create session JWT with NO AWS credentials - just user identity
-
-    minutes = int(SCK_TOKEN_SESSION_MINUTES)
-    new_exp_dt = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    abs_deadline = int((datetime.now(timezone.utc) + timedelta(minutes=minutes)).timestamp())
-    refresh_threshold = int((datetime.now(timezone.utc) + timedelta(minutes=minutes / 2)).timestamp())
-    max_age = minutes * 60
-
-    session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
-
-    # All X-Session-* headers are epoch seconds timestamps
-
-    resp = SuccessResponse(code=code)
-    resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=max_age, **cookie_opts())
-    if mfa:
-        resp.delete_cookie(SCK_MFA_COOKIE_NAME, path="/")
-    resp.set_header("X-Session-Exp", str(int(new_exp_dt.timestamp())))
-    resp.set_header("X-Session-Abs", str(int(abs_deadline)))
-    resp.set_header("X-Session-Refresh-Threshold", str(refresh_threshold))
-
-    return resp
-
-
-def register_begin(*, cookies: dict = None, query_params: dict = None, body: dict = None, **kwargs) -> Response:
+def register_begin(
+    *, headers: dict | None = None, cookies: dict = None, query_params: dict = None, body: dict = None, **kwargs
+) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized")
+
+    # Rate-limit early to avoid generating excessive challenges/cookies
+    if not check_rate_limit(headers, "passkey_auth", max_attempts=10, window_minutes=15):
+        log.warn("Rate limit exceeded for Passkey register")
+        return RedirectResponse(url="/error?error=rle&redirect=/login")
 
     merged = _merge_params(query_params, body)
     # Force user_id from authenticated session; ignore any provided body value
@@ -279,7 +269,8 @@ def register_begin(*, cookies: dict = None, query_params: dict = None, body: dic
 
         token = JwtPayload(
             sub=user_id,
-            cnm=AUTH_CLIENT,
+            cnm=merged.get("client"),
+            cid=merged.get("client_id"),
             typ="passkey_challenge",
             exp=int((datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()),
             iat=int(datetime.now(timezone.utc).timestamp()),
@@ -295,7 +286,9 @@ def register_begin(*, cookies: dict = None, query_params: dict = None, body: dic
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def register_complete(*, cookies: dict = None, query_params: dict = None, body: dict = None, **kwargs) -> Response:
+def register_complete(
+    *, headers: dict | None = None, cookies: dict = None, query_params: dict = None, body: dict = None, **kwargs
+) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -327,6 +320,11 @@ def register_complete(*, cookies: dict = None, query_params: dict = None, body: 
     )
     if not client_challenge or client_challenge != tok.cch:
         return ErrorResponse(code=400, message="challenge_mismatch")
+
+    # Rate-limit after validating the issued challenge, before any DB or crypto
+    if not check_rate_limit(headers, "passkey_auth", max_attempts=10, window_minutes=15):
+        log.warn("Rate limit exceeded for Passkey register")
+        return RedirectResponse(url="/error?error=rle&redirect=/login")
 
     key_id_b64 = merged.get("key_id") or merged.get("keyId") or merged.get("id")
     if not key_id_b64:
@@ -442,6 +440,11 @@ def webauthn_authenticate_begin(*, query_params: dict = None, body: dict = None,
     merged = _merge_params(query_params, body)
 
     try:
+        # Rate-limit before issuing a new challenge/cookie
+        headers = kwargs.get("headers") if isinstance(kwargs, dict) else None
+        if not check_rate_limit(headers, "passkey_auth", max_attempts=10, window_minutes=15):
+            log.warn("Rate limit exceeded for Passkey auth begin")
+            return RedirectResponse(url="/error?error=rle&redirect=/login")
         # Build options. This may include allowCredentials if user_id is known and
         # passkeys exist; otherwise it will be empty to support discoverable credentials.
         # We intentionally avoid returning 404/401 here to prevent user enumeration.
@@ -450,7 +453,8 @@ def webauthn_authenticate_begin(*, query_params: dict = None, body: dict = None,
         challenge = options.get("challenge")
         token = JwtPayload(
             sub=merged.get("user_id", ""),
-            cnm=AUTH_CLIENT,
+            cnm=merged.get("client"),
+            cid=merged.get("client_id"),
             typ="passkey_challenge",
             exp=int((datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()),
             iat=int(datetime.now(timezone.utc).timestamp()),
@@ -466,7 +470,7 @@ def webauthn_authenticate_begin(*, query_params: dict = None, body: dict = None,
 
 
 def webauthn_authenticate_complete(
-    *, cookies: dict | None = None, query_params: dict = None, body: dict = None, **kwargs
+    *, headers: dict | None = None, cookies: dict | None = None, query_params: dict = None, body: dict = None, **kwargs
 ) -> Response:
 
     merged = _merge_params(query_params, body)
@@ -497,6 +501,11 @@ def webauthn_authenticate_complete(
     )
     if not client_challenge or client_challenge != tok.cch:
         return ErrorResponse(code=400, message="challenge_mismatch")
+
+    # Rate-limit after validating the issued challenge, before any DB or crypto
+    if not check_rate_limit(headers, "passkey_auth", max_attempts=10, window_minutes=15):
+        log.warn("Rate limit exceeded for Passkey auth complete")
+        return RedirectResponse(url="/error?error=rle&redirect=/login")
 
     user_id = merged.get("user_id")
     key_id = merged.get("key_id")
@@ -566,7 +575,9 @@ def webauthn_authenticate_complete(
     )
 
     try:
-        response = ProfileActions.get(client=AUTH_CLIENT, user_id=user_id, profile_name="default")
+        # Prefer client from challenge token
+        client_slug = tok.cnm or AUTH_CLIENT
+        response = ProfileActions.get(client=client_slug, user_id=user_id, profile_name="default")
         profile: UserProfile = UserProfile(**response.data)
         if not profile.is_active:
             return ErrorResponse(code=403, message="User account is disabled")
@@ -591,7 +602,7 @@ def webauthn_authenticate_complete(
 
     try:
         ProfileActions.patch(
-            client=AUTH_CLIENT,
+            client=client_slug,
             user_id=user_id,
             profile_name="default",
             last_login=datetime.now(timezone.utc),
@@ -630,7 +641,8 @@ def webauthn_authenticate_complete(
         PassKeyActions.patch(**update_data)
 
         # Issue session cookie and delete the one-time challenge cookie
-        resp = _emit_session_cookie(200, client_id="", user_id=user_id, client=AUTH_CLIENT)
+        client_id = tok.cid or AUTH_CLIENT_ID
+        resp: Response = emit_session_cookie(SuccessResponse(), client_id=client_id, user_id=user_id, client=client_slug)
         resp.delete_cookie(PASSKEY_CHALLENGE_COOKIE, path="/")
         return resp
 
@@ -638,11 +650,16 @@ def webauthn_authenticate_complete(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_passkey(*, cookies: dict | None = None, path_params: dict = None, **kwargs) -> Response:
+def delete_passkey(*, headers: dict | None = None, cookies: dict | None = None, path_params: dict = None, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
         return ErrorResponse(code=401, message="Unauthorized")
+
+    # Rate-limit early for destructive action
+    if not check_rate_limit(headers, "passkey_auth", max_attempts=10, window_minutes=15):
+        log.warn("Rate limit exceeded for Passkey delete")
+        return RedirectResponse(url="/error?error=rle&redirect=/login")
 
     user_id = jwt_payload.sub
     key_id = path_params.get("key_id")

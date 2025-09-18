@@ -12,8 +12,7 @@ import core_logging as log
 from core_renderer import Jinja2Renderer
 
 from core_api.response import ErrorResponse
-
-from .constants import *
+from ..constants import *
 
 
 def _create_ssl_context() -> ssl.SSLContext:

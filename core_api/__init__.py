@@ -32,7 +32,7 @@ Modules:
     
     - **oauth/**: Complete OAuth 2.0 authorization server
         - handler.py: AWS Lambda entry point for OAuth endpoints
-        - auth_server.py: Core OAuth 2.0 protocol implementation
+        - auth_oauth.py: Core OAuth 2.0 protocol implementation
         - auth_github.py: GitHub OAuth provider integration
         - auth_client.py: OAuth client management endpoints
         - auth_direct.py: Direct authentication endpoints
@@ -69,7 +69,7 @@ Usage Examples:
     .. code-block:: python
     
         # OAuth server Lambda handler
-        from core_api.oauth.handler import handler
+        from core_api.auth.handler import handler
         
         def lambda_handler(event, context):
             return handler(event, context)
@@ -145,7 +145,7 @@ Deployment:
         
         # Deploy to AWS
         aws lambda create-function --function-name oauth-server \\
-            --runtime python3.9 --handler core_api.oauth.handler.handler
+            --runtime python3.9 --handler core_api.auth.handler.handler
 
 Note:
     This package is part of the Simple Cloud Kit ecosystem and requires

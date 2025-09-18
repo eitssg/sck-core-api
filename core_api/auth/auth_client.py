@@ -16,6 +16,15 @@ from core_db.registry.client.actions import ClientActions
 from core_api.item.build import SuccessResponse
 from core_api.request import RouteEndpoint
 
+###########################################################
+#
+# THIS FILE IS RUN INSIDE A LAMBDA FUNCTION IT IS NOT A
+# FASTAPI ASYNC HANDLER
+#
+###########################################################
+
+## INCOMPLETE:  This is a starting point for OAuth client registration, it is not complete
+
 
 def register_client(*, body: dict = None, **kwargs) -> Response:
     """Register a new OAuth client."""
@@ -122,7 +131,10 @@ def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> 
     )
 
 
+# At the moment, the API being used is "/api/v1/registry/clients".
+# This file and these API may not be needed.
+
 auth_client_endpoints: dict[str, RouteEndpoint] = {
-    "POST:/v1/clients": register_client,
-    "PUT:/v1/clients/{client}": update_client,
+    "POST:/api/v1/clients": register_client,
+    "PUT:/api/v1/clients/{client}": update_client,
 }

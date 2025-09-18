@@ -11,9 +11,9 @@ import core_helper.aws as aws
 
 from core_db.exceptions import UnauthorizedException
 
-from .oauth.auth_creds import get_credentials
+from .auth.auth_creds import get_credentials
 
-from .oauth.tools import JwtPayload, get_authenticated_user
+from .auth.tools import JwtPayload, get_authenticated_user
 from .request import ProxyEvent, RouteEndpoint
 
 

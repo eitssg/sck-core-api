@@ -1,4 +1,4 @@
-from core_api.oauth.tools import encrypt_creds, decrypt_creds
+from core_api.auth.tools import encrypt_creds, decrypt_creds
 
 
 # Add this test function temporarily to verify

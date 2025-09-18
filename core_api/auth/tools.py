@@ -8,9 +8,6 @@ import ipaddress
 import bcrypt
 from datetime import datetime, timedelta, timezone
 
-from core_db.registry import ClientFact
-from core_db.oauth.actions import AuthActions
-
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -22,13 +19,17 @@ from jwcrypto.jwk import JWK
 
 import core_logging as log
 
-from core_db.response import SuccessResponse
+from core_db.registry import ClientFact
+from core_db.oauth.actions import AuthActions
+from core_db.response import Response, SuccessResponse
 from core_db.profile.model import UserProfile
 from core_db.profile.actions import ProfileActions
 from core_db.oauth.actions import RateLimitActions
 from core_db.registry.client import ClientActions
 
-from .constants import (
+from ..constants import (
+    API_HOST,
+    CLIENT_HOST,
     CRED_ENC_KEY_B64,
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
@@ -127,10 +128,9 @@ class JwtPayload(BaseModel):
     def validate_fields(cls, values: dict) -> dict:
 
         cnm = values.get("cnm")
-        if not cnm:
-            raise ValueError("Client Name (cnm) is required")
-        cnm = cnm.lower()
-        values["cnm"] = cnm
+        if cnm:
+            cnm = str(cnm).lower()
+            values["cnm"] = cnm
 
         typ = values.get("typ")
         if not typ:
@@ -1456,3 +1456,58 @@ def revoke_access_token(token: JwtPayload) -> bool:
     except Exception as e:
         log.warn(f"Failed to revoke token: {e}")
         return True
+
+
+def emit_session_cookie(resp: Response, client_id, client, user_id, mfa: bool = False) -> Response:
+    """Create session JWT and return in cookie and response headers."""
+
+    # Create session JWT with NO AWS credentials - just user identity
+
+    minutes = int(SCK_TOKEN_SESSION_MINUTES)
+    new_exp_dt = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    abs_deadline = int((datetime.now(timezone.utc) + timedelta(minutes=minutes)).timestamp())
+    refresh_threshold = int((datetime.now(timezone.utc) + timedelta(minutes=minutes / 2)).timestamp())
+    max_age = minutes * 60
+
+    session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
+
+    # All X-Session-* headers are epoch seconds timestamp
+
+    resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=max_age, **cookie_opts())
+    if mfa:
+        resp.delete_cookie(SCK_MFA_COOKIE_NAME, path="/")
+    resp.set_header("X-Session-Exp", str(int(new_exp_dt.timestamp())))
+    resp.set_header("X-Session-Abs", str(int(abs_deadline)))
+    resp.set_header("X-Session-Refresh-Threshold", str(refresh_threshold))
+
+    return resp
+
+
+def api_url(path_with_query: str) -> str:
+    """
+    Helper: build absolute API URL for login redirects using API_HOST
+
+    Args:
+        path_with_query (str): Path and optional query string (e.g., "/auth/callback?code=abc")
+
+    Returns:
+        str: Absolute URL (e.g., "https://api.example.com/auth/callback?code=abc")
+    """
+    if not path_with_query.startswith("/"):
+        path_with_query = "/" + path_with_query
+    return f"{API_HOST}{path_with_query}"
+
+
+def ui_url(path_with_query: str) -> str:
+    """
+    Helper: build absolute UI URL for login redirects using CLIENT_HOST
+
+    Args:
+        path_with_query (str): Path and optional query string (e.g., "/auth/callback?code=abc")
+
+    Returns:
+        str: Absolute URL (e.g., "https://app.example.com/auth/callback?code=abc")
+    """
+    if not path_with_query.startswith("/"):
+        path_with_query = "/" + path_with_query
+    return f"{CLIENT_HOST}{path_with_query}"

@@ -10,7 +10,6 @@ from core_api.response import get_proxy_response
 from ..api.apis import generate_event_context, generate_response_from_lambda, authorize_request
 
 from .handler import endpoints, handler
-from .auth_passkey import auth_passkey_endpoints
 
 
 async def auth_handler(request: Request) -> Response:
@@ -69,6 +68,5 @@ def get_auth_router() -> APIRouter:
             )
 
     add_endpoints(endpoints)
-    add_endpoints(auth_passkey_endpoints)
 
     return router

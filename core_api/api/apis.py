@@ -23,9 +23,9 @@ import core_logging as log
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 
-from core_api.oauth.auth_creds import decrypt_creds
+from core_api.auth.auth_creds import decrypt_creds
 
-from ..oauth.tools import get_authenticated_user
+from ..auth.tools import get_authenticated_user
 
 from ..request import ProxyEvent
 

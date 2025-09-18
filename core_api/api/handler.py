@@ -34,9 +34,8 @@ Attributes:
 
 from typing import Any, Dict, Optional, Set
 
-import core_framework as util
-
 import core_logging as log
+import core_helper.aws as aws
 
 from core_db.response import ErrorResponse, Response
 from core_db.exceptions import (
@@ -65,8 +64,6 @@ from ..security import (
     check_permissions_with_wildcard,
     extract_security_context,
 )
-from ..oauth.auth_creds import get_credentials
-import core_helper.aws as aws_helper
 
 # Build the router for the API Gateway REST interface
 api_endpoints: dict[str, RouteEndpoint] = {
@@ -246,7 +243,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                 security_context.permissions, endpoint_route.required_permissions
             )
             if missing_perms:
-                raise PermissionError(f"Missing permissions for this operation: {[p for p in missing_perms]}")
+                raise UnauthorizedException(f"Missing permissions for this operation: {[str(p) for p in missing_perms]}")
 
             # Extract AWS credentials from Bearer JWT
             aws_credentials = security_context.aws_credentials
@@ -256,7 +253,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
             if aws_credentials and security_context.user_id:
                 # This now handles the optimization internally
-                aws_helper.set_user_context(security_context.user_id, aws_credentials)
+                aws.set_user_context(security_context.user_id, aws_credentials)
                 log.debug("User context ready", details={"user_id": security_context.user_id})
 
             # Validate client access
@@ -312,7 +309,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
     finally:
         try:
-            aws_helper.clear_user_context()
+            aws.clear_user_context()
             log.debug("Cleared user context at request end")
         except Exception as e:
             log.warning("Error clearing user context", details={"error": str(e)})

@@ -40,13 +40,21 @@ from .tools import (
     get_authenticated_user,
     create_access_token_with_sts,
     get_oauth_app_info,
+    ui_url,
 )
 
-from .constants import (
+from ..constants import (
     JWT_ALGORITHM,
     JWT_ACCESS_HOURS,
     ALLOWED_SCOPES,
 )
+
+###########################################################
+#
+# THIS FILE IS RUN INSIDE A LAMBDA FUNCTION IT IS NOT A
+# FASTAPI ASYNC HANDLER
+#
+###########################################################
 
 
 def _mint_refresh_token(client: str, client_id: str, subject: str, scope: str, lifetime_days: int = 30) -> str:
@@ -122,6 +130,26 @@ def _get_user_allowed_scopes(user_id: str) -> Set[str]:
         Set[str]: Allowed scopes for the user.
     """
     return {"read:profile", "write:profile"}
+
+
+def _error_bridge(path_error: str, redirect_path: str = "/login") -> str:
+    """Return UI /error URL with error code and redirect target.
+
+    Args:
+        path_error (str): Error code to convey
+        redirect_path (str): Path to navigate to after storing error
+
+    Returns:
+        str: Absolute UI URL to /error with query params
+    """
+    # Ensure redirect has no host and starts with '/'
+    rp = redirect_path if redirect_path.startswith("/") else f"/{redirect_path}"
+    path = f"/error?error={quote(path_error)}&redirect={quote(rp)}"
+    base = (os.getenv("CLIENT_HOST") or "").strip()
+    if not base:
+        return path
+    base = base.rstrip("/")
+    return f"{base}{path}"
 
 
 def _parse_scopes(scope_param: Optional[str]) -> list[str]:
@@ -273,58 +301,48 @@ def oauth_authorize(
         },
     )
 
-    # Helper: build absolute UI URL for login redirects using CLIENT_HOST
-    def _ui_url(path_with_query: str) -> str:
-        base = (os.getenv("CLIENT_HOST") or "").strip()
-        if not base:
-            return path_with_query
-        base = base.rstrip("/")
-        if not path_with_query.startswith("/"):
-            path_with_query = "/" + path_with_query
-        return f"{base}{path_with_query}"
-
     # 1) Validate ALL required parameters BEFORE rate limiting or DB calls
     if not client_id:
         log.warn("Authorize missing client_id", details={"query_keys": list((query_params or {}).keys())})
-        return RedirectResponse(url=_ui_url("/login?error=mci"))
+        return RedirectResponse(url=_error_bridge("mci"))
 
     if not response_type:
         log.warn("Authorize missing response_type", details={"client_id": client_id})
-        return RedirectResponse(url=_ui_url("/login?error=mrt"))
+        return RedirectResponse(url=_error_bridge("mrt"))
 
     if response_type != "code":
         log.warn("Unsupported response_type", details={"client_id": client_id, "response_type": response_type})
-        return RedirectResponse(url=_ui_url("/login?error=urt"))
+        return RedirectResponse(url=_error_bridge("urt"))
 
     if not redirect_uri:
         log.warn("Authorize missing redirect_uri", details={"client_id": client_id})
-        return RedirectResponse(url=_ui_url("/login?error=mru"))
+        return RedirectResponse(url=_error_bridge("mru"))
 
     if code_challenge:
         if len(code_challenge) < 43 or len(code_challenge) > 128:
             log.debug("Invalid PKCE code_challenge length", details={"client_id": client_id, "length": len(code_challenge)})
-            return RedirectResponse(url=_ui_url("/login?error=isf"))
+            return RedirectResponse(url=_error_bridge("isf"))
         if not all(c.isalnum() or c in "-._~" for c in code_challenge):
             log.debug("Invalid PKCE code_challenge characters", details={"client_id": client_id})
-            return RedirectResponse(url=_ui_url("/login?error=isf"))
+            return RedirectResponse(url=_error_bridge("isf"))
     # Allow only S256 if provided (PLAIN not supported)
     if code_challenge_method and code_challenge_method != "S256":
         log.debug("Unsupported code_challenge_method", details={"client_id": client_id, "method": code_challenge_method})
-        return RedirectResponse(url=_ui_url("/login?error=ucm"))
+        return RedirectResponse(url=_error_bridge("ucm"))
 
     # Optional: Validate state parameter format if present (length + printable chars)
     if state:
         invalid_state = len(state) > 512 or (not state.isprintable())
         if invalid_state:
             log.debug("Invalid state parameter format", details={"client_id": client_id, "length": len(state)})
-            return RedirectResponse(url=_ui_url("/login?error=isf"))
+            return RedirectResponse(url=_error_bridge("isf"))
 
     # 2) Now check rate limiting (use headers for IP/UA-aware limiting)
     headers = headers or {}
     # Rate limit key standardized to auth:oauth:authorize
     if not check_rate_limit(headers, "auth:oauth:authorize", max_attempts=10, window_minutes=15):
         log.warn("Rate limit exceeded for /auth/v1/authorize", details={"client_id": client_id})
-        return RedirectResponse(url=_ui_url("/login?error=rle"))
+        return RedirectResponse(url=_error_bridge("rle"))
 
     # 3) Require authenticated user with valid session token which is in cookies
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
@@ -336,7 +354,7 @@ def oauth_authorize(
             "Invalid token type for authorization flow",
             details={"client_id": client_id, "token_type": jwt_payload.typ, "expected": "session"},
         )
-        return RedirectResponse(url=_ui_url("/login?error=cmm"))
+        return RedirectResponse(url=_error_bridge("cmm"))
 
     # Only redirect to login if no valid session token
     if not jwt_payload or jwt_payload.typ != "session":
@@ -357,7 +375,7 @@ def oauth_authorize(
             authorize_url = f"{authorize_url}?{urlencode(auth_params)}"
         encoded_return_to = quote(authorize_url, safe="")
         login_url = f"/login?returnTo={encoded_return_to}"
-        ui_login = _ui_url(login_url)
+        ui_login = ui_url(login_url)
         log.debug(
             "Unauthenticated request, redirecting to login",
             details={
@@ -372,16 +390,16 @@ def oauth_authorize(
     app_info: ClientFact = get_oauth_app_info(client_id)
     if not app_info:
         log.warn("Unknown client in authorize", details={"client_id": client_id})
-        return RedirectResponse(url=_ui_url("/login?error=cid"))
+        return RedirectResponse(url=_error_bridge("cid"))
 
     if jwt_payload.cnm != app_info.client:
-        return RedirectResponse(url=_ui_url("/login?error=cnm"))
+        return RedirectResponse(url=_error_bridge("cnm"))
 
     # 5) Validate redirect_uri against registration
     registered_uris = app_info.client_redirect_urls
     if redirect_uri not in [uri for uri in registered_uris if uri]:
         log.debug("Redirect URI not registered", details={"client_id": client_id, "redirect_uri": redirect_uri})
-        return RedirectResponse(url=_ui_url("/login?error=rnr"))
+        return RedirectResponse(url=_error_bridge("rnr"))
 
     # 5b) Enforce PKCE for public clients (no client_secret)
     is_public = not bool(app_info.client_secret)
@@ -389,12 +407,12 @@ def oauth_authorize(
         # Require PKCE for public clients
         if not code_challenge:
             log.debug("Missing PKCE for public client", details={"client_id": client_id})
-            return RedirectResponse(url=_ui_url("/login?error=pkr"))
+            return RedirectResponse(url=_error_bridge("pkr"))
         if code_challenge_method and code_challenge_method != "S256":
             log.debug(
                 "Unsupported PKCE method for public client", details={"client_id": client_id, "method": code_challenge_method}
             )
-            return RedirectResponse(url=_ui_url("/login?error=ucm"))
+            return RedirectResponse(url=_error_bridge("ucm"))
 
     # 6) Process scopes (request + policy => granted)
     requested_scopes = _parse_scopes(scope_param)
@@ -432,7 +450,7 @@ def oauth_authorize(
 
     except Exception as e:
         log.error("Failed to create authorization code", details={"client_id": client_id, "error": str(e)}, exception=e)
-        return RedirectResponse(url=_ui_url("/login?error=server_error"))
+        return RedirectResponse(url=_error_bridge("server_error"))
 
     # 8) Redirect back to client app with code + state
     sep = "&" if "?" in redirect_uri else "?"
@@ -460,7 +478,7 @@ def _get_token_authorization(app_info: ClientFact, code: str) -> Authorizations:
 def _authorization_code_grant(
     body: dict,
     app_info: ClientFact,
-):
+) -> OAuthErrorResponse | OAuthTokenResponse:
 
     code = (body.get("code") or "").strip()
     redirect_uri = (body.get("redirect_uri") or "").strip()
@@ -522,6 +540,7 @@ def _authorization_code_grant(
         if not authz.code_challenge:
             log.debug("Missing PKCE code_challenge", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: pkce required for public client")
+
         if not code_verifier:
             log.debug("Missing PKCE code_verifier", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
             return OAuthErrorResponse(code=400, error_description="invalid_request: code_verifier required")
@@ -555,46 +574,18 @@ def _authorization_code_grant(
         log.warn("Authorization code subject missing", details={"client_id": app_info.client_id, "code": code[:8] + "..."})
         return OAuthErrorResponse(code=401, error_description="invalid_grant: code payload invalid")
 
-    # Get AWS credentials from database profile (NOT from session token)
-    aws_credentials, permissions = get_user_access_key(app_info.client, authz.subject)
-    if len(aws_credentials) == 0:
-        log.warn("Missing AWS credentials for user %s in client %s", authz.subject, authz.client_id)
+    return _get_grant_response(cid=authz.client_id, cnm=authz.client, sub=authz.subject, scp=authz.scopes)
 
-    # Mint the access token with STS session inside
+
+def _get_aws_credentials(client: str, subject: str) -> tuple[dict, list]:
     try:
-        access_token = create_access_token_with_sts(
-            aws_credentials=aws_credentials,
-            client=app_info.client,
-            client_id=app_info.client_id,
-            subject=authz.subject,
-            scope=authz.scopes,
-            permissions=permissions,
-        )
+        return get_user_access_key(client, subject)
     except Exception as e:
-        log.warn(
-            "Access token creation failed", details={"client_id": app_info.client_id, "subject": authz.subject, "error": str(e)}
-        )
-        return OAuthErrorResponse(code=401, error_description="invalid_grant: failed to mint access token", exception=e)
-
-    # Update refresh token to include client info
-    refresh_token = _mint_refresh_token(
-        client=app_info.client,
-        client_id=app_info.client_id,
-        subject=authz.subject,
-        scope=authz.scopes,
-        lifetime_days=30,
-    )
-
-    return OAuthTokenResponse(
-        access_token=access_token,
-        token_type="Bearer",
-        expires_in=int(JWT_ACCESS_HOURS * 3600),
-        scope=authz.scopes,
-        refresh_token=refresh_token,
-    )
+        log.warn("Failed to get AWS credentials", details={"client": client, "subject": subject, "error": str(e)})
+    return {}, [Permission.USER_READ]
 
 
-def _refresh_token_grant(body: dict, app_info: ClientFact) -> Response:
+def _refresh_token_grant(body: dict, app_info: ClientFact) -> OAuthErrorResponse | OAuthTokenResponse:
 
     # RFC 6749 Section 6: refresh an access token
     refresh_token = (body.get("refresh_token") or "").strip()
@@ -617,35 +608,39 @@ def _refresh_token_grant(body: dict, app_info: ClientFact) -> Response:
     if not rt.sub:
         return OAuthErrorResponse(code=401, error_description="invalid_grant: invalid refresh token")
 
+    return _get_grant_response(cid=rt.cid, cnm=rt.cnm, sub=rt.sub, scp=rt.scp)
+
+
+def _get_grant_response(*, cid, cnm, sub, scp) -> OAuthTokenResponse | OAuthErrorResponse:
+
     # Get fresh AWS credentials from database (NOT from refresh token)
-    aws_credentials, permissions = get_user_access_key(rt.cnm, rt.sub)
-    if not aws_credentials:
-        log.warn("Missing AWS credentials for refresh token user %s in client %s", rt.sub, rt.cnm)
-        return OAuthErrorResponse(code=401, error_description="invalid_grant: no AWS credentials")
+    credentials, permissions = _get_aws_credentials(cnm, sub)
+    if not credentials:
+        log.warn("Missing AWS credentials for refresh token user %s in client %s", sub, cnm)
 
     # Create new access token with client info
     try:
         access_token = create_access_token_with_sts(
-            aws_credentials=aws_credentials,
-            client_id=rt.cid,
-            client=rt.cnm,
-            subject=rt.sub,
-            scope=rt.scp,
+            aws_credentials=credentials,
+            client_id=cid,
+            client=cnm,
+            subject=sub,
+            scope=scp,
             permissions=permissions,
         )
     except Exception as e:
         log.warn(
             "Refresh token access token creation failed",
-            details={"client_id": rt.cid, "user_id": rt.sub, "error": str(e)},
+            details={"client_id": cid, "user_id": sub, "error": str(e)},
         )
         return OAuthErrorResponse(code=500, error_description="failed to create access token", exception=e)
 
     # Create new refresh token with client info
     new_refresh = _mint_refresh_token(
-        client=rt.cnm,
-        client_id=rt.cid,
-        subject=rt.sub,
-        scope=rt.scp,
+        client=cnm,
+        client_id=cid,
+        subject=sub,
+        scope=scp,
         lifetime_days=30,
     )
 
@@ -653,42 +648,45 @@ def _refresh_token_grant(body: dict, app_info: ClientFact) -> Response:
         access_token=access_token,
         token_type="Bearer",
         expires_in=int(JWT_ACCESS_HOURS * 3600),
-        scope=rt.scp or "",
+        scope=scp or "",
         refresh_token=new_refresh,
     )
-    log.debug("Refreshed access token", details=resp.model_dump(exclude_none=True))
+
+    log.debug("Access token grant response:", details=resp.model_dump(exclude_none=True))
+
     return resp
 
 
-def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
+def oauth_token(*, headers: dict = None, body: dict = None, **kwargs) -> OAuthTokenResponse | OAuthErrorResponse:
     """Exchange authorization codes and refresh tokens for access.
 
     Route:
         POST /auth/v1/token
+
     Content-Type:
         application/x-www-form-urlencoded
 
-        Grants:
-                - authorization_code:
-                        Required form fields:
-                            grant_type=authorization_code
-                            code
-                            redirect_uri (exact match)
-                            client_id
-                            code_verifier (PKCE, required for public clients)
-                        Client authentication:
-                            - Confidential clients MUST authenticate with HTTP Basic (Authorization header) or body params.
-                            - Public clients MUST NOT use a client_secret (PKCE enforces proof-of-possession).
-                        Returns:
-                            access_token (JWT), refresh_token (JWT), token_type, expires_in, scope
+    Grants:
+        - authorization_code:
+            Required form fields:
+                grant_type=authorization_code
+                code
+                redirect_uri (exact match)
+                client_id
+                code_verifier (PKCE, required for public clients)
+            Client authentication:
+                - Confidential clients MUST authenticate with HTTP Basic (Authorization header) or body params.
+                - Public clients MUST NOT use a client_secret (PKCE enforces proof-of-possession).
+            Returns:
+                access_token (JWT), refresh_token (JWT), token_type, expires_in, scope
 
-                - refresh_token:
-                        Required form fields:
-                            grant_type=refresh_token
-                            refresh_token
-                            client_id
-                        Behavior:
-                            Validates refresh token audience/type, mints a new access token and rotates refresh token.
+        - refresh_token:
+            Required form fields:
+                grant_type=refresh_token
+                refresh_token
+                client_id
+            Behavior:
+                Validates refresh token audience/type, mints a new access token and rotates refresh token.
 
     Errors:
         400 invalid_request/invalid_grant, 401 invalid_client, 429 slow_down with Retry-After.
@@ -704,10 +702,13 @@ def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
     # Support HTTP Basic client authentication (RFC 6749 §2.3.1)
     basic_client_id, basic_client_secret = _parse_basic_auth(headers.get("authorization"))
     if basic_client_id:
+
         if form_client_id and form_client_id != basic_client_id:
             return OAuthErrorResponse(code=400, error_description="invalid_request: client_id mismatch with Authorization header")
+
         client_id = basic_client_id
         client_secret = basic_client_secret or ""
+
     else:
         client_id = form_client_id
         client_secret = form_client_secret
@@ -763,7 +764,9 @@ def oauth_token(*, headers: dict = None, body: dict = None, **kwargs):
         return OAuthErrorResponse(code=400, error_description="unsupported_grant_type: use authorization_code or refresh_token")
 
 
-def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def oauth_revoke(
+    *, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs
+) -> OAuthSuccessResponse | OAuthErrorResponse:
     """Token revocation endpoint (RFC 7009).
 
     Route:
@@ -806,7 +809,7 @@ def oauth_revoke(*, cookies: dict = None, headers: dict = None, body: dict = Non
     return OAuthSuccessResponse()
 
 
-def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs):
+def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> OAuthErrorResponse | OAuthIntrospectionResponse:
     """Token introspection endpoint (RFC 7662).
 
     Route:
@@ -856,7 +859,7 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs):
         return OAuthErrorResponse(code=500, error_description="introspection_failed", exception=e)
 
 
-def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
+def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs) -> OAuthErrorResponse | OAuthUserInfoResponse:
     """OpenID Connect UserInfo endpoint.
 
     Route:
@@ -901,7 +904,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs):
     )
 
 
-def oauth_jwks(*, headers: dict = None, **kwargs):
+def oauth_jwks(*, headers: dict = None, **kwargs) -> OAuthErrorResponse | OAuthJWKSResponse:
     """JSON Web Key Set endpoint for token verification.
 
     Route:
@@ -938,7 +941,7 @@ def oauth_jwks(*, headers: dict = None, **kwargs):
         return OAuthErrorResponse(code=500, error_description="jwks_failed", exception=e)
 
 
-auth_server_endpoints = {
+auth_oauth_endpoints = {
     "GET:/auth/v1/authorize": RouteEndpoint(
         oauth_authorize,
         permissions={Permission.DATA_READ},

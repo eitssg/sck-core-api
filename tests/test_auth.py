@@ -28,21 +28,22 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 from moto import mock_aws
-import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 
-import core_framework as util  # CORRECTED: Import util for to_json()
+import core_framework as util
 
-from core_api.oauth.auth_creds import get_credentials
-from core_api.oauth.constants import (
+from core_api.auth.auth_creds import get_credentials
+from core_api.constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     JWT_ACCESS_HOURS,
+    QUERY_STRING_PARAMETERS,
+    PATH_PARAMETERS,
+    BODY_PARAMETER,
 )
-from core_api.oauth.tools import get_authenticated_user, validate_token
+from core_api.auth.tools import get_authenticated_user, validate_token
 
 from core_api.response import Response, ErrorResponse
-from core_api.constants import QUERY_STRING_PARAMETERS, PATH_PARAMETERS, BODY_PARAMETER
 
 
 # ============================================================================

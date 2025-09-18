@@ -38,27 +38,33 @@ from core_api.response import RedirectResponse
 
 from ..request import RouteEndpoint
 
-from .constants import (
+from ..constants import (
     JWT_SECRET_KEY,
     JWT_ALGORITHM,
     SCK_MFA_COOKIE_NAME,
-    SCK_TOKEN_SESSION_MINUTES,
     SCK_TOKEN_COOKIE_NAME,
 )
 from .tools import (
     JwtPayload,
     create_mfa_session_jwt,
+    emit_session_cookie,
     get_client_ip,
     get_authenticated_user,
     encrypt_aws_credentials,
     check_rate_limit,
     encrypt_credentials,
-    create_basic_session_jwt,
     get_mfa_token_user,
     get_oauth_app_info,
     is_password_compliant,
     revoke_access_token,
 )
+
+###########################################################
+#
+# THIS FILE IS RUN INSIDE A LAMBDA FUNCTION IT IS NOT A
+# FASTAPI ASYNC HANDLER
+#
+###########################################################
 
 
 # ---- TOTP helpers -----------------------------------------------------------
@@ -904,37 +910,11 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
             resp.set_cookie(SCK_MFA_COOKIE_NAME, session_jwt, max_age=5 * 60, **cookie_opts())
             return resp
 
-        return _emit_session_cookie(200, client_id, client, user_id)
+        return emit_session_cookie(SuccessResponse(), client_id, client, user_id)
 
     except Exception as e:
         log.error(f"Login error for {user_id}: {e}")
         return ErrorResponse(code=500, message="Authentication processing error", exception=e)
-
-
-def _emit_session_cookie(code: int, client_id, client, user_id, mfa: bool = False) -> Response:
-    """Create session JWT and return in cookie and response headers."""
-
-    # Create session JWT with NO AWS credentials - just user identity
-
-    minutes = int(SCK_TOKEN_SESSION_MINUTES)
-    new_exp_dt = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    abs_deadline = int((datetime.now(timezone.utc) + timedelta(minutes=minutes)).timestamp())
-    refresh_threshold = int((datetime.now(timezone.utc) + timedelta(minutes=minutes / 2)).timestamp())
-    max_age = minutes * 60
-
-    session_jwt = create_basic_session_jwt(client_id, client, user_id, minutes)
-
-    # All X-Session-* headers are epoch seconds timestamps
-
-    resp = SuccessResponse(code=code)
-    resp.set_cookie(SCK_TOKEN_COOKIE_NAME, session_jwt, max_age=max_age, **cookie_opts())
-    if mfa:
-        resp.delete_cookie(SCK_MFA_COOKIE_NAME, path="/")
-    resp.set_header("X-Session-Exp", str(int(new_exp_dt.timestamp())))
-    resp.set_header("X-Session-Abs", str(int(abs_deadline)))
-    resp.set_header("X-Session-Refresh-Threshold", str(refresh_threshold))
-
-    return resp
 
 
 def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
@@ -1305,7 +1285,7 @@ def refresh_session_cookie(*, cookies: dict = None, headers: dict = None, body: 
     user_id = jwt_payload.sub
     client_id = jwt_payload.cid
 
-    return _emit_session_cookie(204, client_id, client, user_id)
+    return emit_session_cookie(SuccessResponse(code=204), client_id, client, user_id)
 
 
 def list_organizations(*, headers: dict = None, **kwargs) -> Response:
@@ -1726,7 +1706,7 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
             pass
 
     if mfa_payload and mfa_payload.typ == "mfa_pending":
-        return _emit_session_cookie(200, client_id, client, user_id, mfa=True)
+        return emit_session_cookie(SuccessResponse(), client_id, client, user_id, mfa=True)
 
     return SuccessResponse(message="mfa_verified")
 
