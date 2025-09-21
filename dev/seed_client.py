@@ -35,9 +35,9 @@ def _ensure_redirects(existing: List[str] | None, redirect: str) -> List[str]:
 def seed(client: str, client_id: str, redirect_uri: str, name: str | None = None, description: str | None = None) -> ClientFact:
     # Try by client_id first
     try:
-        res = ClientActions.get(client_id=client_id)
-        if res and res.data:
-            fact = ClientFact(**res.data)
+        fact_list = ClientActions.get_by_client_id(client_id=client_id)
+        fact = fact_list[0] if fact_list else None
+        if fact:
             updates = {
                 "client": fact.client,
                 "client_name": name or fact.client_name,
@@ -46,25 +46,23 @@ def seed(client: str, client_id: str, redirect_uri: str, name: str | None = None
             }
             ClientActions.patch(**updates)
             log.info("Updated existing client by client_id", details={"client": fact.client})
-            return ClientFact(**ClientActions.get(client=fact.client).data)
+            return ClientActions.get(client=fact.client)
     except Exception:
         pass
 
     # Try by client slug
     try:
-        res = ClientActions.get(client=client)
-        if res and res.data:
-            fact = ClientFact(**res.data)
-            updates = {
-                "client": fact.client,
-                "client_id": client_id or fact.client_id,
-                "client_name": name or fact.client_name,
-                "client_description": description or fact.client_description,
-                "client_redirect_urls": _ensure_redirects(fact.client_redirect_urls, redirect_uri),
-            }
-            ClientActions.patch(**updates)
-            log.info("Updated existing client by slug", details={"client": fact.client})
-            return ClientFact(**ClientActions.get(client=fact.client).data)
+        res: ClientFact = ClientActions.get(client=client)
+        updates = {
+            "client": res.client,
+            "client_id": client_id or res.client_id,
+            "client_name": name or res.client_name,
+            "client_description": description or res.client_description,
+            "client_redirect_urls": _ensure_redirects(res.client_redirect_urls, redirect_uri),
+        }
+        ClientActions.patch(**updates)
+        log.info("Updated existing client by slug", details={"client": res.client})
+        return ClientActions.get(client=res.client)
     except Exception:
         pass
 
@@ -77,9 +75,9 @@ def seed(client: str, client_id: str, redirect_uri: str, name: str | None = None
         "client_redirect_urls": [redirect_uri],
         "client_scopes": ["read:profile", "write:profile"],
     }
-    res = ClientActions.create(**payload)
+    res: ClientFact = ClientActions.create(**payload)
     log.info("Created client", details={"client": client})
-    return ClientFact(**res.data)
+    return res
 
 
 def main():

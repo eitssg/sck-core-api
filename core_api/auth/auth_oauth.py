@@ -883,8 +883,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs) -> O
 
     try:
         # Get user profile from database
-        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
-        profile = UserProfile(**response.data)
+        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
     except Exception as e:
         log.debug(f"Failed to retrieve user profile: {str(e)}")
         return OAuthErrorResponse(code=404, error_description="User Information unavailable", exception=e)

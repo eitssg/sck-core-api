@@ -4,7 +4,7 @@ build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry]
 name = "sck-core-api"
-version = "0.1.1"
+version = "0.1.2-pre.31+7e8e8f7"
 description = "Core-API for Core-Automation lambda function"
 authors = ["James Barwick <jbrwick@me.com>"]
 license = "GPL-3.0-only"
@@ -87,6 +87,8 @@ gunicorn = "^23.0.0"
 line-length = 132
 target-version = ['py39', 'py310', 'py311', 'py312']
 include = '\.pyi?$'
+skip-string-normalization = true
+extend-exclude = ''' /(.venv|build|dist|htmlcov)/ '''
 exclude = '''
 /(
     \.direnv

@@ -11,7 +11,7 @@ import secrets
 import core_logging as log
 
 from core_db.response import ErrorResponse, Response, SuccessResponse, CreatedResponse
-from core_db.registry.client.actions import ClientActions
+from core_db.registry.client import ClientActions, ClientFact
 
 from core_api.item.build import SuccessResponse
 from core_api.request import RouteEndpoint
@@ -66,8 +66,10 @@ def register_client(*, body: dict = None, **kwargs) -> Response:
     log.debug("Creating client:", details=client_data)
 
     try:
+
+        record = ClientFact(**client_data)
         # Store in DynamoDB oauth-clients table
-        ClientActions.create(**client_data)
+        ClientActions.create(client=client, record=record)
         log.info(
             "OAuth client registered",
             details={"client": client, "client_id": client_id, "client_type": client_type, "redirect_uris": redirect_uris},
@@ -92,31 +94,29 @@ def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> 
 
     # Fetch existing client data
     try:
-        existing_client: SuccessResponse = ClientActions.get(client=client)
-        data = existing_client.data
+        data = ClientActions.get(client=client)
     except Exception as e:
         log.debug("Client lookup failed for %s: %s", client, str(e))
         return ErrorResponse(code=404, message={"error": "Client not found"})
 
-    client_id = data.get("ClientId")
     if not client_id:
         client_id = f"{client}_{uuid.uuid4().hex[:12]}"
-        data["ClientId"] = client_id
+        data.client_id = client_id
 
-    client_type = body.get("client_type", data.get("client_type", "public"))
+    client_type = body.get("client_type", data.client_type or "public")
     client_secret = secrets.token_urlsafe(32) if client_type == "confidential" else None
     client_secret_hash = hashlib.sha256(client_secret.encode()).hexdigest() if client_secret else None
-    redirect_uris = body.get("redirect_uris", data.get("client_redirect_uris"))
+    redirect_urls = body.get("redirect_uris", data.client_redirect_urls)
 
-    data["ClientSecret"] = client_secret_hash
+    data.client_secret = client_secret_hash
 
-    if redirect_uris:
-        data["client_redirect_uris"] = redirect_uris
+    if redirect_urls:
+        data.client_redirect_urls = redirect_urls
 
     # Update client data
-    log.debug("Updating client data:", details=data)
+    log.debug("Updating client data:", details=data.model_dump(by_alias=False))
     try:
-        ClientActions.update(**data)
+        ClientActions.update(client=client, record=data)
         log.info("OAuth client updated", details={"client": client, "client_id": client_id, "client_type": client_type})
     except Exception as e:
         log.warn("OAuth client update failed", details={"client": client, "error": str(e)})

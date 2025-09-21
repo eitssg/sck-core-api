@@ -157,6 +157,6 @@ License: MIT
 Repository: https://github.com/simple-cloud-kit/sck-core-api
 """
 
-__version__ = "0.0.11-pre.5+f304d65"
+__version__ = "0.1.2-pre.31+7e8e8f7"
 
 __all__ = ["__version__"]

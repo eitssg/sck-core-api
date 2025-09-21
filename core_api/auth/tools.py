@@ -564,8 +564,7 @@ def get_user_access_key(
         if not user_id:
             raise ValueError("User ID is required for validation.")
 
-        response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
-        profile = UserProfile(**response.data)
+        profile = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
 
         if not profile.credentials:
             raise ValueError("No credentials envelope found")
@@ -1399,16 +1398,10 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
         ...     return JSONResponse({"error": "invalid_client"}, status_code=401)
     """
     try:
-        response = ClientActions.get(client_id=client_id)
-        log.debug(f"OAuth app info for client {client_id}", details=response.data)
-        if isinstance(response.data, dict):
-            data = ClientFact(**response.data)
-            data.client_secret = None  # Remove for testing TODO: remove this line in production
-            return data
-        if isinstance(response.data, list):
-            if len(response.data) > 0 and isinstance(response.data[0], dict):
-                return ClientFact(**response.data[0])
-        return None
+        client_list = ClientActions.get_by_client_id(client_id=client_id)
+        first_client: ClientFact = client_list[0]
+        log.debug(f"OAuth app info for client {client_id}", details=first_client.model_dump())
+        return first_client
     except Exception as e:
         log.debug(f"Failed to get OAuth app info for client {client_id}: {str(e)}")
         return None
