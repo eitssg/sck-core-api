@@ -10,7 +10,6 @@ import core_logging as log
 
 import core_framework.common as util
 
-from core_db.response import ErrorResponse, Response
 from core_db.exceptions import BadRequestException, UnauthorizedException
 
 from .api.tools import get_user_information
@@ -34,11 +33,8 @@ from .registry.zone import ApiRegZoneActions
 # Facter actions - Get the facts.  Nothing but the facts.
 from .facts.facter import ApiFactsActions
 
-from .request import (
-    Request,
-    RequestType,
-    RequestRoutesType,
-)
+from .request import Request, RequestType, RequestRoutesType
+from .response import ErrorResponse, Response
 
 # TODO: CLI does not have any permissions matrix around the action endpoint
 actions_routes: RequestRoutesType = {

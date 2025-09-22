@@ -15,14 +15,14 @@ import jwt
 
 import core_logging as log
 
-from core_db.profile.actions import ProfileActions
-from core_db.profile.model import UserProfile
-from core_db.registry import ClientFact
+from core_db.profile import ProfileActions, UserProfile
+from core_db.registry.client import ClientFact
 from core_db.oauth import AuthActions, Authorizations
-from core_db.response import Response, RedirectResponse
 
 from ..request import RouteEndpoint
 from ..response import (
+    Response,
+    RedirectResponse,
     OAuthErrorResponse,
     OAuthSuccessResponse,
     OAuthIntrospectionResponse,
@@ -32,6 +32,7 @@ from ..response import (
     OAuthCredentialResponse,
 )
 from ..security import Permission, get_allowed_permissions
+from ..constants import JWT_ALGORITHM, JWT_ACCESS_HOURS
 
 from .tools import (
     JwtPayload,
@@ -42,8 +43,6 @@ from .tools import (
     get_oauth_app_info,
     ui_url,
 )
-
-from ..constants import JWT_ALGORITHM, JWT_ACCESS_HOURS
 
 ###########################################################
 #
@@ -883,8 +882,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs) -> O
 
     try:
         # Get user profile from database
-        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
-        profile = UserProfile(**response.data)
+        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
     except Exception as e:
         log.debug(f"Failed to retrieve user profile: {str(e)}")
         return OAuthErrorResponse(code=404, error_description="User Information unavailable", exception=e)

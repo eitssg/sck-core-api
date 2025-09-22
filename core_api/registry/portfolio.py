@@ -11,21 +11,20 @@ The user will then perform action_get_item() to retrieve the deployment definiti
 """
 
 from collections import ChainMap
+from botocore.exceptions import ClientError
+from botocore.config import Config
 
 import core_logging as log
 
-from core_db.response import Response, SuccessResponse, ErrorResponse, RedirectResponse
+import core_framework as util
+import core_helper.aws as aws
+
 from core_db.registry.portfolio import PortfolioActions, PortfolioFact
 
 from ..security import Permission
-
 from ..request import ActionHandlerRoutes, RouteEndpoint
-
 from ..actions import ApiActions
-import core_framework as util
-import core_helper.aws as aws
-from botocore.exceptions import ClientError
-from botocore.config import Config
+from ..response import Response, SuccessResponse, ErrorResponse, RedirectResponse
 
 
 class ApiRegPortfolioActions(ApiActions, PortfolioActions):

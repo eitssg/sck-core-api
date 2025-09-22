@@ -1,11 +1,10 @@
-from core_db.response import ErrorResponse
 from fastapi import APIRouter, Request, Response
 
 import core_framework as util
 import core_logging as log
 import core_helper.aws as aws
 
-from core_api.response import get_proxy_response
+from ..response import ErrorResponse, get_proxy_response
 
 from ..api.apis import generate_event_context, generate_response_from_lambda, authorize_request
 

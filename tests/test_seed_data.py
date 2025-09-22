@@ -672,6 +672,32 @@ administrator = {
         ],
         "effective_hash": "sha256-of-expanded-set",  # server-generated; lets you short-circuit recompute
     },
+    "perm2": {
+        "roles": ["tenant_admin", "portfolio_editor"],
+        "grants": [
+            {
+                "resource_type": "app",
+                "resource_id": "billing-ui",
+                "actions": ["read"],
+                "effect": "allow",
+            },
+            {
+                "resource_type": "portfolio",
+                "resource_id": "secret-ops",
+                "actions": ["read"],
+                "effect": "deny",
+            },  # misplacement (should be in denies) still caught if effect=deny
+        ],
+        "denies": [
+            {
+                "resource_type": "portfolio",
+                "resource_id": "secret-ops",
+                "actions": ["read", "write"],
+                "effect": "deny",
+            }
+        ],
+        "effective_hash": "9b1d5b1c4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f",
+    },
     "is_active": True,
 }
 
@@ -679,36 +705,30 @@ administrator = {
 def test_seed_data(bootstrap_dynamo):
     # Create test data for clients
     for fact in client_facts:
-        result = ClientActions.create(**fact)
-        client_fact = ClientFact(**result.data)
+        client_fact = ClientActions.create(**fact)
         print(client_fact.model_dump_json(indent=2))
 
     # Create test data for zones
     for fact in zone_facts:
-        result = ZoneActions.create(**fact)
-        zone_fact = ZoneFact(**result.data)
+        zone_fact = ZoneActions.create(**fact)
         print(zone_fact.model_dump_json(indent=2))
 
     # Create test data for portfolios
     for fact in portfolio_facts:
-        result = PortfolioActions.create(**fact)
-        portfolio_fact = PortfolioFact(**result.data)
+        portfolio_fact = PortfolioActions.create(**fact)
         print(portfolio_fact.model_dump_json(indent=2))
 
     # Create deployments (prod)
     for fact in prod_app_facts:
-        results = AppActions.create(**fact)
-        app_fact = AppFact(**results.data)
+        app_fact = AppActions.create(**fact)
         print(app_fact.model_dump_json(indent=2))
 
     # Create deployments (dev)
     for fact in dev_app_facts:
-        results = AppActions.create(**fact)
-        app_fact = AppFact(**results.data)
+        app_fact = AppActions.create(**fact)
         print(app_fact.model_dump_json(indent=2))
 
-    results = ProfileActions.create(**administrator)
-    profile = UserProfile(**results.data)
+    profile = ProfileActions.create(**administrator)
     print(profile.model_dump_json(indent=2))
 
 

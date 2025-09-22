@@ -28,16 +28,15 @@ from core_execute.actionlib.actions.system.send_email import SendEmailActionReso
 from core_framework.models import DeploymentDetails, PackageDetails, TaskPayload
 from core_framework.models import ActionMetadata
 
-from core_db.response import ErrorResponse, Response, SuccessResponse, cookie_opts
 from core_db.exceptions import OperationException
-from core_db.profile.actions import ProfileActions
-from core_db.profile.model import UserProfile
+from core_db.profile import ProfileActions, UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
-from core_db.registry import ClientActions
+from core_db.registry.client import ClientActions
 
 from core_api.response import RedirectResponse
 
 from ..request import RouteEndpoint
+from ..response import ErrorResponse, Response, SuccessResponse, cookie_opts
 
 from ..constants import (
     JWT_SECRET_KEY,
@@ -45,6 +44,7 @@ from ..constants import (
     SCK_MFA_COOKIE_NAME,
     SCK_TOKEN_COOKIE_NAME,
 )
+
 from .tools import (
     JwtPayload,
     create_mfa_session_jwt,
@@ -349,12 +349,7 @@ def user_signup(*, cookies: dict = None, headers: dict = None, body: dict = None
 
             log.info("New user profile created", details={"user_id": user_id, "client": client, "mode": "email_signup"})
 
-            response: SuccessResponse = ProfileActions.create(client=client, **data)
-            if not response:
-                return ErrorResponse(code=500, message="Profile creation failed")
-
-            if response.code != 200:
-                return ErrorResponse(code=response.code, message="Profile creation failed")
+            ProfileActions.create(client=client, **data)
 
             _send_email_verification(client, user_id, email)
 
@@ -391,18 +386,19 @@ def get_user_profile(
     profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
 
     try:
-        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
-        data = UserProfile(**response.data).model_dump(by_alias=False)
+        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        data = profile.model_dump(by_alias=False, mode="json")
+
+        if "Password" in data.get("credentials", {}):
+            del data["credentials"]["Password"]
+
+        log.debug(f"Retrieved profile for user {jwt_payload.sub}", details=data)
+
+        return SuccessResponse(data=data)
+
     except Exception as e:
         log.error(f"Failed to retrieve user profile for {jwt_payload.sub}: {e}")
         return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
-
-    if "Password" in data.get("credentials", {}):
-        del data["credentials"]["Password"]
-
-    log.debug(f"Retrieved profile for user {jwt_payload.sub}", details=data)
-
-    return SuccessResponse(data=data)
 
 
 def update_user_profile(
@@ -470,18 +466,14 @@ def update_user_profile(
     if aws_access_key and aws_secret_key:
         try:
 
-            response: SuccessResponse = ProfileActions.get(
+            profile = ProfileActions.get(
                 client=jwt_payload.cnm,
                 user_id=jwt_payload.sub,
                 profile_name=profile_name,
             )
-            if not response or response.code != 200:
-                return ErrorResponse(code=response.code, message="User profile not found")
-
-            current_data = UserProfile(**response.data)
 
             # Get existing credentials envelope or create new one
-            existing_credentials = current_data.credentials
+            existing_credentials = profile.credentials
             if existing_credentials is None:
                 existing_credentials = {"created_at": datetime.now(timezone.utc).isoformat()}
 
@@ -506,10 +498,10 @@ def update_user_profile(
     try:
 
         log.debug(f"Updating profile for user {jwt_payload.sub}, profile {profile_name}", details=update_data)
-        new_response = ProfileActions.patch(
+        new_response: UserProfile = ProfileActions.patch(
             client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **update_data
         )
-        new_data = UserProfile(**new_response.data).model_dump(by_alias=False)
+        new_data = new_response.model_dump(by_alias=False, mode="json")
         if "Password" in new_data.get("credentials", {}):
             del new_data["credentials"]["Password"]
 
@@ -550,11 +542,11 @@ def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict
     include_fields = {"user_id", "profile_name"}
 
     try:
-        response = ProfileActions.list(client=jwt_payload.cnm, user_id=jwt_payload.sub)
+        profile_list, paginator = ProfileActions.list(client=jwt_payload.cnm, user_id=jwt_payload.sub)
         # The response.data probably returned PascalCase, we need to convert to snake_case
-        profiles = [UserProfile(**item).model_dump(by_alias=False, include=include_fields) for item in response.data]
+        profiles = [item.model_dump(by_alias=False, include=include_fields) for item in profile_list]
         log.debug(f"Listed {len(profiles)} profiles for user {jwt_payload.sub}", details={"profiles": profiles})
-        return SuccessResponse(data={"profiles": profiles})
+        return SuccessResponse(data={"profiles": profiles}, metadata=paginator.get_metadata())
     except Exception as e:
         log.error(f"Failed to list user profiles for {jwt_payload.sub}: {e}")
         return ErrorResponse(code=500, message="Failed to list user profiles", exception=e)
@@ -611,12 +603,12 @@ def create_user_profile(*, cookies: dict = None, headers: dict = None, body: dic
 
     try:
 
-        response: SuccessResponse = ProfileActions.create(
+        profile = ProfileActions.create(
             client=jwt_payload.cnm,
             user_id=jwt_payload.sub,
             profile_name=profile_name,
         )
-        data = UserProfile(**response.data).model_dump(by_alias=False, exclude={"credentials"})
+        data = profile.model_dump(by_alias=False, exclude={"credentials"}, mode="json")
         log.info(
             "User profile created",
             details={
@@ -885,8 +877,7 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         # Get user profile and validate password
         try:
             profile_name = "default"
-            response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
-            profile_data = UserProfile(**response.data)
+            profile_data = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
         except Exception as e:
             log.debug(f"Profile not found for user {user_id}: {e}")
             return ErrorResponse(code=401, message="Authorization Failed", exception=e)
@@ -1169,8 +1160,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
     try:
         profile_name = "default"
         log.info(f"Looking up user profile {client}/{profile_name}: {email} ")
-        result = ProfileActions.get(client=client, user_id=email, profile_name=profile_name)
-        profile = UserProfile(**result.data)
+        profile = ProfileActions.get(client=client, user_id=email, profile_name=profile_name)
     except Exception as e:
         log.debug(f"Failed to get user profile: {str(e)}")
         return ErrorResponse(code=404, message="User profile not found")
@@ -1306,20 +1296,17 @@ def list_organizations(*, headers: dict = None, **kwargs) -> Response:
         return ErrorResponse(code=429, message="rate_limited")
 
     try:
-        result = ClientActions.list(client="core", limit=1000)
-        clients = result.data
+
+        client_list, _ = ClientActions.list(client="core", limit=1000)
+
     except Exception as e:
         log.error(f"Failed to retrieve organizations: {e}")
         return SuccessResponse(code=204)
 
-    data = []
-    for c in clients:
-        data.append(
-            {
-                "client": c.get("Client", "core"),
-                "client_name": c.get("ClientName", c.get("Client", "core").title()),
-            }
-        )
+    clients: list[ClientFact] = client_list
+
+    data = [{"client": c.client, "client_name": c.client_name} for c in clients]
+
     return SuccessResponse(data=data)
 
 
@@ -1370,8 +1357,7 @@ def verify_email_address(*, headers: dict = None, query_params: dict = None, bod
         user_id = payload.sub
 
         # Retrieve user profile
-        response: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
-        profile = UserProfile(**response.data)
+        profile = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
 
         if profile.email_verified:
             return SuccessResponse(message="Email already verified")
@@ -1379,7 +1365,7 @@ def verify_email_address(*, headers: dict = None, query_params: dict = None, bod
         # Mark email as verified
         profile.email_verified = True
         profile.email_verified_at = datetime.now(timezone.utc)
-        ProfileActions.patch(client=client, **profile.model_dump(by_alias=False))
+        ProfileActions.patch(client=client, record=profile)
 
         log.info(f"Email verified successfully for user {user_id}", details={"client": client})
 
@@ -1483,8 +1469,7 @@ def resend_verification_email(*, headers: dict = None, body: dict = None, **kwar
 
     try:
         profile_name = "default"
-        response: SuccessResponse = ProfileActions.get(client=client, user_id=email, profile_name=profile_name)
-        profile = UserProfile(**response.data)
+        profile = ProfileActions.get(client=client, user_id=email, profile_name=profile_name)
     except Exception as e:
         log.debug(f"Profile not found for user {email}: {e}")
         return ErrorResponse(code=404, message="User not found")
@@ -1543,10 +1528,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
 
     # If a secret already exists and we aren't forcing reset, reuse it (idempotent)
     try:
-        existing_resp: SuccessResponse = ProfileActions.get(
-            client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name
-        )
-        existing = UserProfile(**existing_resp.data)
+        existing = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
     except Exception:
         existing = None  # treat as new
 
@@ -1573,7 +1555,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
     }
     try:
         result = ProfileActions.patch(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **data)
-        log.debug("Updated user profile with MFA data", details=result.data)
+        log.debug("Updated user profile with MFA data", details=result.model_dump())
     except Exception as e:
         log.error(f"Failed to update user profile with MFA data: {e}")
         return ErrorResponse(code=500, message="Failed to set up MFA", exception=e)
@@ -1598,8 +1580,7 @@ def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict =
         return ErrorResponse(code=400, message="TOTP code is required")
 
     try:
-        resp: SuccessResponse = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
-        profile = UserProfile(**resp.data)
+        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
     except Exception as e:
         log.error(f"Failed to retrieve profile for MFA confirm: {e}")
         return ErrorResponse(code=404, message="profile_not_found")
@@ -1614,7 +1595,7 @@ def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict =
         result = ProfileActions.patch(
             client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"mfa_enabled": True}
         )
-        log.debug("Updated user profile to enable MFA", details=result.data)
+        log.debug("Updated user profile to enable MFA", details=result.model_dump())
     except Exception as e:
         log.error(f"Failed to update user profile to enable MFA: {e}")
         return ErrorResponse(code=500, message="Failed to confirm MFA setup", exception=e)
@@ -1676,8 +1657,7 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
         return ErrorResponse(code=400, message="TOTP code is required")
 
     try:
-        resp: SuccessResponse = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
-        profile = UserProfile(**resp.data)
+        profile = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
     except Exception as e:
         log.error(f"Failed to load profile for MFA verify: {e}")
         return ErrorResponse(code=404, message="profile_not_found")
@@ -1738,8 +1718,7 @@ def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict
     profile_name = query_params.get("profile_name", "default")
 
     try:
-        result = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
-        profile = UserProfile(**result.data)
+        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
         mfa_enabled = bool(profile.mfa_enabled)
         methods = profile.mfa_methods or []
         return SuccessResponse(data={"mfa_enabled": mfa_enabled, "mfa_methods": methods})
@@ -1752,6 +1731,33 @@ def get_permissions(*, cookies: dict = None, headers: dict = None, query_params:
     """
     Docstring for get_permissions
     Provide /auth/v1/permissions/explain?resource=portfolio:billing&action=write returning: { "allowed": true, "matched_grant": {...}, "implied_by_role": "portfolio_editor", "denied_overrides": [] }
+
+    .. code-block:: json
+        {
+          "status": "success",
+          "code": 200,
+          "data": {
+            "allowed": true,
+            "resource": "portfolio:core-automation",
+            "action": "write",
+            "matched_effective": "portfolio:core-automation:write",
+            "evaluation": {
+              "grants_checked": 7,
+              "denies_checked": 2,
+              "matched_grant": {
+                "resource_type": "portfolio",
+                "resource_id": "*",
+                "actions": ["admin"],
+                "effect": "allow"
+              },
+              "matched_deny": null,
+              "implied_by": "tenant_admin",
+              "implications": ["write", "read"],
+              "decision": "allow"
+            },
+          },
+        }
+
     """
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
@@ -1763,8 +1769,7 @@ def get_permissions(*, cookies: dict = None, headers: dict = None, query_params:
     profile_name = query_params.get("profile_name", "default")
 
     try:
-        response = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
-        profile = UserProfile(**response.data)
+        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
 
         explaination = _explain_permissions(profile.permissions, resource, action)
 
@@ -1777,6 +1782,27 @@ def get_permissions(*, cookies: dict = None, headers: dict = None, query_params:
 def _explain_permissions(permissions: list[str], resource: str, action: str) -> dict:
     """
     Explain how a set of permissions allows or denies a specific action on a resource.
+
+    .. code-block:: python
+      _explain_permissions = {
+        "allowed": True,
+        "resource": "portfolio:core-automation",
+        "action": "write",
+        "matched_effective": "portfolio:core-automation:write",
+        "evaluation": {
+          "grants_checked": 7,
+          "denies_checked": 2,
+          "matched_grant": {
+            "resource_type": "portfolio",
+            "resource_id": "*",
+            "actions": ["admin"],
+            "effect": "allow"
+          },
+          "matched_deny": None,
+          "implied_by": "tenant_admin",
+          "implications": ["write", "read"],
+          "decision": "allow"
+      }
     """
 
     allowed = False

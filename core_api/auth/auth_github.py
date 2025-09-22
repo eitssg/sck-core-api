@@ -1,22 +1,22 @@
-import os
-from re import U
-from tkinter import E
 from typing import ChainMap
+
+import os
 import uuid
-from core_db import NotFoundException, Response, UnknownException
 import httpx
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import jwt
+
 import core_logging as log
 
-from core_db.response import SuccessResponse, RedirectResponse
 from core_db.registry.client import ClientFact, ClientActions
 from core_db.profile import UserProfile, ProfileActions
+from core_db.exceptions import NotFoundException, UnknownException
 
-from core_api.request import RouteEndpoint
-from core_api.security import Permission
+from ..request import RouteEndpoint
+from ..security import Permission
+from ..response import SuccessResponse, Response, RedirectResponse
 
 from ..constants import (
     GITHUB_CLIENT_ID,
@@ -316,8 +316,7 @@ def github_callback(
     client = jwt_payload.cnm
 
     try:
-        response: SuccessResponse = ClientActions.get(client=client)
-        app_info = ClientFact(**response.data)
+        app_info = ClientActions.get(client=client)
     except Exception as e:
         log.warn("GitHub OAuth callback with unknown client_id: %s", client_id)
         return RedirectResponse(url="/error?error=cid&redirect=/login")
@@ -399,9 +398,9 @@ def _get_or_create_user_profile(client: str, user_id: str, gh_user: dict, primar
 
     try:
 
-        response = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
+        profile = ProfileActions.get(client=client, user_id=user_id, profile_name="default")
         log.debug("Loaded existing profile for GitHub user %s", user_id)
-        return UserProfile(**response.data)
+        return profile
 
     except NotFoundException as e:
 
@@ -419,9 +418,9 @@ def _get_or_create_user_profile(client: str, user_id: str, gh_user: dict, primar
 
         try:
 
-            response = ProfileActions.create(client=client, **user_profile)
+            profile = ProfileActions.create(client=client, **user_profile)
             log.info("Created new profile for GitHub user %s", user_id)
-            return UserProfile(**response.data)
+            return profile
 
         except Exception as e:
             log.warn("Failed to create profile for GitHub user %s: %s", user_id, str(e))
