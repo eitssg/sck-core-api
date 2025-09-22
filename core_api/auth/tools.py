@@ -19,9 +19,8 @@ from jwcrypto.jwk import JWK
 
 import core_logging as log
 
-from core_db.registry import ClientFact
+from core_db.registry.client import ClientFact
 from core_db.oauth.actions import AuthActions
-from core_db.response import Response, SuccessResponse
 from core_db.profile.model import UserProfile
 from core_db.profile.actions import ProfileActions
 from core_db.oauth.actions import RateLimitActions
@@ -39,6 +38,8 @@ from ..constants import (
     JWT_ACCESS_HOURS,
     SCK_TOKEN_COOKIE_NAME,
 )
+
+from ..response import Response, SuccessResponse
 
 
 class JwtPayload(BaseModel):

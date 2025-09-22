@@ -8,9 +8,9 @@ This FACTS database should come from DynamoDB.  Not 'accounts.yaml' and 'apps.ya
 from collections import ChainMap
 
 from core_db.facter.actions import FactsActions
-from core_db.response import Response
 
 from ..request import RouteEndpoint
+from ..response import Response
 
 from ..actions import ApiActions
 

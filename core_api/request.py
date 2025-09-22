@@ -28,7 +28,6 @@ Attributes:
     DOMAIN_PREFIX (str): Domain prefix for API Gateway endpoints.
 """
 
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 from enum import Enum
 from datetime import datetime, timezone
@@ -46,9 +45,6 @@ from pydantic import (
 )
 
 import core_framework as util
-
-from core_db.response import Response
-
 
 from .actions import ApiActionsClass
 from .constants import HDR_X_CORRELATION_ID, API_ID, DOMAIN_PREFIX
@@ -710,7 +706,7 @@ class ProxyEvent(BaseModel):
 
 class RouteEndpoint:
 
-    def __init__(self, method: Callable[..., Response], **kwargs):
+    def __init__(self, method: Callable[..., Any], **kwargs):
         self.handler = method
         self.required_permissions: Set = kwargs.get("required_permissions", set())
         self.required_token_type: str = kwargs.get("required_token_type", "access")

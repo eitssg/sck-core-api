@@ -22,17 +22,16 @@ from webauthn.helpers.structs import (
     AuthenticatorAttestationResponse,
 )
 from webauthn.authentication.verify_authentication_response import VerifiedAuthentication
+from webauthn.registration.verify_registration_response import VerifiedRegistration
 
 import core_logging as log
 
 from core_db.passkey import PassKeyActions, PassKey
 from core_db.profile import ProfileActions, UserProfile
-from core_db.response import Response, SuccessResponse, ErrorResponse, RedirectResponse, cookie_opts
-from webauthn.registration.verify_registration_response import VerifiedRegistration
 
-from core_api.security import get_authenticated_user
-
+from ..security import get_authenticated_user
 from ..request import RouteEndpoint
+from ..response import Response, SuccessResponse, ErrorResponse, RedirectResponse, cookie_opts
 from ..auth.tools import JwtPayload, check_rate_limit, emit_session_cookie
 
 PASSKEY_CHALLENGE_COOKIE = "sck_passkey_challenge"

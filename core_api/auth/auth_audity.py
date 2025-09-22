@@ -1,11 +1,10 @@
-from tkinter import N
 from core_db.exceptions import NotFoundException, ConflictException
 from core_db.audit.audit import AuthAuditSchemas, AuthAuditActions
-from core_db.response import ErrorResponse, SuccessResponse
 
 from tests.test_auth import get_authenticated_user
 
 from ..request import RouteEndpoint
+from ..response import ErrorResponse, SuccessResponse
 
 
 def create_audit_record(

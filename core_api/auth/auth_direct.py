@@ -28,16 +28,15 @@ from core_execute.actionlib.actions.system.send_email import SendEmailActionReso
 from core_framework.models import DeploymentDetails, PackageDetails, TaskPayload
 from core_framework.models import ActionMetadata
 
-from core_db.response import ErrorResponse, Response, SuccessResponse, cookie_opts
 from core_db.exceptions import OperationException
-from core_db.profile.actions import ProfileActions
-from core_db.profile.model import UserProfile
+from core_db.profile import ProfileActions, UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
-from core_db.registry import ClientActions
+from core_db.registry.client import ClientActions
 
 from core_api.response import RedirectResponse
 
 from ..request import RouteEndpoint
+from ..response import ErrorResponse, Response, SuccessResponse, cookie_opts
 
 from ..constants import (
     JWT_SECRET_KEY,
@@ -45,6 +44,7 @@ from ..constants import (
     SCK_MFA_COOKIE_NAME,
     SCK_TOKEN_COOKIE_NAME,
 )
+
 from .tools import (
     JwtPayload,
     create_mfa_session_jwt,

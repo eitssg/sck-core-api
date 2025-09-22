@@ -1,18 +1,18 @@
 from typing import Any, Dict, Optional
 
 import core_logging as log
-import core_framework as util
 
-from ..api.handler import ProxyEvent
-from ..response import get_proxy_error_response, get_proxy_response
-from ..request import RouteEndpoint, get_correlation_id
-
-from core_db.response import ErrorResponse, Response
 from core_db.exceptions import (
     OperationException,
     NotFoundException,
     UnauthorizedException,
 )
+
+from ..api.handler import ProxyEvent
+from ..response import get_proxy_error_response, get_proxy_response
+from ..request import RouteEndpoint, get_correlation_id
+
+from ..response import ErrorResponse, Response
 from ..security import (
     check_permissions_with_wildcard,
     extract_security_context,
