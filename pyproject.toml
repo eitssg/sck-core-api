@@ -43,6 +43,7 @@ cryptography = ">=45.0.0"
 python-multipart = "^0.0.20"
 bcrypt = "^4.3.0"
 webauthn = "^2.7.0"
+cffi = "1.17.1"
 
 [tool.poetry.dependencies.sck-core-organization]
 path = "../sck-core-organization"

@@ -172,31 +172,31 @@ registry_zone_actions: ActionHandlerRoutes = {
     "GET:/api/v1/registry/clients/{client}/zones": RouteEndpoint(
         list_zones_action,
         client_isolation=True,
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_ZONE_READ},
     ),
     "POST:/api/v1/registry/clients/{client}/zones": RouteEndpoint(
         create_zones_action,
         client_isolation=True,
-        required_permissions={Permission.CLIENT_MANAGE},
+        required_permissions={Permission.REGISTRY_ZONE_ADMIN},
     ),
     "GET:/api/v1/registry/clients/{client}/zones/{zone}": RouteEndpoint(
         get_zone_action,
         client_isolation=True,
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_ZONE_READ},
     ),
     "PUT:/api/v1/registry/clients/{client}/zones/{zone}": RouteEndpoint(
         update_zones_action,
         client_isolation=True,
-        required_permissions={Permission.CLIENT_WRITE},
+        required_permissions={Permission.REGISTRY_ZONE_WRITE},
     ),
     "DELETE:/api/v1/registry/clients/{client}/zones/{zone}": RouteEndpoint(
         delete_zones_action,
         client_isolation=True,
-        required_permissions={Permission.CLIENT_MANAGE},
+        required_permissions={Permission.REGISTRY_ZONE_ADMIN},
     ),
     "PATCH:/api/v1/registry/clients/{client}/zones/{zone}": RouteEndpoint(
         patch_zones_action,
         client_isolation=True,
-        required_permissions={Permission.CLIENT_WRITE},
+        required_permissions={Permission.REGISTRY_ZONE_WRITE},
     ),
 }

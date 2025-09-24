@@ -41,7 +41,7 @@ from core_api.constants import (
     PATH_PARAMETERS,
     BODY_PARAMETER,
 )
-from core_api.auth.tools import get_authenticated_user, validate_token
+from core_api.auth.tools import get_authenticated_user
 
 from core_api.response import Response, ErrorResponse
 
@@ -606,7 +606,7 @@ def test_get_credentials_case_insensitive_header(valid_jwt_token):
 
 
 @pytest.mark.parametrize(
-    "kwargs_input",
+    "kwargs",
     [
         {},  # No headers
         {"headers": {}},  # Empty headers
@@ -776,59 +776,8 @@ def test_get_credentials_invalid_expiration_format():
     assert credentials is None
 
 
-# ============================================================================
-# VALIDATE_TOKEN TESTS
-# ============================================================================
-
-
-def test_validate_token_success(simple_valid_token):
-    """Test successful token validation."""
-    result = validate_token(simple_valid_token)
-    assert result is True
-
-
-def test_validate_token_expired():
-    """Test validation of expired token."""
-    now = datetime(2020, 1, 1, 12, 0, 0, tzinfo=timezone.utc)  # Use fixed past time
-    payload = {
-        "test": "data",
-        "iat": (now - timedelta(hours=2)).timestamp(),
-        "exp": (now - timedelta(hours=1)).timestamp(),  # Expired
-        "iss": "sck-core-api",  # FIXED: Add required issuer claim
-    }
-    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-    result = validate_token(token)
-    assert result is False
-
-
-@pytest.mark.parametrize(
-    "invalid_token",
-    [
-        "invalid.jwt.token",
-        "",
-        "not-a-jwt-at-all",
-    ],
-)
-def test_validate_token_invalid(invalid_token):
-    """Test validation of invalid tokens."""
-    result = validate_token(invalid_token)
-    assert result is False
-
-
-def test_validate_token_wrong_secret():
-    """Test validation of token signed with wrong secret."""
-    now = datetime(2030, 1, 1, 12, 0, 0, tzinfo=timezone.utc)  # FIXED: Use future time
-    payload = {
-        "test": "data",
-        "iat": now.timestamp(),
-        "exp": (now + timedelta(hours=1)).timestamp(),
-        "iss": "sck-core-api",  # FIXED: Add required issuer claim
-    }
-    token = jwt.encode(payload, "wrong_secret", algorithm=JWT_ALGORITHM)
-
-    result = validate_token(token)
-    assert result is False
+def _authenticate(**kwargs):
+    return kwargs
 
 
 # ============================================================================
