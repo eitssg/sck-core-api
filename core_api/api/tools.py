@@ -396,7 +396,7 @@ def get_user_information(session_token: str, role: Optional[str] = None) -> Opti
     if role is None:
         account = util.get_automation_account()
         role = util.get_automation_api_role_arn(account)
-    return aws.get_identity(session_token, role)
+    return aws.get_identity(role_arn=role, session_token=session_token)
 
 
 def get_locale() -> tuple[Optional[str], Optional[str]]:
