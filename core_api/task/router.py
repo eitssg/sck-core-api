@@ -1,4 +1,5 @@
-from ..request import Role, RouteEndpoint
+from ..security import Role
+from ..request import RouteEndpoint
 
 from .upload import upload_package
 from .compile import compile_templates
@@ -12,8 +13,8 @@ from .teardown import teardown_environment
 
 actions: dict[str, RouteEndpoint] = {
     # Read operations (safe, cacheable)
-    "GET:/api/v1/{portfolio}/{app}/{branch}/{build}/plan": RouteEndpoint(create_change_set, permissions=[Role.VIEWER, Role.ADMIN]),
-    "GET:/api/v1/{portfolio}/{app}/{branch}/{build}/verify": RouteEndpoint(verify_package, permissions=[Role.READONLY, Role.ADMIN]),
+    "GET:/api/v1/{portfolio}/{app}/{branch}/{build}/plan": RouteEndpoint(create_change_set, permissions=[Role.USER, Role.ADMIN]),
+    "GET:/api/v1/{portfolio}/{app}/{branch}/{build}/verify": RouteEndpoint(verify_package, permissions=[Role.USER, Role.ADMIN]),
     # Create/Deploy operations (not idempotent)
     "POST:/api/v1/{portfolio}/{app}/{branch}/{build}/compile": RouteEndpoint(compile_templates, permissions=[Role.ADMIN]),
     "POST:/api/v1/{portfolio}/{app}/{branch}/{build}/deploy": RouteEndpoint(deploy_package, permissions=[Role.ADMIN]),

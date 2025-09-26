@@ -76,12 +76,12 @@ Usage Examples:
     
     **OAuth Flow**:
     
-    .. code-block:: python
+    .. code-block:: text
     
-        # OAuth authorization endpoint
+        OAuth authorization endpoint:
         GET /auth/v1/authorize?client_id=app&response_type=code&redirect_uri=...
         
-        # OAuth token exchange
+        OAuth token exchange:
         POST /auth/v1/token
         {
             "grant_type": "authorization_code",
@@ -110,7 +110,7 @@ Version Information:
 
 API Endpoints:
     
-    **OAuth Server** (/auth/*):
+    **OAuth Server** (/auth/\\*):
     - GET /auth/v1/authorize: OAuth authorization endpoint
     - POST /auth/v1/token: OAuth token exchange endpoint
     - GET /auth/github/login: GitHub OAuth initiation
@@ -118,7 +118,7 @@ API Endpoints:
     - POST /auth/v1/login: Direct user authentication
     - PUT /auth/v1/users/me: User profile management
     
-    **Registry API** (/api/*):
+    **Registry API** (/api/\\*):
     - Portfolio management endpoints
     - Application lifecycle endpoints
     - Component configuration endpoints

@@ -1,7 +1,7 @@
 from core_db.exceptions import NotFoundException, ConflictException
 from core_db.audit.audit import AuthAuditSchemas, AuthAuditActions
 
-from tests.test_auth import get_authenticated_user
+from .tools import get_authenticated_user
 
 from ..request import RouteEndpoint
 from ..response import ErrorResponse, SuccessResponse
