@@ -1,10 +1,11 @@
 import json
 import boto3
 import os
+
 from boto3.dynamodb.conditions import Key, Attr
 
 
-def handler(event, context):
+def handler(event, context) -> dict:
     """
     Handles portfolio deletion events and cascades to apps and items tables.
     When a portfolio is deleted:

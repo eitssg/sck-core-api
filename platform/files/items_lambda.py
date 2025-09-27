@@ -1,10 +1,11 @@
 import json
 import boto3
 import os
+
 from boto3.dynamodb.conditions import Key
 
 
-def handler(event, context):
+def handler(event, context) -> dict:
     """
     Handles item deletion events and cascades to events table.
     When an item is deleted, all events for that item should be deleted.

@@ -1,7 +1,8 @@
 import json
+import os
 
 
-def handler(event, context):
+def handler(event, context) -> dict:
     """
     Handles zone deletion events. Just logs - no cascading needed.
     With tenant isolation, zones don't have dependent resources to clean up.

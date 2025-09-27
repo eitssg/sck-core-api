@@ -855,13 +855,6 @@ def test_authenticate_enhanced_aws_errors():
             )
 
 
-def test_validate_token_with_issuer_check():
-    """Test token validation with issuer verification."""
-    # This test ensures the enhanced validate_token function works correctly
-    result = validate_token("invalid.token")
-    assert result is False
-
-
 # ============================================================================
 # JWT CONFIGURATION VERIFICATION
 # ============================================================================

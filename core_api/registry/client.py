@@ -1,5 +1,6 @@
 from collections import ChainMap
 from time import perf_counter
+import os
 
 import core_logging as log
 
@@ -82,7 +83,7 @@ def get_client_action(*, query_params: dict = None, path_params: dict = None, bo
     log.debug("registry.client.get.start", extra={"path_params": pp})
 
     try:
-        client = path.basename(pp.get("client"))
+        client = os.path.basename(pp.get("client"))
 
         result = ApiRegClientActions.get(client=client)
 

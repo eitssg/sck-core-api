@@ -98,7 +98,8 @@ def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> 
         log.debug("Client lookup failed for %s: %s", client, str(e))
         return ErrorResponse(code=404, message={"error": "Client not found"})
 
-    if not client_id:
+    client_id = data.client_id
+    if not data.client_id:
         client_id = f"{client}_{uuid.uuid4().hex[:12]}"
         data.client_id = client_id
 
