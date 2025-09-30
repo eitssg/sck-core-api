@@ -23,7 +23,7 @@ def _merge_map(*, query_params: dict = None, path_params: dict = None, body: dic
     return dict(ChainMap(body, pp, qsp))
 
 
-def list_zones_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def list_zones_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     try:
@@ -44,7 +44,7 @@ def list_zones_action(*, query_params: dict = None, path_params: dict = None, bo
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def get_zone_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_zone_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     try:
@@ -68,7 +68,7 @@ def get_zone_action(*, query_params: dict = None, path_params: dict = None, body
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def create_zones_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_zones_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     try:
@@ -91,7 +91,7 @@ def create_zones_action(*, query_params: dict = None, path_params: dict = None, 
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def update_zones_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_zones_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     try:
@@ -121,7 +121,7 @@ def update_zones_action(*, query_params: dict = None, path_params: dict = None, 
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def patch_zones_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def patch_zones_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     try:
@@ -147,7 +147,7 @@ def patch_zones_action(*, query_params: dict = None, path_params: dict = None, b
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def delete_zones_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_zones_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     try:

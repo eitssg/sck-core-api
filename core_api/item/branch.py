@@ -13,35 +13,35 @@ class ApiBranchActions(ApiActions, BranchActions):
     pass
 
 
-def get_branch_list_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_branch_list_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_branch_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def post_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def post_branch_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def put_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def put_branch_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBranchActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_branch_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_branch_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

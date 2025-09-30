@@ -19,7 +19,7 @@ class ApiRegClientActions(ApiActions, ClientActions):
     pass
 
 
-def get_client_list_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_client_list_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     Handler for GET /api/v1/clients endpoint.
     Lists all clients in the platform.
@@ -70,7 +70,7 @@ def get_client_list_action(*, query_params: dict = None, path_params: dict = Non
         return ErrorResponse(f"Failed to list clients: {str(e)}")
 
 
-def get_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """Get a single client.
 
     Path: GET /api/v1/registry/clients/{client}
@@ -105,7 +105,7 @@ def get_client_action(*, query_params: dict = None, path_params: dict = None, bo
         return ErrorResponse(f"Client not found: {str(e)}")
 
 
-def create_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     Handler for POST /api/v1/client endpoint.
     Creates a new client.
@@ -141,7 +141,7 @@ def create_client_action(*, query_params: dict = None, path_params: dict = None,
         return ErrorResponse(f"Failed to create client: {str(e)}")
 
 
-def update_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """Full update (idempotent) of a client.
 
     Path: PUT /api/v1/registry/clients/{client}
@@ -169,7 +169,7 @@ def update_client_action(*, query_params: dict = None, path_params: dict = None,
         )
         return SuccessResponse(data=data)
 
-    except NotFondException as e:  # noqa: BLE001
+    except NotFoundException as e:  # noqa: BLE001
         duration = (perf_counter() - start) * 1000
         log.warning(
             "registry.client.update.notfound",
@@ -180,7 +180,7 @@ def update_client_action(*, query_params: dict = None, path_params: dict = None,
         return ErrorResponse(f"Failed to update client: {str(e)}", code=500)
 
 
-def patch_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def patch_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """Partial update for a client.
 
     Path: PATCH /api/v1/registry/clients/{client}
@@ -205,7 +205,7 @@ def patch_client_action(*, query_params: dict = None, path_params: dict = None, 
 
         return SuccessResponse(data=data)
 
-    except NotFondException as e:  # noqa: BLE001
+    except NotFoundException as e:  # noqa: BLE001
         duration = (perf_counter() - start) * 1000
         log.warning(
             "registry.client.patch.notfound",
@@ -216,7 +216,7 @@ def patch_client_action(*, query_params: dict = None, path_params: dict = None, 
         return ErrorResponse(f"Failed to patch client: {str(e)}", code=500)
 
 
-def delete_client_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """Delete a client.
 
     Path: DELETE /api/v1/registry/clients/{client}

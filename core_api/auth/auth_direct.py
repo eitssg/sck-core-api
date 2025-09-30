@@ -221,7 +221,7 @@ def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
         return False
 
 
-def user_signup(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def user_signup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """Create or update the default profile, then return a session token.
 
     Route:
@@ -359,9 +359,7 @@ def user_signup(*, cookies: dict = None, headers: dict = None, body: dict = None
     return SuccessResponse()
 
 
-def get_user_profile(
-    *, cookies: dict = None, headers: dict = None, path_params: dict = None, query_params: dict = None, body: dict = None, **kwargs
-) -> Response:
+def get_user_profile(*, cookies: dict, headers: dict, path_params: dict, query_params: dict, body: dict, **kwargs) -> Response:
     """Get the authenticated user's profile.
 
     Route:
@@ -401,9 +399,7 @@ def get_user_profile(
         return ErrorResponse(code=500, message="Failed to retrieve user profile", exception=e)
 
 
-def update_user_profile(
-    *, cookies: dict = None, headers: dict = None, path_params: dict | None = None, body: dict = None, **kwargs
-) -> Response:
+def update_user_profile(*, cookies: dict, headers: dict, path_params: dict | None = None, body: dict, **kwargs) -> Response:
     """Update user profile fields including AWS credentials.
 
     Route:
@@ -512,7 +508,7 @@ def update_user_profile(
         return ErrorResponse(code=500, message="Failed to update user profile", exception=e)
 
 
-def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def list_user_profiles(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """List all profiles for the authenticated user.
 
     Route:
@@ -552,7 +548,7 @@ def list_user_profiles(*, cookies: dict = None, headers: dict = None, body: dict
         return ErrorResponse(code=500, message="Failed to list user profiles", exception=e)
 
 
-def create_user_profile(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def create_user_profile(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if jwt_payload is None:
@@ -652,9 +648,7 @@ def create_user_profile(*, cookies: dict = None, headers: dict = None, body: dic
         return ErrorResponse(code=500, message="Profile creation failed", exception=e)
 
 
-def delete_user_profile(
-    *, cookies: dict = None, headers: dict = None, path_params: dict | None = None, body: dict = None, **kwargs
-) -> Response:
+def delete_user_profile(*, cookies: dict, headers: dict, path_params: dict | None = None, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
 
@@ -771,7 +765,7 @@ def _get_identity(aws_credentials: dict) -> dict:
         return {}
 
 
-def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def user_login(*, headers: dict, body: dict, **kwargs) -> Response:
     """
     Authenticate with email/password and return a basic session JWT with client context.
 
@@ -909,7 +903,7 @@ def user_login(*, headers: dict = None, body: dict = None, **kwargs) -> Response
         return ErrorResponse(code=500, message="Authentication processing error", exception=e)
 
 
-def forgot_password(*, headers: dict = None, body: dict = None, **kwargs):
+def forgot_password(*, headers: dict, body: dict, **kwargs):
     """Generate forgot password token and queue email via API→Invoker→Runner→StepFunction chain."""
 
     valid_characters = "0123456789"
@@ -1056,7 +1050,7 @@ def _get_email_subject(email_type: str) -> str:
     return subjects.get(email_type, "Notification")
 
 
-def verify_secret(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs):
+def verify_secret(*, cookies: dict, headers: dict, body: dict, **kwargs):
     log.info("Verify secret called")
 
     try:
@@ -1107,7 +1101,7 @@ def verify_secret(*, cookies: dict = None, headers: dict = None, body: dict = No
         return ErrorResponse(code=500, message=f"Failed to verify secret: {str(e)}", exception=e)
 
 
-def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs):
+def set_new_password(*, cookies: dict, headers: dict, body: dict, **kwargs):
 
     log.info("Set new password called")
 
@@ -1195,7 +1189,7 @@ def set_new_password(*, cookies: dict = None, headers: dict = None, body: dict =
         return ErrorResponse(code=500, message=f"Failed to set new password.  Please contact support.", exception=e)
 
 
-def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs):
+def user_logout(*, cookies: dict, headers: dict, query_params: dict, **kwargs):
     """OAuth/OpenID Connect logout endpoint.
 
     Route:
@@ -1242,7 +1236,7 @@ def user_logout(*, cookies: dict = None, headers: dict = None, query_params: dic
     return response
 
 
-def refresh_session_cookie(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def refresh_session_cookie(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """Sliding-window session refresh endpoint.
 
     Route: POST /auth/v1/refresh
@@ -1279,7 +1273,7 @@ def refresh_session_cookie(*, cookies: dict = None, headers: dict = None, body: 
     return emit_session_cookie(SuccessResponse(code=204), client_id, client, user_id)
 
 
-def list_organizations(*, headers: dict = None, **kwargs) -> Response:
+def list_organizations(*, headers: dict, **kwargs) -> Response:
     """List organizations the authenticated user belongs to.
 
     Route:
@@ -1310,7 +1304,7 @@ def list_organizations(*, headers: dict = None, **kwargs) -> Response:
     return SuccessResponse(data=data)
 
 
-def verify_email_address(*, headers: dict = None, query_params: dict = None, body: dict = None, **kwargs) -> Response:
+def verify_email_address(*, headers: dict, query_params: dict, body: dict, **kwargs) -> Response:
     """Verify email address using a token.
 
     Route:
@@ -1427,7 +1421,7 @@ def _send_email_verification(client: str, user_id: str, to_email: str, *, is_res
         # Don't raise - email failure shouldn't break the main operation
 
 
-def resend_verification_email(*, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def resend_verification_email(*, headers: dict, body: dict, **kwargs) -> Response:
     """Resend email verification to user.
 
     Route:
@@ -1486,7 +1480,7 @@ def resend_verification_email(*, headers: dict = None, body: dict = None, **kwar
         return ErrorResponse(code=500, message="Failed to resend verification email", exception=e)
 
 
-def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def mfa_totp_setup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """Set up TOTP MFA for the authenticated user.
 
     Route:
@@ -1563,7 +1557,7 @@ def mfa_totp_setup(*, cookies: dict = None, headers: dict = None, body: dict = N
     return SuccessResponse(data={"secret": secret, "provisioning_uri": provisioning_uri, "recovery_codes": recovery_codes_plain})
 
 
-def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def mfa_totp_confirm(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """Confirm TOTP MFA setup by validating the provided TOTP code."""
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -1603,7 +1597,7 @@ def mfa_totp_confirm(*, cookies: dict = None, headers: dict = None, body: dict =
     return SuccessResponse(message="MFA setup confirmed successfully")
 
 
-def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs) -> Response:
+def mfa_verify(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """Verify TOTP MFA code during login.
 
     Route:
@@ -1692,7 +1686,7 @@ def mfa_verify(*, cookies: dict = None, headers: dict = None, body: dict = None,
     return SuccessResponse(message="mfa_verified")
 
 
-def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:
+def mfa_status(*, cookies: dict, headers: dict, query_params: dict, **kwargs) -> Response:
     """Get MFA status for the authenticated user.
 
     Route:
@@ -1727,7 +1721,7 @@ def mfa_status(*, cookies: dict = None, headers: dict = None, query_params: dict
         return ErrorResponse(code=500, message="Failed to retrieve MFA status", exception=e)
 
 
-def get_permissions(*, cookies: dict = None, headers: dict = None, query_params: dict = None, **kwargs) -> Response:
+def get_permissions(*, cookies: dict, headers: dict, query_params: dict, **kwargs) -> Response:
     """
     Docstring for get_permissions
     Provide /auth/v1/permissions/explain?resource=portfolio:billing&action=write returning: { "allowed": true, "matched_grant": {...}, "implied_by_role": "portfolio_editor", "denied_overrides": [] }

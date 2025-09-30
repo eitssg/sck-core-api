@@ -16,13 +16,13 @@ class ApiRegAppActions(ApiActions, AppActions):
     pass
 
 
-def _merge_params(query_params: dict = None, path_params: dict = None, body: dict = None) -> dict:
+def _merge_params(query_params: dict, path_params: dict, body: dict) -> dict:
     qsp = query_params or {}
     body = body or {}
     return dict(ChainMap(body, qsp))
 
 
-def list_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def list_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
@@ -52,7 +52,7 @@ def list_app_action(*, query_params: dict = None, path_params: dict = None, body
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def create_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
@@ -76,7 +76,7 @@ def create_app_action(*, query_params: dict = None, path_params: dict = None, bo
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def get_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
@@ -103,7 +103,7 @@ def get_app_action(*, query_params: dict = None, path_params: dict = None, body:
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def update_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
@@ -125,7 +125,7 @@ def update_app_action(*, query_params: dict = None, path_params: dict = None, bo
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def patch_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def patch_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
@@ -147,7 +147,7 @@ def patch_app_action(*, query_params: dict = None, path_params: dict = None, bod
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")

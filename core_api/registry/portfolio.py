@@ -38,7 +38,7 @@ def _merge_map(*, query_params: dict = None, path_params: dict = None, body: dic
     return dict(ChainMap(body, pp, qsp))
 
 
-def list_portfolios_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def list_portfolios_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     Returns a list of all portfolios for the client.
 
@@ -112,7 +112,7 @@ def list_portfolios_action(*, query_params: dict = None, path_params: dict = Non
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def get_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     Returns a portfolio for the client.
     """
@@ -149,7 +149,7 @@ def get_portfolio_action(*, query_params: dict = None, path_params: dict = None,
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def create_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     client = (path_params or {}).get("client")
@@ -170,7 +170,7 @@ def create_portfolio_action(*, query_params: dict = None, path_params: dict = No
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def update_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     client = (path_params or {}).get("client")
@@ -201,7 +201,7 @@ def update_portfolio_action(*, query_params: dict = None, path_params: dict = No
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def patch_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def patch_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     client = (path_params or {}).get("client")
@@ -233,7 +233,7 @@ def patch_portfolio_action(*, query_params: dict = None, path_params: dict = Non
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def delete_portfolio_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     client = (path_params or {}).get("client")
@@ -292,7 +292,7 @@ def _icon_s3_bucket_and_key(client: str, portfolio: str, filename: str | None = 
     return bucket, key
 
 
-def upload_portfolio_icon_action(*, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def upload_portfolio_icon_action(*, path_params: dict, body: dict, **kwargs) -> Response:
     """Generate a presigned S3 PUT URL for uploading a portfolio icon.
 
     Request body (JSON): { fileName, contentType, fileSize }
@@ -365,7 +365,7 @@ def upload_portfolio_icon_action(*, path_params: dict = None, body: dict = None,
         return ErrorResponse(code=500, message="Failed to generate upload URL", exception=e)
 
 
-def get_portfolio_icon_action(*, path_params: dict = None, **kwargs) -> Response:
+def get_portfolio_icon_action(*, path_params: dict, **kwargs) -> Response:
     """Redirect to a short-lived presigned GET for the portfolio icon in the private bucket.
 
     If object not found, return 404.

@@ -19,7 +19,7 @@ class ApiFactsActions(ApiActions, FactsActions):
     pass
 
 
-def get_facts_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_facts_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     API Documentation:
     ----------------

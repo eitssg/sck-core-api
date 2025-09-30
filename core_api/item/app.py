@@ -12,35 +12,35 @@ class ApiAppActions(ApiActions, AppActions):
     pass
 
 
-def get_app_list_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_app_list_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiAppActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiAppActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiAppActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiAppActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_app_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_app_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

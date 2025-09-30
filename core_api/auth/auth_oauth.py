@@ -242,9 +242,9 @@ def get_cred_enc_key(**kwargs) -> Response:
 
 def oauth_authorize(
     *,
-    cookies: dict = None,
-    headers: dict = None,
-    query_params: dict = None,
+    cookies: dict,
+    headers: dict,
+    query_params: dict,
     **kwargs,
 ) -> Response:
     """OAuth 2.0 Authorization Code endpoint.
@@ -652,7 +652,7 @@ def _get_grant_response(*, cid, cnm, sub, scp) -> OAuthTokenResponse | OAuthErro
     return resp
 
 
-def oauth_token(*, headers: dict = None, body: dict = None, **kwargs) -> OAuthTokenResponse | OAuthErrorResponse:
+def oauth_token(*, headers: dict, body: dict, **kwargs) -> OAuthTokenResponse | OAuthErrorResponse:
     """Exchange authorization codes and refresh tokens for access.
 
     Route:
@@ -759,9 +759,7 @@ def oauth_token(*, headers: dict = None, body: dict = None, **kwargs) -> OAuthTo
         return OAuthErrorResponse(code=400, error_description="unsupported_grant_type: use authorization_code or refresh_token")
 
 
-def oauth_revoke(
-    *, cookies: dict = None, headers: dict = None, body: dict = None, **kwargs
-) -> OAuthSuccessResponse | OAuthErrorResponse:
+def oauth_revoke(*, cookies: dict, headers: dict, body: dict, **kwargs) -> OAuthSuccessResponse | OAuthErrorResponse:
     """Token revocation endpoint (RFC 7009).
 
     Route:
@@ -804,7 +802,7 @@ def oauth_revoke(
     return OAuthSuccessResponse()
 
 
-def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> OAuthErrorResponse | OAuthIntrospectionResponse:
+def oauth_introspect(*, headers: dict, body: dict, **kwargs) -> OAuthErrorResponse | OAuthIntrospectionResponse:
     """Token introspection endpoint (RFC 7662).
 
     Route:
@@ -854,7 +852,7 @@ def oauth_introspect(*, headers: dict = None, body: dict = None, **kwargs) -> OA
         return OAuthErrorResponse(code=500, error_description="introspection_failed", exception=e)
 
 
-def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs) -> OAuthErrorResponse | OAuthUserInfoResponse:
+def oauth_userinfo(*, cookies: dict, headers: dict, **kwargs) -> OAuthErrorResponse | OAuthUserInfoResponse:
     """OpenID Connect UserInfo endpoint.
 
     Route:
@@ -898,7 +896,7 @@ def oauth_userinfo(*, cookies: dict = None, headers: dict = None, **kwargs) -> O
     )
 
 
-def oauth_jwks(*, headers: dict = None, **kwargs) -> OAuthErrorResponse | OAuthJWKSResponse:
+def oauth_jwks(*, headers: dict, **kwargs) -> OAuthErrorResponse | OAuthJWKSResponse:
     """JSON Web Key Set endpoint for token verification.
 
     Route:

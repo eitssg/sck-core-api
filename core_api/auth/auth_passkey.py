@@ -46,7 +46,7 @@ AUTH_CLIENT_ID = ""
 ###########################################################
 
 
-def _merge_params(query_params: dict = None, body: dict = None) -> dict:
+def _merge_params(query_params: dict, body: dict) -> dict:
     """Merge query, path, and body parameters into a single dictionary."""
     merged = {}
     if query_params:
@@ -241,9 +241,7 @@ def _authenticate_complete(**kwargs) -> dict:
     return {k: v for k, v in data.items() if v is not None}
 
 
-def register_begin(
-    *, headers: dict | None = None, cookies: dict = None, query_params: dict = None, body: dict = None, **kwargs
-) -> Response:
+def register_begin(*, headers: dict | None = None, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -285,9 +283,7 @@ def register_begin(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def register_complete(
-    *, headers: dict | None = None, cookies: dict = None, query_params: dict = None, body: dict = None, **kwargs
-) -> Response:
+def register_complete(*, headers: dict | None = None, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -434,7 +430,7 @@ def register_complete(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def webauthn_authenticate_begin(*, query_params: dict = None, body: dict = None, **kwargs) -> Response:
+def webauthn_authenticate_begin(*, query_params: dict, body: dict, **kwargs) -> Response:
 
     merged = _merge_params(query_params, body)
 
@@ -469,7 +465,7 @@ def webauthn_authenticate_begin(*, query_params: dict = None, body: dict = None,
 
 
 def webauthn_authenticate_complete(
-    *, headers: dict | None = None, cookies: dict | None = None, query_params: dict = None, body: dict = None, **kwargs
+    *, headers: dict | None = None, cookies: dict | None = None, query_params: dict, body: dict, **kwargs
 ) -> Response:
 
     merged = _merge_params(query_params, body)
@@ -649,7 +645,7 @@ def webauthn_authenticate_complete(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_passkey(*, headers: dict | None = None, cookies: dict | None = None, path_params: dict = None, **kwargs) -> Response:
+def delete_passkey(*, headers: dict | None = None, cookies: dict | None = None, path_params: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -674,9 +670,7 @@ def delete_passkey(*, headers: dict | None = None, cookies: dict | None = None, 
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def update_passkey(
-    *, cookies: dict | None = None, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs
-) -> Response:
+def update_passkey(*, cookies: dict | None = None, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -703,9 +697,7 @@ def update_passkey(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def get_passkeys(
-    *, cookies: dict | None = None, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs
-) -> Response:
+def get_passkeys(*, cookies: dict | None = None, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:

@@ -135,49 +135,49 @@ class ApiBuildActions(ApiActions, BuildActions):
         return SuccessResponse(message=f"Build {build.prn} teardown requested")
 
 
-def get_builds(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_builds(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.delete(**dict(ChainMap(body, pp, qsp)))
 
 
-def release_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def release_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiBuildActions.release(**dict(ChainMap(body, pp, qsp)))
 
 
-def teardown_build(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def teardown_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

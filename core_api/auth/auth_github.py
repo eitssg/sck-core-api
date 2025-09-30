@@ -125,7 +125,7 @@ def _mock_github_profile(query_params: dict) -> tuple[dict, str, str]:
     return gh_user, primary_email, user_id
 
 
-def github_login(*, query_params: dict = None, body: dict = None, **kwargs) -> RedirectResponse:
+def github_login(*, query_params: dict, body: dict, **kwargs) -> RedirectResponse:
     """Initiate GitHub OAuth login flow.
 
     Route:
@@ -200,9 +200,9 @@ def github_login(*, query_params: dict = None, body: dict = None, **kwargs) -> R
 
 def github_callback(
     *,
-    cookies: dict = None,
-    headers: dict = None,
-    query_params: dict = None,
+    cookies: dict,
+    headers: dict,
+    query_params: dict,
     **kwargs,
 ) -> Response:
     """Complete GitHub OAuth flow and integrate with OAuth server.

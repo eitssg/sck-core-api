@@ -55,10 +55,12 @@ from ..registry.portfolio import registry_portfolio_actions
 from ..registry.app import registry_app_actions
 from ..registry.zone import registry_zone_actions
 from ..facts.facter import facts_actions
+from ..ai.service import service_actions
 
 from ..response import ErrorResponse, Response, get_proxy_error_response, get_proxy_response
 from ..request import ProxyEvent, RouteEndpoint, get_correlation_id
 from ..security import (
+    EnhancedSecurityContext,
     validate_client_access,
     check_permissions_with_wildcard,
     extract_security_context,
@@ -77,6 +79,7 @@ api_endpoints: dict[str, RouteEndpoint] = {
     **registry_app_actions,
     **registry_zone_actions,
     **facts_actions,
+    **service_actions,
 }
 
 
@@ -227,7 +230,9 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         security_context = None
         if not endpoint_route.allow_anonymous:
 
-            security_context = extract_security_context(request, endpoint_route, require_aws_credentials=True)
+            security_context: EnhancedSecurityContext = extract_security_context(
+                request, endpoint_route, require_aws_credentials=True
+            )
 
             # bale out if the security_context cannot be determined.
             if not security_context:

@@ -13,7 +13,7 @@ class ApiEventActions(ApiActions, EventActions):
     pass
 
 
-def action_get_event_list(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def action_get_event_list(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     returns the event for the given prn and timestamp.  Because you
     may leav timestamp blank, there may be more than one event for the prn,
@@ -44,7 +44,7 @@ def action_get_event_list(*, query_params: dict = None, path_params: dict = None
     return ApiEventActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def action_create_event(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def action_create_event(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     creates a new event
 
@@ -68,7 +68,7 @@ def action_create_event(*, query_params: dict = None, path_params: dict = None, 
     return ApiEventActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def action_delete_event(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def action_delete_event(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """
     deletes the event for the given prn in the parameters
 

@@ -25,7 +25,7 @@ from ..response import RedirectResponse, SuccessResponse, ErrorResponse, Respons
 ## INCOMPLETE:  This is a starting point for OAuth client registration, it is not complete
 
 
-def register_client(*, body: dict = None, **kwargs) -> Response:
+def register_client(*, body: dict, **kwargs) -> Response:
     """Register a new OAuth client."""
 
     # Get the form data
@@ -84,7 +84,7 @@ def register_client(*, body: dict = None, **kwargs) -> Response:
     return CreatedResponse(data=response)
 
 
-def update_client(*, query_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_client(*, query_params: dict, body: dict, **kwargs) -> Response:
     """Update an existing OAuth client."""
 
     client = query_params.get("client")

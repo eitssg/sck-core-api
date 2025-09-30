@@ -7,9 +7,7 @@ from ..request import RouteEndpoint
 from ..response import ErrorResponse, SuccessResponse
 
 
-def create_audit_record(
-    *, cookies: dict | None = None, path_params: dict | None = None, body: dict | None = None, **kwargs
-) -> SuccessResponse:
+def create_audit_record(*, cookies: dict, path_params: dict, body: dict, **kwargs) -> SuccessResponse:
     """Create a new audit record for user authorization changes.
 
     This function creates an audit record in the database to log changes made to user
@@ -48,7 +46,7 @@ def create_audit_record(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def get_audit_record(*, cookies: dict | None = None, path_params: dict | None = None, **kwargs) -> SuccessResponse:
+def get_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> SuccessResponse:
     """Retrieve an existing audit record.
 
     This function retrieves an audit record from the database based on the provided
@@ -84,7 +82,7 @@ def get_audit_record(*, cookies: dict | None = None, path_params: dict | None = 
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_audit_record(*, cookies: dict | None = None, path_params: dict | None = None, **kwargs) -> SuccessResponse:
+def delete_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> SuccessResponse:
     """Delete an existing audit record.
 
     This function deletes an audit record from the database based on the provided

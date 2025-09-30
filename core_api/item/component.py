@@ -11,35 +11,35 @@ class ApiComponentActions(ApiActions, ComponentActions):
     pass
 
 
-def get_component_list_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_component_list_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiComponentActions.list(**dict(ChainMap(body, pp, qsp)))
 
 
-def get_component_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def get_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiComponentActions.get(**dict(ChainMap(body, pp, qsp)))
 
 
-def create_component_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def create_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiComponentActions.create(**dict(ChainMap(body, pp, qsp)))
 
 
-def update_component_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def update_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}
     return ApiComponentActions.update(**dict(ChainMap(body, pp, qsp)))
 
 
-def delete_component_action(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> Response:
+def delete_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
     qsp = query_params or {}
     pp = path_params or {}
     body = body or {}

@@ -705,6 +705,22 @@ class ProxyEvent(BaseModel):
 
 
 class RouteEndpoint:
+    """
+    Represents an endpoint for a specific API route, encapsulating the handler
+    function and its associated metadata such as required permissions and
+    access control settings.
+
+    Pass attributes in kwargs to initialize the endopint
+
+    Args:
+        method (Callable[..., Any]): The handler function for the route.
+        required_permissions (Set): Permissions required to access the route.
+        required_token_type (str): Type of token required (default: "access").
+        allow_anonymous (bool): Whether anonymous access is allowed (default: False).
+        client_isolation (bool): Whether client isolation is enforced (default: True if not anonymous).
+
+
+    """
 
     def __init__(self, method: Callable[..., Any], **kwargs):
         self.handler = method
