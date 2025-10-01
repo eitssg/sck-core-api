@@ -466,7 +466,7 @@ def encrypt_creds(credentials: dict) -> str:
     cred_json = json.dumps(credentials)
 
     protected = {"alg": "dir", "enc": "A256GCM"}
-    jwe_creds = jwe.JWE(cred_json, protected=json_encode(protected)) # type: ignore (type hints think the parameter is str or bytes, it's not)
+    jwe_creds = jwe.JWE(cred_json, protected=json_encode(protected))  # type: ignore (type hints think the parameter is str or bytes, it's not)
     jwe_creds.add_recipient(enc_key)
 
     return jwe_creds.serialize(compact=True)
