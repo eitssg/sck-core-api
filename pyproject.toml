@@ -1,6 +1,6 @@
 [project]
 name = "sck-core-api"
-version = "0.1.2-pre.38+34c33a3"
+version = "1.3.0"
 description = "Core-API for Core-Automation lambda function"
 authors = [{name="James Barwick", email="jbrwick@me.com"}]
 license = "GPL-3.0-only"

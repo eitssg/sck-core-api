@@ -1433,7 +1433,7 @@ wheels = [
 
 [[package]]
 name = "sck-core-api"
-version = "0.1.2rc38+34c33a3"
+version = "1.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "bcrypt" },

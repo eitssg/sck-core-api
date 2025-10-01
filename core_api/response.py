@@ -76,7 +76,7 @@ class Response(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: Literal["ok", "error"] = Field(
-        "ok",
+        default="ok",
         description="The status of the response: 'ok' for success, 'error' for failure",
     )
     code: int = Field(
@@ -84,8 +84,8 @@ class Response(BaseModel):
         description="The HTTP status code",
     )
     data: dict | list | str | None = Field(
-        None,
         description="The main response data (DynamoDB object or composite response)",
+        default=None,
     )
 
     message: str | None = Field(
@@ -94,24 +94,24 @@ class Response(BaseModel):
     )
 
     links: list[dict] | None = Field(
-        None,
+        default=None,
         description="Links to related resources following REST API conventions",
     )
 
     metadata: dict | None = Field(
-        None,
+        default=None,
         description="Additional metadata about the response or operation",
     )
 
     # Add optional cookie support for OAuth/session endpoints
     cookies: list[str] | None = Field(
-        None,
+        default=None,
         description="Set-Cookie header values for browser session management",
         exclude=True,  # Exclude from JSON serialization to maintain API compatibility
     )
 
     headers: list[dict] | None = Field(
-        None,
+        default=None,
         description="Additional HTTP headers for the response",
         exclude=True,  # Exclude from JSON serialization to maintain API compatibility
     )
@@ -544,10 +544,10 @@ class ErrorResponse(Response):
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
-    error: str | None = Field(None, description="Stable, human-readable error code")
+    error: str | None = Field(default=None, description="Stable, human-readable error code")
 
     errors: list[ErrorDetail] | None = Field(
-        None,
+        default=None,
         description="List of errors that occurred during processing with traceback information",
     )
 

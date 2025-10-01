@@ -1,13 +1,11 @@
 from enum import Enum
 from typing import Set, Optional, Dict, Any, Union, Callable
 from dataclasses import dataclass
-import boto3
-from botocore.exceptions import ClientError
 
 import core_logging as log
 import core_framework as util
 
-import core_helper.aws as aws
+from core_helper.aws_models import AwsCredentials
 
 from core_db.exceptions import UnauthorizedException
 
@@ -120,78 +118,6 @@ class Role(str, Enum):
 
 
 @dataclass
-class AwsCredentials:
-    """AWS credentials from assumed role."""
-
-    access_key_id: str
-    secret_access_key: str
-    session_token: str
-    region: str = "ap-southeast-1"
-
-
-@dataclass
-class SecurityContext:
-    """Security context for the current request."""
-
-    user_id: str
-    client_id: Optional[str]
-    client: Optional[str]
-    permissions: Set[str]
-    roles: Set[str]
-    token_type: str
-    custom_attributes: Dict[str, Any]
-    jwt_payload: Optional[JwtPayload] = None
-
-    def has_permission(self, permission: Union[Permission, str]) -> bool:
-        """Check if the user has a specific permission."""
-        if isinstance(permission, Permission):
-            permission_str = permission.value
-        else:
-            permission_str = str(permission)
-
-        # Direct permission match
-        if permission_str in self.permissions:
-            return True
-
-        # Check wildcard permissions
-        if Permission.WILDCARD_ADMIN.value in self.permissions:
-            return True
-
-        # Check resource-specific wildcards
-        if ":" in permission_str:
-            resource, action = permission_str.split(":", 1)
-            if f"{resource}:*" in self.permissions:
-                return True
-            if f"*:{action}" in self.permissions:
-                return True
-
-        return False
-
-    def has_role(self, role: Union[Role, str]) -> bool:
-        """Check if the user has a specific role."""
-        if isinstance(role, Role):
-            role_str = role.value
-        else:
-            role_str = str(role)
-
-        return role_str in self.roles
-
-    def has_any_permission(self, permissions: Set[Union[Permission, str]]) -> bool:
-        """Check if the user has any of the specified permissions."""
-        for permission in permissions:
-            if self.has_permission(permission):
-                return True
-        return False
-
-    def has_all_permissions(self, permissions: Set[Union[Permission, str]]) -> bool:
-        """Check if the user has all of the specified permissions."""
-        for permission in permissions:
-            if not self.has_permission(permission):
-                return False
-        return True
-
-
-@dataclass
 class EnhancedSecurityContext:
     """Enhanced security context with AWS credentials and clients."""
 
@@ -202,9 +128,13 @@ class EnhancedSecurityContext:
     role_arn: Optional[str] = None
 
     @property
+    def client(self) -> str:
+        return self.jwt_payload.cnm or "core" if self.jwt_payload else "core"
+
+    @property
     def user_id(self) -> str:
         """Get user ID from JWT payload."""
-        return self.jwt_payload.sub if self.jwt_payload else "anonymous"
+        return self.jwt_payload.sub or "anonymous" if self.jwt_payload else "anonymous"
 
     @property
     def client_id(self) -> Optional[str]:
@@ -214,10 +144,10 @@ class EnhancedSecurityContext:
     @property
     def token_type(self) -> str:
         """Get token type from JWT payload."""
-        return self.jwt_payload.typ if self.jwt_payload else "unknown"
+        return self.jwt_payload.typ or "unknown" if self.jwt_payload else "unknown"
 
     @property
-    def session_token(self) -> str:
+    def session_token(self) -> str | None:
         """Get AWS session token."""
         return self.aws_credentials.session_token if self.aws_credentials else None
 
@@ -358,7 +288,7 @@ def check_permissions_with_wildcard(user_permissions: Set[str], required_permiss
     return missing_permissions
 
 
-def validate_client_access(security_context: SecurityContext, request: ProxyEvent) -> None:
+def validate_client_access(security_context: EnhancedSecurityContext, request: ProxyEvent) -> None:
     """Validate client isolation for multi-tenant endpoints."""
 
     def extract_client_from_dict(data: dict) -> Optional[str]:
@@ -379,7 +309,7 @@ def validate_client_access(security_context: SecurityContext, request: ProxyEven
         client_slug = extract_client_from_dict(request.queryStringParameters)
 
     # 3. Request body (already parsed to dict by ProxyEvent)
-    if not client_slug and request.body:
+    if not client_slug and request.body and isinstance(request.body, dict):
         client_slug = extract_client_from_dict(request.body)
 
     # If no client found, skip validation
@@ -464,6 +394,6 @@ def extract_security_context(
         permissions=permissions,
         roles=roles,
         jwt_payload=jwt_payload,
-        aws_credentials=aws_credentials,
+        aws_credentials=AwsCredentials.model_validate(aws_credentials),
         role_arn=resolved_role_arn if require_aws_credentials else None,
     )

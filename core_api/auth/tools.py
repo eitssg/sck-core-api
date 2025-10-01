@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Tuple
+from typing import Any, Optional, Dict, Tuple
 import time
 import base64
 import os
@@ -11,11 +11,12 @@ from datetime import datetime, timedelta, timezone
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from core_db.oauth.ratelimits import RateLimits
 from pydantic import BaseModel, Field, model_validator
 
 import jwt
-from jwcrypto.jwe import JWE
-from jwcrypto.jwk import JWK
+from jwcrypto import jwe, jwk
+from jwcrypto.common import json_encode
 
 import core_logging as log
 
@@ -46,32 +47,32 @@ class JwtPayload(BaseModel):
     sub: str = Field(..., description="Subject (user identifier, e.g. email)")
 
     # Only required for access and refresh tokens.
-    cid: str | None = Field(None, description="Client ID")
+    cid: str | None = Field(description="Client ID", default=None)
 
-    iat: int | None = Field(None, description="Issued at time as UNIX timestamp")
-    exp: int | None = Field(None, description="Expiration time as UNIX timestamp")
-    typ: str | None = Field(None, description="Token type")
-    iss: str | None = Field(None, description="Issuer")
-    jti: str | None = Field(None, description="Unique token identifier")
-    ttl: int | None = Field(None, description="Token time-to-live in minutes")
-    cnm: str | None = Field(None, description="Client URL slug associated with Client ID")
-    scp: str | None = Field(None, description="Scope of the Access token")
-    enc: str | None = Field(None, description="Encrypted AWS STS temporary credentials (JWE)")
-    nbf: int | None = Field(None, description="Not before time as UNIX timestamp")
+    iat: int | None = Field(description="Issued at time as UNIX timestamp", default=None)
+    exp: int | None = Field(description="Expiration time as UNIX timestamp", default=None)
+    typ: str | None = Field(description="Token type", default=None)
+    iss: str | None = Field(description="Issuer", default=None)
+    jti: str | None = Field(description="Unique token identifier", default=None)
+    ttl: int | None = Field(description="Token time-to-live in minutes", default=None)
+    cnm: str | None = Field(description="Client URL slug associated with Client ID", default=None)
+    scp: str | None = Field(description="Scope of the Access token", default=None)
+    enc: str | None = Field(description="Encrypted AWS STS temporary credentials (JWE)", default=None)
+    nbf: int | None = Field(description="Not before time as UNIX timestamp", default=None)
 
     # OAuth Flow Parameters
-    rty: str | None = Field(None, description="Response type (code, token)")
-    rdu: str | None = Field(None, description="Redirect URI for OAuth callback")
-    sid: str | None = Field(None, description="State parameter for OAuth flow")
-    ccm: str | None = Field(None, description="Code challenge method (S256, plain)")
-    cch: str | None = Field(None, description="Code challenge for PKCE")
+    rty: str | None = Field(description="Response type (code, token)", default=None)
+    rdu: str | None = Field(description="Redirect URI for OAuth callback", default=None)
+    sid: str | None = Field(description="State parameter for OAuth flow", default=None)
+    ccm: str | None = Field(description="Code challenge method (S256, plain)", default=None)
+    cch: str | None = Field(description="Code challenge for PKCE", default=None)
 
     # Optional OAuth Extensions
-    aud: str | None = Field(None, description="Intended audience")
-    nonce: str | None = Field(None, description="OpenID Connect nonce")
-    prompt: str | None = Field(None, description="Authentication prompt parameter")
-    max_age: int | None = Field(None, description="Maximum authentication age")
-    auth_time: int | None = Field(None, description="Authentication time as UNIX timestamp")
+    aud: str | None = Field(description="Intended audience", default=None)
+    nonce: str | None = Field(description="OpenID Connect nonce", default=None)
+    prompt: str | None = Field(description="Authentication prompt parameter", default=None)
+    max_age: int | None = Field(description="Maximum authentication age", default=None)
+    auth_time: int | None = Field(description="Authentication time as UNIX timestamp", default=None)
 
     def is_expired(self) -> bool:
         """Check if the token is expired."""
@@ -332,7 +333,7 @@ def _b64pad(v: str) -> str:
 
 
 # Global JWK for credential encryption/decryption
-def get_encryption_key() -> JWK | None:
+def get_encryption_key() -> jwk.JWK | None:
     """Create JWK encryption key from environment variable for credential security
 
     Converts the base64url-encoded CRED_ENC_KEY environment variable into a JSON Web Key
@@ -369,13 +370,13 @@ def get_encryption_key() -> JWK | None:
         return None
 
     key_bytes = base64.urlsafe_b64decode(_b64pad(CRED_ENC_KEY_B64))
-    l = len(key_bytes)
-    if l != 32:
-        log.error(f"CRED_ENC_KEY must be 32 bytes (base64url-decoded), got {l} bytes")
+    key_length = len(key_bytes)
+    if key_length != 32:
+        log.error(f"CRED_ENC_KEY must be 32 bytes (base64url-decoded), got {key_length} bytes")
         return None
 
     try:
-        return JWK(kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode())
+        return jwk.JWK(kty="oct", k=base64.urlsafe_b64encode(key_bytes).decode())
     except Exception as e:
         log.error(f"Failed to create JWK from CRED_ENC_KEY: {e}")
         return None
@@ -464,9 +465,8 @@ def encrypt_creds(credentials: dict) -> str:
 
     cred_json = json.dumps(credentials)
 
-    # Create JWE with protected header and payload
     protected = {"alg": "dir", "enc": "A256GCM"}
-    jwe_creds = JWE(cred_json, protected)
+    jwe_creds = jwe.JWE(cred_json, protected=json_encode(protected)) # type: ignore (type hints think the parameter is str or bytes, it's not)
     jwe_creds.add_recipient(enc_key)
 
     return jwe_creds.serialize(compact=True)
@@ -495,7 +495,7 @@ def decrypt_creds(encrypted_credentials: str | None) -> dict:
         raise RuntimeError("Decryption key not available")
 
     try:
-        jwe_creds = JWE()
+        jwe_creds = jwe.JWE()
         jwe_creds.deserialize(encrypted_credentials)
         jwe_creds.decrypt(enc_key)
         return json.loads(jwe_creds.payload.decode("utf-8"))
@@ -505,8 +505,8 @@ def decrypt_creds(encrypted_credentials: str | None) -> dict:
 
 
 def get_user_access_key(
-    client: str, user_id: str, password: Optional[str] = None, profile_name: Optional[str] = "default"
-) -> Tuple[dict, dict]:
+    client: str, user_id: str, password: Optional[str] = None, profile_name: str = "default"
+) -> Tuple[dict[str, Any], dict[str, Any]]:
     """Retrieve and decrypt user's AWS credentials from database with optional password validation
 
     Fetches user profile from database, optionally validates password, then decrypts
@@ -562,16 +562,16 @@ def get_user_access_key(
         >>> # Returns credentials if user has them configured
     """
     try:
-        if not user_id:
-            raise ValueError("User ID is required for validation.")
+        if not user_id or not profile_name:
+            raise ValueError("User ID and profile_name are required for validation.")
 
         profile = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
 
         if not profile.credentials:
             raise ValueError("No credentials envelope found")
 
-        credentials = profile.credentials
-        permissions = profile.permissions
+        credentials = profile.credentials or {}
+        permissions = profile.permissions or {}
 
         if password:
             stored_hash = credentials.get("Password")
@@ -645,7 +645,7 @@ def create_basic_session_jwt(
     client_id: str,
     client: str,
     user_id: str,
-    minutes: int = SCK_TOKEN_SESSION_MINUTES,
+    minutes: Optional[int] = None,
     scope: Optional[str] = None,
     auth_time: Optional[int] = None,
 ) -> str:
@@ -695,6 +695,9 @@ def create_basic_session_jwt(
         >>> # Custom client with extended session
         >>> token = create_basic_session_jwt("mobile-app", "tenant1", "user@example.com", 60)
     """
+    if not minutes:
+        minutes = int(SCK_TOKEN_SESSION_MINUTES)
+
     payload = JwtPayload(
         sub=user_id,
         typ="session",
@@ -1125,8 +1128,7 @@ def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window
 
     try:
         # Get current attempts
-        sr: SuccessResponse = RateLimitActions.get(client=client, code=key)
-        response = sr.data
+        rate_limits: RateLimits = RateLimitActions.get(client=client, code=key)
 
     except Exception as e:
         # No record exists (probably) - create initial record
@@ -1147,7 +1149,7 @@ def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window
 
     try:
         # Filter recent attempts within the time window
-        attempts = [ts for ts in response.get("attempts", []) if ts > window_start]
+        attempts = [ts for ts in rate_limits.attempts or [] if ts > window_start]
 
         if len(attempts) >= max_attempts:
             log.debug(f"Rate limit exceeded for {identifier} on {endpoint}: {len(attempts)}/{max_attempts}")
@@ -1156,13 +1158,12 @@ def check_rate_limit(headers: dict, endpoint: str, max_attempts: int = 5, window
         # Add current attempt
         attempts.append(now)
         data = {
-            "client": client,
             "code": key,
             "attempts": attempts,
             "ttl": now + (window_minutes * 60 * 2),  # TTL = 2x window
         }
 
-        RateLimitActions.update(**data)
+        RateLimitActions.update(client=client, **data)
 
         return True
 
@@ -1346,7 +1347,7 @@ def get_authenticated_user(*, cookies: dict | None = None, headers: dict | None 
     return None, None
 
 
-def get_oauth_app_info(client_id: str) -> ClientFact | None:
+def get_oauth_app_info(client_id: str, client: str | None = None) -> ClientFact | None:
     """Retrieve OAuth client application registration from database by client identifier.
 
     Fetches complete OAuth client configuration including redirect URIs, client name,
@@ -1399,7 +1400,15 @@ def get_oauth_app_info(client_id: str) -> ClientFact | None:
         ...     return JSONResponse({"error": "invalid_client"}, status_code=401)
     """
     try:
-        client_list = ClientActions.get_by_client_id(client_id=client_id)
+        client_list, _ = ClientActions.list(client_id=client_id)
+        if not client_list:
+            log.debug(f"OAuth client ID not found: {client_id}")
+            return None
+        if client:
+            for c in client_list:
+                if c.client == client or c.client:
+                    log.debug(f"OAuth app info for client {client_id} and client {client}", details=c.model_dump())
+                    return c
         first_client: ClientFact = client_list[0]
         log.debug(f"OAuth app info for client {client_id}", details=first_client.model_dump())
         return first_client

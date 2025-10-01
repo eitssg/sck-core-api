@@ -36,8 +36,10 @@ async def auth_handler(request: Request) -> Response:
             result = handler(event.model_dump(), context=context)
         else:
             arn = util.get_auth_lambda_arn()
-
+            if not arn:
+                raise ValueError("Auth Lambda ARN is not configured")
             result = aws.invoke_lambda(arn, event.model_dump(), context=context)
+
     except Exception as e:
         log.error(f"Error occurred while processing request: {e}")
         result = get_proxy_response(
@@ -47,7 +49,7 @@ async def auth_handler(request: Request) -> Response:
                 message="Internal server error",
                 exception=e,
             )
-        ).model_dump()
+        )
     return await generate_response_from_lambda(result)
 
 
