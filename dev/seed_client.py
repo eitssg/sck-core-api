@@ -2,7 +2,7 @@
 
 Usage (recommended):
   cd sck-core-api
-  poetry run python dev/seed_client.py --client core --client-id $VITE_OAUTH_CLIENT_ID \
+  uv run python dev/seed_client.py --client core --client-id $VITE_OAUTH_CLIENT_ID \
     --redirect http://127.0.0.1:8080/authorized --name "Core UI (Dev)"
 
 Environment:

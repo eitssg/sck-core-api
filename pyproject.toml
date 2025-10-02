@@ -2,12 +2,12 @@
 name = "sck-core-api"
 version = "1.3.0"
 description = "Core-API for Core-Automation lambda function"
-authors = [{name="James Barwick", email="jbrwick@me.com"}]
+authors = [{ name = "James Barwick", email = "jbrwick@me.com" }]
 license = "GPL-3.0-only"
 readme = "README.md"
-maintainers = [{name="James Barwick", email="jbarwick@eits.com.sg"}]
+maintainers = [{ name = "James Barwick", email = "jbarwick@eits.com.sg" }]
 keywords = ["sck", "core", "aws", "cloud", "automation"]
-requires-python=">=3.11,<3.13"
+requires-python = ">=3.11,<3.13"
 
 
 dependencies = [
@@ -23,10 +23,10 @@ dependencies = [
   "pyjwt>=2.10.1",
   "crypto>=1.4.1",
   "jwcrypto (>=1.5.6)",
-  "cryptography (>=45.0.0)",
+  "cryptography (>=42.0.0,<44.0.0)",
   "python-multipart (>=0.0.20)",
-  "bcrypt (>=4.3.0)",
-  "webauthn (>=2.7.0)",
+  "bcrypt (>=4.0.0)",
+  "webauthn (>=2.5.0)",
   "cffi (>=1.17.1)",
   "sck-core-framework",
   "sck-core-db",
@@ -39,29 +39,27 @@ packages = ["core_api"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.3",
-    "pytest-cov>=6.0.0",
-    "pytest-dotenv>=0.5.2",
-    "pytest-asyncio>=0.25.0",
-    "pytest-asyncio>=0.25.0",
-    "pytest-dotenv>=0.5.2",
-    "pylance>=0.21.0",
-    "boto3-stubs>=1.34.51,<1.35.0",
-    "cfn-lint>=1.22.3",
-    "yamllint>=1.35.1",
-    "auto-changelog>=0.6.0",
-    "uvicorn>=0.34.0",
-    "fastapi>=0.115.6",
-    "httpx>=0.28.1",
-    "moto>=5.1.9",
-    "prometheus-client>=0.20.0",
-    "flake8>=7.1.1",
-    "black>=24.10.0",
+  "pytest>=8.3.3",
+  "pytest-cov>=6.0.0",
+  "pytest-dotenv>=0.5.2",
+  "pytest-asyncio>=0.25.0",
+  "pytest-asyncio>=0.25.0",
+  "pytest-dotenv>=0.5.2",
+  "pylance>=0.21.0",
+  "boto3-stubs>=1.34.51,<1.35.0",
+  "cfn-lint>=1.22.3",
+  "yamllint>=1.35.1",
+  "auto-changelog>=0.6.0",
+  "uvicorn>=0.34.0",
+  "fastapi>=0.115.6",
+  "httpx>=0.28.1",
+  "moto>=5.1.9",
+  "prometheus-client>=0.20.0",
+  "flake8>=7.1.1",
+  "black>=24.10.0",
 ]
 
-prod =[
-  "gunicorn>=23.0.0"
-]
+prod = ["gunicorn>=23.0.0"]
 
 [tool.black]
 line-length = 132
@@ -102,8 +100,8 @@ line_length = 132
 [tool.uv.sources]
 sck-core-framework = { path = "../sck-core-framework", editable = true }
 sck-core-db = { path = "../sck-core-db", editable = true }
-sck-core-organization = { path = "../sck-core-organization", editable = true }
 sck-core-invoker = { path = "../sck-core-invoker", editable = true }
+sck-core-organization = { path = "../sck-core-organization", editable = true }
 
 [build-system]
 requires = ["hatchling"]
