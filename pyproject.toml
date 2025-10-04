@@ -32,6 +32,7 @@ dependencies = [
   "sck-core-db",
   "sck-core-organization",
   "sck-core-invoker",
+  "cfn-lint>=1.40.0",
 ]
 
 [tool.hatch.build.targets.wheel]

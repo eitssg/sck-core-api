@@ -114,7 +114,7 @@ def _get_version_info() -> tuple[str, str, str]:
     return "Unknown", "Unsupported Operating System", ""
 
 
-def _generate_user_agent(module_name: str, module_version: str) -> str:
+def generate_user_agent(module_name: str, module_version: str) -> str:
     """Generate User-Agent string with system information.
 
     Creates a detailed User-Agent string that includes module information,
@@ -240,7 +240,7 @@ def _event_headers(headers: Dict[str, str]) -> Dict[str, str]:
 
     ua_header, ua = get_header(headers, "user-agent")
     if not ua:
-        headers[ua_header] = _generate_user_agent("core_api", __version__)
+        headers[ua_header] = generate_user_agent("core_api", __version__)
 
     return headers
 

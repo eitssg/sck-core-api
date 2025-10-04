@@ -1,0 +1,7 @@
+templates:
+  - core*-output.yaml
+ignore_templates:
+  - codebuild.yaml
+include_checks:
+  - I
+custom_rules: custom_rules.txt

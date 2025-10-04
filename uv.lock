@@ -283,6 +283,17 @@ wheels = [
 ]
 
 [[package]]
+name = "cfnlint"
+version = "0.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "pyyaml" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/8e/2de82d66980668c4d853d30b0bcba3c0598676cd1a0cb1ee5db4f2fe6155/cfnlint-0.0.9.tar.gz", hash = "sha256:a00ae4917626a03d2c5cab12f2d05c06e1ffde40f5cba750753b7867904f3de8", size = 5059, upload-time = "2018-04-17T06:35:26.179Z" }
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1422,6 +1433,7 @@ dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "cffi" },
+    { name = "cfn-lint" },
     { name = "crypto" },
     { name = "cryptography" },
     { name = "deepdiff" },
@@ -1473,6 +1485,7 @@ requires-dist = [
     { name = "boto3-stubs", marker = "extra == 'dev'", specifier = ">=1.34.51,<1.35.0" },
     { name = "botocore", specifier = ">=1.34.51,<1.35.0" },
     { name = "cffi", specifier = ">=1.17.1" },
+    { name = "cfn-lint", specifier = ">=1.40.0" },
     { name = "cfn-lint", marker = "extra == 'dev'", specifier = ">=1.22.3" },
     { name = "crypto", specifier = ">=1.4.1" },
     { name = "cryptography", specifier = ">=42.0.0,<44.0.0" },
@@ -1514,6 +1527,7 @@ source = { editable = "../sck-core-component" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
+    { name = "cfnlint" },
     { name = "deepdiff" },
     { name = "filters" },
     { name = "jinja2" },
@@ -1533,6 +1547,7 @@ requires-dist = [
     { name = "boto3-stubs", marker = "extra == 'dev'", specifier = ">=1.34.51" },
     { name = "botocore", specifier = ">=1.34.51,<1.35.0" },
     { name = "cfn-lint", marker = "extra == 'dev'", specifier = ">=1.22" },
+    { name = "cfnlint", specifier = ">=0.0.9" },
     { name = "deepdiff", specifier = ">=7.0.1,<8.0.0" },
     { name = "filters", specifier = ">=1.3.2,<1.4.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.1.1" },

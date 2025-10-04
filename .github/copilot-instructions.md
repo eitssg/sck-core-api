@@ -1,5 +1,8 @@
 # Copilot Instructions (Submodule: sck-core-api)
 
+## Plan → Approval → Execute (Mandatory)
+Before modifying handlers, envelopes, auth flows, or tests, present a plan and await approval. See root instructions for workflow semantics.
+
 - Tech: Python package (FastAPI dev server only; production behind API Gateway).
 - Precedence: Prefer this file and submodule docs first. If absent, use root: `../../.github/copilot-instructions.md`.
 - Backend conventions: See `../sck-core-ui/docs/backend-code-style.md` (S3 prefixes, MagicS3Bucket, Lambda ProxyEvent, envelopes).
