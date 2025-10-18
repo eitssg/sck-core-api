@@ -37,6 +37,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 import core_logging as log
+import core_framework as util
+
+from core_helper.magic import MagicS3Client, MagicPresignedPayload
 
 from .router import get_api_router
 from ..auth.router import get_auth_router
@@ -80,6 +83,52 @@ def get_allow_origins() -> list[str]:
 
 def get_allow_credentials() -> bool:
     return os.getenv("CORS_ALLOW_CREDENTIALS", "True").lower() in ("true", "1", "yes")
+
+
+def _require_storage_enabled() -> None:
+    if util.is_use_s3():
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def _storage_client() -> MagicS3Client:
+    return MagicS3Client(Region=util.get_region(), DataPath=util.get_storage_volume())
+
+
+def _validate_storage_key(bucket: str, key: str) -> str:
+    storage_root = os.path.abspath(os.path.join(util.get_storage_volume(), bucket))
+    candidate = os.path.abspath(os.path.join(storage_root, key))
+    if not candidate.startswith(storage_root + os.sep) and candidate != storage_root:
+        raise HTTPException(status_code=400, detail="Invalid object key")
+    return candidate
+
+
+def _parse_storage_payload(bucket: str, operation: str, token: str | None, signature: str | None) -> MagicPresignedPayload:
+    if not token or not signature:
+        raise HTTPException(status_code=400, detail="Missing presigned token")
+
+    try:
+        payload = MagicS3Client.parse_presigned_request(token, signature)
+    except ValueError as exc:
+        log.warning(
+            "Invalid storage presigned token",
+            details={"bucket": bucket, "operation": operation, "error": str(exc)},
+        )
+        raise HTTPException(status_code=403, detail="Invalid or expired presigned URL") from exc
+
+    if payload.bucket != bucket or payload.operation != operation:
+        log.warning(
+            "Storage presigned token scope mismatch",
+            details={
+                "bucket": bucket,
+                "operation": operation,
+                "payload_bucket": payload.bucket,
+                "payload_operation": payload.operation,
+            },
+        )
+        raise HTTPException(status_code=403, detail="Invalid presigned URL scope")
+
+    _validate_storage_key(bucket, payload.key)
+    return payload
 
 
 __app: Optional[FastAPI] = None
@@ -233,7 +282,7 @@ def get_app() -> FastAPI:
 
     # Health check endpoint (SECOND - before catch-all)
     @__app.get("/health", include_in_schema=False)
-    async def health_check() -> Response:
+    async def health_check():
         """Application health check endpoint.
 
         Returns system health information including React build status,
@@ -271,6 +320,64 @@ def get_app() -> FastAPI:
             "static_dir": static_dir,
             "assets_count": (len(os.listdir(assets_dir)) if os.path.exists(assets_dir) else 0),
         }
+
+    @__app.put("/storage/{bucket}/{operation}", include_in_schema=False)
+    async def storage_put(bucket: str, operation: str, request: Request, token: str, signature: str) -> Response:
+        """Handle Magic S3 presigned PUT uploads against local storage."""
+
+        _require_storage_enabled()
+        if operation != "put_object":
+            raise HTTPException(status_code=405, detail="Unsupported storage operation")
+
+        payload = _parse_storage_payload(bucket, operation, token, signature)
+        local_path = _validate_storage_key(bucket, payload.key)
+
+        body = await request.body()
+
+        client = _storage_client()
+        extra_kwargs: dict[str, object] = {}
+        if payload.content_type:
+            extra_kwargs["ContentType"] = payload.content_type
+
+        client.put_object(Bucket=bucket, Key=payload.key, Body=body, **extra_kwargs)
+
+        log.debug(
+            "Stored object via Magic presigned PUT",
+            details={"bucket": bucket, "key": payload.key, "bytes": len(body), "path": local_path},
+        )
+
+        return Response(status_code=200)
+
+    @__app.get("/storage/{bucket}/{operation}", include_in_schema=False)
+    async def storage_get(bucket: str, operation: str, token: str, signature: str) -> Response:
+        """Handle Magic S3 presigned GET downloads against local storage."""
+
+        _require_storage_enabled()
+        if operation != "get_object":
+            raise HTTPException(status_code=405, detail="Unsupported storage operation")
+
+        payload = _parse_storage_payload(bucket, operation, token, signature)
+        local_path = _validate_storage_key(bucket, payload.key)
+
+        if not os.path.exists(local_path):
+            raise HTTPException(status_code=404, detail="Object not found")
+
+        client = _storage_client()
+        metadata = client.head_object(Bucket=bucket, Key=payload.key)
+
+        content_type = payload.content_type or metadata.get("ContentType") or "application/octet-stream"
+        headers = {}
+        if metadata.get("ETag"):
+            headers["ETag"] = metadata["ETag"]
+        if metadata.get("VersionId"):
+            headers["x-amz-version-id"] = metadata["VersionId"]
+
+        log.debug(
+            "Serving object via Magic presigned GET",
+            details={"bucket": bucket, "key": payload.key, "path": local_path},
+        )
+
+        return FileResponse(local_path, media_type=content_type, headers=headers)
 
     # Mount React assets folder for JS, CSS, images (THIRD)
     assets_dir = os.path.join(static_dir, "assets")

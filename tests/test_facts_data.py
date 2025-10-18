@@ -1,3 +1,7 @@
+import os
+
+volume = os.getenv("VOLUME", "/core-data")
+
 api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     # Registry of Clients
     # Case 0
@@ -368,24 +372,24 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                     "DeliveredBy": "automation",
                     "ArtefactsBucketName": "eits-core-automation-master",
                     "ArtefactsBucketRegion": "us-east-1",
-                    "ArtefactsBucketUrl": "P:\\core\\eits-core-automation-master",
-                    "ArtefactsPrefix": "artefacts\\simple-cloud-kit\\api\\main\\1",
+                    "ArtefactsBucketUrl": os.path.join(volume, "core", "eits-core-automation-master"),
+                    "ArtefactsPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main", "1"),
                     "ArtifactBucketName": "eits-core-automation-master",
                     "ArtifactBucketRegion": "us-east-1",
-                    "ArtifactBaseUrl": "P:\\core\\eits-core-automation-master",
-                    "ArtifactKeyPrefix": "artefacts\\simple-cloud-kit\\api\\main\\1",
-                    "ArtifactKeyBuildPrefix": "artefacts\\simple-cloud-kit\\api\\main\\1",
+                    "ArtifactBaseUrl": os.path.join(volume, "core", "eits-core-automation-master"),
+                    "ArtifactKeyPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main", "1"),
+                    "ArtifactKeyBuildPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main", "1"),
                     "FilesBucketName": "eits-core-automation-master",
                     "FilesBucketRegion": "us-east-1",
-                    "FilesBucketUrl": "P:\\core\\eits-core-automation-master",
-                    "PortfolioFilesPrefix": "files\\simple-cloud-kit",
-                    "AppFilesPrefix": "files\\simple-cloud-kit\\api",
-                    "BranchFilesPrefix": "files\\simple-cloud-kit\\api\\main",
-                    "BuildFilesPrefix": "files\\simple-cloud-kit\\api\\main\\1",
-                    "ArtifactKeyPortfolioPrefix": "artefacts\\simple-cloud-kit",
-                    "ArtifactKeyAppPrefix": "artefacts\\simple-cloud-kit\\api",
-                    "ArtifactKeyBranchPrefix": "artefacts\\simple-cloud-kit\\api\\main",
-                    "SharedFilesPrefix": "files\\shared",
+                    "FilesBucketUrl": os.path.join(volume, "core", "eits-core-automation-master"),
+                    "PortfolioFilesPrefix": os.path.join("files", "simple-cloud-kit"),
+                    "AppFilesPrefix": os.path.join("files", "simple-cloud-kit", "api"),
+                    "BranchFilesPrefix": os.path.join("files", "simple-cloud-kit", "api", "main"),
+                    "BuildFilesPrefix": os.path.join("files", "simple-cloud-kit", "api", "main", "1"),
+                    "ArtifactKeyPortfolioPrefix": os.path.join("artefacts", "simple-cloud-kit"),
+                    "ArtifactKeyAppPrefix": os.path.join("artefacts", "simple-cloud-kit", "api"),
+                    "ArtifactKeyBranchPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main"),
+                    "SharedFilesPrefix": os.path.join("files", "shared"),
                 },
             },
         ),

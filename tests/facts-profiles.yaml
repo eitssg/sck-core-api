@@ -1,0 +1,83 @@
+profile_facts:
+  - client: core
+    user_id: jbarwick@eits.com.sg
+    profile_name: default
+    display_name: Administrator
+    email: jbarwick@eits.com.sg
+    timezone: GMT+8
+    language: en
+    theme: dark
+    notifications_enabled: true
+    preferred_region: us-east-1
+    old_permissions:
+      "*":
+        - read
+        - write
+        - delete
+        - admin
+      aws:
+        - credentials:read
+        - credentials:write
+        - resources:read
+        - resources:write
+      billing:
+        - read
+        - write
+        - admin
+      admin:
+        - user:manage
+        - client:manage
+        - system:config
+      features:
+        - dashboard:advanced
+        - analytics
+        - billing:module
+    permissions:
+      roles:
+        - tenant_admin
+        - portfolio_editor
+      grants:
+        - resource_type: portfolio
+          resource_id: "*"
+          actions:
+            - read
+            - write
+            - admin
+          effect: allow
+        - resource_type: app
+          resource_id: billing-ui
+          actions:
+            - read
+          effect: allow
+      denies:
+        - resource_type: portfolio
+          resource_id: secret-ops
+          actions:
+            - read
+            - write
+          effect: deny
+      effective_hash: sha256-of-expanded-set
+    perm2:
+      roles:
+        - tenant_admin
+        - portfolio_editor
+      grants:
+        - resource_type: app
+          resource_id: billing-ui
+          actions:
+            - read
+          effect: allow
+        - resource_type: portfolio
+          resource_id: secret-ops
+          actions:
+            - read
+          effect: deny
+      denies:
+        - resource_type: portfolio
+          resource_id: secret-ops
+          actions:
+            - read
+            - write
+          effect: deny
+      effective_hash: 9b1d5b1c4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f
+    is_active: true

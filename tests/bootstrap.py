@@ -18,6 +18,8 @@ import core_logging as log
 
 
 def _delete_client_tables(client: str) -> None:
+    """Delete "Tenant" Client tables"""
+
     try:
         if PortfolioModelFactory.exists(client):
             PortfolioModelFactory.delete_table(client, wait=True)
@@ -44,6 +46,7 @@ def _delete_client_tables(client: str) -> None:
 
 def _create_client_tables(client: str) -> None:
     """Create "Tenant" Client tables"""
+
     PortfolioModelFactory.create_table(client, wait=True)
     ZoneFactsFactory.create_table(client, wait=True)
     AppFactsFactory.create_table(client, wait=True)
@@ -57,8 +60,13 @@ def _create_global_tables():
     Create "Global" tables
     """
     client = "core"
-    if ClientFactsFactory.exists(client):
-        ClientFactsFactory.delete_table(client, wait=True)
+
+    if ClientFactsFactory.exists():
+        ClientFactsFactory.delete_table(wait=True)
+
+    ClientFactsFactory.create_table(wait=True)
+
+    # These tables should have 'core' as the client ALWAYS
 
     if AuthorizationsModelFactory.exists(client):
         AuthorizationsModelFactory.delete_table(client, wait=True)
@@ -66,7 +74,6 @@ def _create_global_tables():
     if PassKeysModelFactory.exists(client):
         PassKeysModelFactory.delete_table(client, wait=True)
 
-    ClientFactsFactory.create_table(client, wait=True)
     AuthorizationsModelFactory.create_table(client, wait=True)
     PassKeysModelFactory.create_table(client, wait=True)
 
