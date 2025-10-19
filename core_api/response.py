@@ -80,7 +80,7 @@ class Response(BaseModel):
         description="The status of the response: 'ok' for success, 'error' for failure",
     )
     code: int = Field(
-        HTTP_OK,
+        default=HTTP_OK,
         description="The HTTP status code",
     )
     data: dict | list | str | None = Field(

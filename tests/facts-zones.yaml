@@ -1,0 +1,431 @@
+zone_facts:
+  - client: core
+    zone: core-automation-production
+    account_facts:
+      organizational_unit: Core
+      aws_account_id: "123456789012"
+      account_name: Core Automation Production
+      environment: prod
+      kms:
+        aws_account_id: "123456789012"
+        delegate_aws_account_ids:
+          - "123456789012"
+        allow_sns: true
+      resource_namespace: core-automation
+      network_name: core-automation-network
+      vpc_aliases:
+        private:
+            description: "'private' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-0abcdef1234567890
+            name: core-automation-private-vpc
+            cidr: 10.0.0.0/16
+        public:
+            description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-1234567890abcdef0
+            name: core-automation-public-vpc
+            cidr: 10.0.1.0/24
+      subnet_aliases:
+        public:
+            - subnet_id: sn-0fedcba9876543210
+              name: core-automation-public-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.1.0/24
+            - id: sn-0123456789abcdef0
+              name: core-automation-public-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.1.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6g7h8
+              name: core-automation-public-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.1.0/24
+        private:
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.0.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.0.0/24 
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.0.0/24
+      tags:
+        Environment: production
+        Owner: platform-team
+    region_facts:
+      us-east-1:
+        aws_region: us-east-1
+        az_count: 3
+        image_aliases:
+          ubuntu-22: ami-ubuntu22
+          amazon-linux-2: ami-amzn2
+        min_successful_instances_percent: 100
+        security_aliases:
+          corporate-cidrs:
+            - type: CIDR
+              value: 10.0.0.0/8
+              description: Corporate network
+        security_group_aliases:
+          web: sg-web
+          db: sg-db
+        proxy_host: proxy.internal
+        proxy_port: 8080
+        proxy_url: http://proxy.internal:8080
+        no_proxy: "*.internal,10.0.0.0/8"
+        name_servers:
+          - 8.8.8.8
+          - 1.1.1.1
+        tags:
+          Environment: production
+          Region: us-east-1
+    tags:
+      ZoneType: production
+      Owner: platform-team
+  - client: core
+    zone: core-automation-staging
+    account_facts:
+      organizational_unit: Core
+      aws_account_id: "123456789012"
+      account_name: Core Automation Staging
+      environment: staging
+      kms:
+        aws_account_id: "123456789012"
+        delegate_aws_account_ids:
+          - "123456789012"
+        allow_sns: true
+      resource_namespace: core-automation
+      network_name: core-automation-network
+      vpc_aliases:
+        private:
+            description: "'private' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-0abcdef1234567890
+            name: core-automation-private-vpc
+            cidr: 10.0.0.0/16
+        public:
+            description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-1234567890abcdef0
+            name: core-automation-public-vpc
+            cidr: 10.0.1.0/24
+      subnet_aliases:
+        public:
+            - subnet_id: sn-0fedcba9876543210
+              name: core-automation-public-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.1.0/24
+            - id: sn-0123456789abcdef0
+              name: core-automation-public-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.1.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6g7h8
+              name: core-automation-public-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.1.0/24
+        private:
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.0.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.0.0/24 
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.0.0/24
+      tags:
+        Environment: staging
+        Owner: platform-team
+    region_facts:
+      us-east-1:
+        aws_region: us-east-1
+        az_count: 2
+        image_aliases:
+          ubuntu-22: ami-ubuntu22
+          amazon-linux-2: ami-amzn2
+        min_successful_instances_percent: 90
+        security_aliases:
+          corporate-cidrs:
+            - type: CIDR
+              value: 10.0.0.0/8
+              description: Corporate network
+        security_group_aliases:
+          web: sg-web
+          db: sg-db
+        proxy_host: proxy.internal
+        proxy_port: 8080
+        proxy_url: http://proxy.internal:8080
+        no_proxy: "*.internal,10.0.0.0/8"
+        name_servers:
+          - 8.8.4.4
+          - 1.0.0.1
+        tags:
+          Environment: staging
+          Region: us-east-1
+    tags:
+      ZoneType: staging
+      Owner: platform-team
+  - client: core
+    zone: core-automation-development
+    account_facts:
+      organizational_unit: Core
+      aws_account_id: "123456789012"
+      account_name: Core Automation Development
+      environment: dev
+      kms:
+        aws_account_id: "123456789012"
+        delegate_aws_account_ids:
+          - "123456789012"
+        allow_sns: true
+      resource_namespace: core-automation
+      network_name: core-automation-network
+      vpc_aliases:
+        private:
+            description: "'private' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-0abcdef1234567890
+            name: core-automation-private-vpc
+            cidr: 10.0.0.0/16
+        public:
+            description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-1234567890abcdef0
+            name: core-automation-public-vpc
+            cidr: 10.0.1.0/24
+      subnet_aliases:
+        public:
+            - subnet_id: sn-0fedcba9876543210
+              name: core-automation-public-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.1.0/24
+            - id: sn-0123456789abcdef0
+              name: core-automation-public-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.1.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6g7h8
+              name: core-automation-public-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.1.0/24
+        private:
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.0.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.0.0/24 
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.0.0/24
+      tags:
+        Environment: development
+        Owner: platform-team
+    region_facts:
+      us-east-1:
+        aws_region: us-east-1
+        az_count: 2
+        image_aliases:
+          ubuntu-22: ami-ubuntu22
+          amazon-linux-2: ami-amzn2
+        min_successful_instances_percent: 75
+        security_aliases:
+          corporate-cidrs:
+            - type: CIDR
+              value: 10.0.0.0/8
+              description: Corporate network
+        security_group_aliases:
+          web: sg-web
+          db: sg-db
+        proxy_host: proxy.internal
+        proxy_port: 8080
+        proxy_url: http://proxy.internal:8080
+        no_proxy: "*.internal,10.0.0.0/8"
+        name_servers:
+          - 9.9.9.9
+          - 149.112.112.112
+        tags:
+          Environment: development
+          Region: us-east-1
+    tags:
+      ZoneType: development
+      Owner: platform-team
+  - client: acme
+    zone: acme-production
+    account_facts:
+      organizational_unit: Acme
+      aws_account_id: "210987654321"
+      account_name: Acme Production
+      environment: prod
+      kms:
+        aws_account_id: "210987654321"
+        delegate_aws_account_ids:
+          - "210987654321"
+        allow_sns: true
+      resource_namespace: acme
+      network_name: acme-network
+      vpc_aliases:
+        private:
+            description: "'private' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-0abcdef1234567890
+            name: core-automation-private-vpc
+            cidr: 10.0.0.0/16
+        public:
+            description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-1234567890abcdef0
+            name: core-automation-public-vpc
+            cidr: 10.0.1.0/24
+      subnet_aliases:
+        public:
+            - subnet_id: sn-0fedcba9876543210
+              name: core-automation-public-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.1.0/24
+            - id: sn-0123456789abcdef0
+              name: core-automation-public-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.1.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6g7h8
+              name: core-automation-public-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.1.0/24
+        private:
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.0.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.0.0/24 
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.0.0/24
+      tags:
+        Environment: production
+        Owner: platform-team
+    region_facts:
+      us-east-1:
+        aws_region: us-east-1
+        az_count: 3
+        image_aliases:
+          ubuntu-22: ami-ubuntu22
+          amazon-linux-2: ami-amzn2
+        min_successful_instances_percent: 100
+        security_aliases:
+          corporate-cidrs:
+            - type: CIDR
+              value: 10.0.0.0/8
+              description: Corporate network
+        security_group_aliases:
+          web: sg-web
+          db: sg-db
+        proxy_host: proxy.internal
+        proxy_port: 8080
+        proxy_url: http://proxy.internal:8080
+        no_proxy: "*.internal,10.0.0.0/8"
+        name_servers:
+          - 8.8.8.8
+          - 1.1.1.1
+        tags:
+          Environment: production
+          Region: us-east-1
+    tags:
+      ZoneType: production
+      Owner: platform-team
+  - client: beta
+    zone: beta-development
+    account_facts:
+      organizational_unit: Beta
+      aws_account_id: "345678901234"
+      account_name: Beta Development
+      environment: dev
+      kms:
+        aws_account_id: "345678901234"
+        delegate_aws_account_ids:
+          - "345678901234"
+        allow_sns: true
+      resource_namespace: beta
+      network_name: beta-network
+      vpc_aliases:
+        private:
+            description: "'private' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-0abcdef1234567890
+            name: core-automation-private-vpc
+            cidr: 10.0.0.0/16
+        public:
+            description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
+            type: cidr
+            vpc_id: vpc-1234567890abcdef0
+            name: core-automation-public-vpc
+            cidr: 10.0.1.0/24
+      subnet_aliases:
+        public:
+            - subnet_id: sn-0fedcba9876543210
+              name: core-automation-public-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.1.0/24
+            - id: sn-0123456789abcdef0
+              name: core-automation-public-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.1.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6g7h8
+              name: core-automation-public-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.1.0/24
+        private:
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-1
+              availability_zone: us-east-1a
+              cidr: 10.0.0.0/24
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-2
+              availability_zone: us-east-1b
+              cidr: 10.0.0.0/24 
+            - subnet_id: sn-0a1b2c3d4e5f6
+              name: core-automation-private-subnet-3
+              availability_zone: us-east-1c
+              cidr: 10.0.0.0/24
+      tags:
+        Environment: development
+        Owner: platform-team
+    region_facts:
+      us-east-1:
+        aws_region: us-east-1
+        az_count: 2
+        image_aliases:
+          ubuntu-22: ami-ubuntu22
+          amazon-linux-2: ami-amzn2
+        min_successful_instances_percent: 75
+        security_aliases:
+          corporate-cidrs:
+            - type: CIDR
+              value: 10.0.0.0/8
+              description: Corporate network
+        security_group_aliases:
+          web: sg-web
+          db: sg-db
+        proxy_host: proxy.internal
+        proxy_port: 8080
+        proxy_url: http://proxy.internal:8080
+        no_proxy: "*.internal,10.0.0.0/8"
+        name_servers:
+          - 9.9.9.9
+          - 149.112.112.112
+        tags:
+          Environment: development
+          Region: us-east-1
+    tags:
+      ZoneType: development
+      Owner: platform-team

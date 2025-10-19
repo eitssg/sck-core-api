@@ -1,0 +1,166 @@
+client_facts:
+  - client_id: core_669a5fdd8be7
+    client: core
+    client_secret: null
+    client_name: Core Automation Team
+    client_description: Core Automation Infrastructure Automation Team
+    client_status: active
+    client_type: enterprise
+    client_scopes:
+      - openid
+      - profile
+      - email
+      - offline_access
+    organization_name: EITS Pte Ltd
+    organization_id: o-1234567890
+    organization_account: "123456789012"
+    organization_email: admin@eits.com.sg
+    domain: eits.com.sg
+    homepage: https://www.eits.com.sg
+    iam_account: "123456789012"
+    audit_account: "123456789012"
+    automation_account: "123456789012"
+    security_account: "123456789012"
+    network_account: "123456789012"
+    master_region: us-east-1
+    client_region: us-east-1
+    bucket_region: us-east-1
+    bucket_name: core-automation
+    docs_bucket_name: core-docs
+    artefact_bucket_name: core-artefacts
+    ui_bucket_name: core-ui
+    ui_bucket: core-ui
+    scope: ca-
+    client_redirect_urls:
+      - http://localhost:8090/authorized
+      - http://localhost:8080/authorized
+    tags:
+      Client: core
+    tag_policy:
+      - tag_name: Client
+        required: true
+        description: Client identifier or tenant name
+      - tag_name: Portfolio
+        required: true
+        description: Portfolio or project name
+      - tag_name: App
+        required: true
+        description: Application name
+      - tag_name: Branch
+        required: false
+        description: Source code branch
+      - tag_name: Build
+        required: false
+        description: Build version or identifier
+      - tag_name: Environment
+        required: false
+        description: Environment (e.g. dev, staging, prod)
+      - tag_name: Region
+        required: false
+        description: AWS region
+      - tag_name: Team
+        required: false
+        description: Team or department
+      - tag_name: Owner
+        required: false
+        description: Resource owner
+      - tag_name: Project
+        required: false
+        description: Project code or identifier
+      - tag_name: CostCenter
+        required: false
+        description: Cost center code
+      - tag_name: Confidentiality
+        required: false
+        description: Data confidentiality level
+      - tag_name: Tier
+        required: false
+        description: Application tier or level
+      - tag_name: Compliance
+        required: false
+        description: Compliance requirements
+      - tag_name: Criticality
+        required: false
+        description: Business criticality level
+      - tag_name: Lifecycle
+        required: false
+        description: Resource lifecycle stage
+      - tag_name: Version
+        required: false
+        description: Resource version
+      - tag_name: Purpose
+        required: false
+        description: Resource purpose or function
+      - tag_name: Confidentiality
+        required: false
+        description: Data confidentiality level
+  - client_id: core_669a5fdd8be7
+    client: acme
+    client_secret: null
+    client_name: Acme Group
+    client_description: Acme Group for developing AI services
+    client_status: active
+    client_type: enterprise
+    client_scopes:
+      - openid
+      - profile
+      - email
+      - offline_access
+    organization_name: Acme Corporation
+    organization_id: o-acme000001
+    organization_account: "210987654321"
+    organization_email: admin@acme.com
+    domain: acme.com
+    homepage: https://www.acme.com
+    iam_account: "210987654321"
+    audit_account: "210987654321"
+    automation_account: "210987654321"
+    security_account: "210987654321"
+    network_account: "210987654321"
+    master_region: us-east-1
+    client_region: us-east-1
+    bucket_region: us-east-1
+    bucket_name: acme-automation
+    docs_bucket_name: acme-docs
+    artefact_bucket_name: acme-artefacts
+    ui_bucket_name: acme-ui
+    ui_bucket: acme-ui
+    scope: ac-
+    client_redirect_urls:
+      - http://localhost:8090/authorized
+      - http://localhost:8080/authorized
+  - client_id: core_669a5fdd8be7
+    client: beta
+    client_secret: null
+    client_name: Beta Group
+    client_description: Beta Group for developing Robotics services
+    client_status: active
+    client_type: startup
+    client_scopes:
+      - openid
+      - profile
+      - email
+      - offline_access
+    organization_name: Beta Corporation
+    organization_id: o-beta000001
+    organization_account: "345678901234"
+    organization_email: admin@beta.com
+    domain: beta.com
+    homepage: https://www.beta.com
+    iam_account: "345678901234"
+    audit_account: "345678901234"
+    automation_account: "345678901234"
+    security_account: "345678901234"
+    network_account: "345678901234"
+    master_region: us-east-1
+    client_region: us-east-1
+    bucket_region: us-east-1
+    bucket_name: beta-automation
+    docs_bucket_name: beta-docs
+    artefact_bucket_name: beta-artefacts
+    ui_bucket_name: beta-ui
+    ui_bucket: beta-ui
+    scope: be-
+    client_redirect_urls:
+      - http://localhost:8090/authorized
+      - http://localhost:8080/authorized

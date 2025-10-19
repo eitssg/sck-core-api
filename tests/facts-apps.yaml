@@ -1,0 +1,145 @@
+app_facts:
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:execute:main:[^:].*$
+    name: sck-core-execute
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation Action Library Lambda step-function
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:report:main:[^:].*$
+    name: sck-core-report
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation CodeCommit status report function
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:runner:main:[^:].*$
+    name: sck-core-runner
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation Runner.  A lambda function that runs the sck-core-execute Lambda step function
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:deployspec:main:[^:].*$
+    name: sck-core-deployspec
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation Deployment Specification template compiler.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:component:main:[^:].*$
+    name: sck-core-component
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation Component Library template compiler.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:invoker:main:[^:].*$
+    name: sck-core-invoker
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation Invoker determines if a task should run deployspec, component, or runner.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:organization:main:[^:].*$
+    name: sck-core-organization
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation Organization Manaagement
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:api-[^:]*:main:[^:].*$
+    name: sck-core-api
+    zone: core-automation-production
+    environment: prod
+    region: us-east-1
+    metadata:
+      description: Core Automation API lambda function. Handles API requests and responses.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:execute:develop:[^:].*$
+    name: sck-core-execute
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Action Library Lambda step-function
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:report:develop:[^:].*$
+    name: sck-core-report
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation CodeCommit status report function
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:runner:develop:[^:].*$
+    name: sck-core-runner
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Runner.  A lambda function that runs the sck-core-execute Lambda step function
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:deployspec:develop:[^:].*$
+    name: sck-core-deployspec
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Deployment Specification template compiler.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:component:develop:[^:].*$
+    name: sck-core-component
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Component Library template compiler.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:invoker:develop:[^:].*$
+    name: sck-core-invoker
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Invoker determines if a task should run deployspec, component, or runner.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:organization:develop:[^:].*$
+    name: sck-core-organization
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Organization Management
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:api-[^:]*:develop:[^:].*$
+    name: sck-core-api
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation API lambda function. Handles API requests and responses.

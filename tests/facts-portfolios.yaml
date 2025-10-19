@@ -1,0 +1,107 @@
+portfolio_facts:
+  - client: core
+    portfolio: core-automation
+    name: Core Automation Engine
+    contacts:
+      - name: Tech Lead
+        email: techlead@eits.com.sg
+        enabled: true
+      - name: Product Manager
+        email: pm@eits.com.sg
+        enabled: true
+    approvers:
+      - sequence: 1
+        name: Manager
+        email: mgr@eits.com.sg
+        roles:
+          - deployment
+        enabled: true
+      - sequence: 2
+        name: Director
+        email: dir@eits.com.sg
+        depends_on:
+          - 1
+        roles:
+          - deployment
+          - approval
+        enabled: true
+    project:
+      code: CORE
+      name: Core Automation
+      repository: https://github.com/eitssg/simple-cloud-kit
+      description: Core Automation Engine
+      attributes:
+        category: platform
+    domain: automation.eits.com.sg
+    bizapp:
+      code: CORE-APP
+      name: Core Business App
+      description: Business-facing application for Core Automation
+      attributes:
+        owner: platform
+    owner:
+      name: Platform Team
+      email: platform@eits.com.sg
+      phone: +65-0000-0000
+    tags:
+      Environment: production
+      Team: platform
+    metadata:
+      CostCenter: CORE
+      Owner: platform
+    attributes:
+      Tier: "1"
+      Confidentiality: internal
+  - client: core
+    portfolio: ocp
+    name: OpenShift Cloud Platform
+    contacts:
+      - name: OCP Lead
+        email: ocp-lead@eits.com.sg
+        enabled: true
+      - name: SRE
+        email: sre@eits.com.sg
+        enabled: true
+    approvers:
+      - sequence: 1
+        name: OCP Manager
+        email: ocp-mgr@eits.com.sg
+        roles:
+          - deployment
+        enabled: true
+      - sequence: 2
+        name: CTO
+        email: cto@eits.com.sg
+        depends_on:
+          - 1
+        roles:
+          - deployment
+          - approval
+        enabled: true
+    project:
+      code: OCP
+      name: OpenShift Cloud Platform
+      repository: https://github.com/eitssg/openshift-cloud-platform
+      description: OpenShift-based application platform
+      attributes:
+        category: platform
+    domain: ocp.eits.com.sg
+    bizapp:
+      code: OCP-APP
+      name: OCP Business App
+      description: Business-facing application on OCP
+      attributes:
+        owner: cloud
+    owner:
+      name: Cloud Team
+      email: cloud@eits.com.sg
+      phone: +65-0000-0001
+    tags:
+      Environment: staging
+      Team: cloud
+    metadata:
+      CostCenter: OCP
+      Owner: cloud
+    attributes:
+      Tier: "2"
+      Confidentiality: internal
