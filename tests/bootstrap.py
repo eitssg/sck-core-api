@@ -98,6 +98,6 @@ def bootstrap_dynamo():
 
     except Exception as e:
         log.error(f"Error during bootstrap: {e}")
-        assert False
+        assert False, str(e)
 
     return True

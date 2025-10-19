@@ -60,6 +60,7 @@ from ..ai.service import service_actions
 from ..response import ErrorResponse, Response, get_proxy_error_response, get_proxy_response
 from ..request import ProxyEvent, RouteEndpoint, get_correlation_id
 from ..security import (
+    AwsCredentials,
     EnhancedSecurityContext,
     validate_client_access,
     check_permissions_with_wildcard,
@@ -250,7 +251,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                 raise UnauthorizedException(f"Missing permissions for this operation: {[str(p) for p in missing_perms]}")
 
             # Extract AWS credentials from Bearer JWT
-            aws_credentials = security_context.aws_credentials
+            aws_credentials: AwsCredentials = security_context.aws_credentials
 
             if not aws_credentials:
                 raise UnauthorizedException("aws_credentials_missing")

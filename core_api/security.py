@@ -384,6 +384,10 @@ def extract_security_context(
 
         aws_credentials = get_credentials(jwt_payload)
 
+        if not aws_credentials:
+            log.warning(f"AWS credentials required but not found or invalid in JWT for user {jwt_payload.sub}")
+            raise UnauthorizedException("AWS credentials are required for this operation.  Your credentials may be expired.")
+
         method = request.httpMethod.lower()
         need_write_role = method != "get"
         # Determine role ARN if needed

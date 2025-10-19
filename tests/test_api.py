@@ -1,6 +1,7 @@
 import pytest
 import os
 import io
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 import core_framework as util
@@ -20,6 +21,9 @@ from core_api.api.fast_api import get_app
 from core_framework.models import TaskPayload, DeploymentDetails
 from core_helper.magic import MagicS3Client
 
+from core_api.auth.tools import create_access_token_with_sts
+from core_api.security import Permission
+
 from .test_api_data import api_endpoints
 
 # Create a FastAPI test client the same that uvicorn will use
@@ -29,17 +33,60 @@ from .bootstrap import *
 
 
 @pytest.fixture(scope="module")
+def session_token() -> str:
+    """Create a session token for testing."""
+    # Mock boto3.client for STS
+    mock_sts_client = MagicMock()
+    mock_sts_client.get_session_token.return_value = {
+        'Credentials': {
+            'AccessKeyId': 'TESTKEYXXXXXXX',
+            'SecretAccessKey': 'TESTSECRETXXXXXXX',
+            'SessionToken': 'TESTSESSIONXXXXXXX',
+            'Expiration': '2030-01-01T14:00:00+00:00',
+        }
+    }
+
+    with patch('boto3.client') as mock_client:
+        mock_client.return_value = mock_sts_client
+        # Create a test user and get a session token
+        token = create_access_token_with_sts(
+            aws_credentials={
+                "AccessKeyId": "TESTKEYXXXXXXX",
+                "SecretAccessKey": "TESTSECRETXXXXXXX",
+            },
+            client_id="cid_1",
+            client="core",
+            subject="simple-cloud-kit",
+            scope="sck:admin sck:read sck:write",
+            permissions={"*": Permission.SYSTEM_ADMIN},  # Use highest permission for testing
+        )
+    return token
+
+
+@pytest.fixture(scope="module", autouse=True)
+def client_headers(session_token: str) -> dict[str, str]:
+    """Create headers for testing."""
+    headers = {
+        "Authorization": f"Bearer {session_token}",
+        "Content-Type": "application/json",
+    }
+    return headers
+
+
+@pytest.fixture(scope="module")
 def teardown_action(bootstrap_dynamo):
     """Create test action and upload to S3."""
     assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
 
-    action = NoOpActionResource(
-        **{
+    action = NoOpActionResource.model_validate(
+        {
+            "name": "teardown",
+            "description": "Teardown test resources",
             "spec": {
                 "account": "123456789012",
                 "region": "us-west-1",
                 "stack_name": "no-stack-exists",
-            }
+            },
         }
     )
 
@@ -79,10 +126,12 @@ def teardown_action(bootstrap_dynamo):
 
 
 @pytest.mark.parametrize("http_path,expected_result", api_endpoints)
-def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action):
+def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action, client_headers):
     """Test API endpoints with various HTTP methods."""
     assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
     assert teardown_action  # Fixed: ensure teardown action is available
+
+    client.headers = client_headers
 
     try:
         method, path, body = http_path
