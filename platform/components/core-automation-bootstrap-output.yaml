@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Core Automation Component Lambda Function - Manages component artifacts and metadata
+
+Parameters:
+  Scope:
+    Type: String
+    Default: ""
+
+Resources:
+  
+  AutomationBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: "buildcore-automation"
+      Tags:
+        - Key: Name
+          Value: "buildcore-automation"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: 
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: bootstrap
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latest
+
+  ArtefactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: "buildart-core-automation-ap-southeast-1"
+      Tags:
+        - Key: Name
+          Value: "buildart-core-automation-ap-southeast-1"
+        - Key: Client
+          Value: core
+        - Key: Environment
+          Value: 
+        - Key: Portfolio
+          Value: core-automation
+        - Key: App
+          Value: bootstrap
+        - Key: Branch
+          Value: main
+        - Key: Build
+          Value: latestOutputs:
+
+  CoreBucketName:
+    Description: "Core Automation S3 Bucket Name"
+    Value: !Ref AutomationBucket
+    Export:
+      Name: !Sub "${Scope}core-automation-bucket-name"
+
+  ArtefactsBucketName:
+    Description: "Artefacts S3 Bucket Name"
+    Value: !Ref ArtefactsBucket
+    Export:
+      Name: !Sub "${Scope}artefacts-bucket-name"

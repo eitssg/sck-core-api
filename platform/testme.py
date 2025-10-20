@@ -16,10 +16,12 @@ ITEMS = {
     "execute": "core-automation-execute.yaml.j2",
     "invoker": "core-automation-invoker.yaml.j2",
     "runner": "core-automation-runner.yaml.j2",
+    "dns": "core-automation-route53.yaml.j2",
+    "bootstrap": "core-automation-bootstrap.yaml.j2",
 }
 
 
-def _run_it(query: dict) -> None:
+def _run_it(path: dict, query: dict) -> None:
 
     try:
 
@@ -54,7 +56,7 @@ def _run_it(query: dict) -> None:
 
         print("Testing get_facts_action with query:", query)
 
-        results = get_facts_action(query_params=query)
+        results = get_facts_action(path_params=path, query_params=query)
         facts = results.data
 
         base_folder = os.path.dirname(os.path.abspath(__file__))
@@ -75,8 +77,9 @@ def _test_get_facts():
 
     for item in ITEMS.keys():
         print(f"--- Generating {item} ---")
-        query = {"client": "core", "prn": f"prn:core-automation:{item}:main:latest"}
-        _run_it(query)
+        path = {"client": "core"}
+        query = {"prn": f"prn:core-automation:{item}:main:latest", "client_id": "core_669a5fdd8be7"}
+        _run_it(path, query)
 
 
 if __name__ == "__main__":

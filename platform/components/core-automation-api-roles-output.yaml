@@ -81,8 +81,8 @@ Resources:
               - "s3:ListMultipartUploadParts"
             Resource:
 
-              - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
-              - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+              - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1"
+              - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/*"
 
           - Effect: "Allow"
             Action:
@@ -134,8 +134,8 @@ Resources:
                   - "s3:GetObjectAcl"
                 Resource:
 
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/*"
 
       Tags:
         - Key: Name
@@ -203,8 +203,8 @@ Resources:
                   - "s3:ListMultipartUploadParts"
                 Resource:
 
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/*"
 
       Tags:
         - Key: Name

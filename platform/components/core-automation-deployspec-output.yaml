@@ -66,8 +66,8 @@ Resources:
                   - "s3:DeleteObject"
                   - "s3:ListBucket"
                 Resource: 
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/*"
               # Permission to read/write Artifacts bucket (deployspec outputs)
               - Effect: Allow
                 Action:
@@ -79,8 +79,8 @@ Resources:
                   - "s3:GetBucketVersioning"
                   - "s3:PutBucketVersioning"
                 Resource: 
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1"
-                  - !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1"
+                  - !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/*"
       Tags:
         - Key: Name
           Value: !Sub "${Scope}core-automation-deployspec-lambda-execution-role"
@@ -107,7 +107,7 @@ Resources:
       Handler: core_deployspec.deployspec.handler:handler
       Role: !GetAtt DeployspecLambdaExecutionRole.Arn
       Code:
-        S3Bucket: core-automation-ap-southeast-1
+        S3Bucket: art-core-automation-ap-southeast-1
         S3Key: !Sub "files/core-automation/deployspec/main/latest/${ZipFileName}"
       Timeout: 900  # 15 minutes for deployspec operations
       MemorySize: 1024  # Good memory for file operations
@@ -122,8 +122,8 @@ Resources:
           BUILD: latest
           LOG_LEVEL: INFO
           # S3 bucket configuration
-          FILES_BUCKET_NAME: core-automation-ap-southeast-1
-          ARTIFACTS_BUCKET_NAME: core-automation-ap-southeast-1
+          FILES_BUCKET_NAME: art-core-automation-ap-southeast-1
+          ARTIFACTS_BUCKET_NAME: art-core-automation-ap-southeast-1
           # Deployspec-specific settings
           DEPLOYSPEC_PREFIX: "deployspecs/"
           TEMPLATE_PREFIX: "templates/"

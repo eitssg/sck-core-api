@@ -133,7 +133,7 @@ Resources:
                 Action:
                   - "s3:GetObject"
                   - "s3:GetObjectVersion"
-                Resource: !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest*"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest*"
                 # Add S3 access for React app bucket
               - Effect: Allow
                 Action:
@@ -168,7 +168,7 @@ Resources:
       Handler: core_api.api.handler:handler
       Role: !GetAtt AppLambdaExecutionRole.Arn
       Code:
-        S3Bucket: core-automation-ap-southeast-1
+        S3Bucket: art-core-automation-ap-southeast-1
         S3Key: !Sub "files/core-automation/api-gateway/main/latest/${ZipFileName}"
       Timeout: 30
       MemorySize: 512
@@ -208,7 +208,7 @@ Resources:
       Handler: core_api.auth.handler:handler
       Role: !GetAtt AppLambdaExecutionRole.Arn
       Code:
-        S3Bucket: core-automation-ap-southeast-1
+        S3Bucket: art-core-automation-ap-southeast-1
         S3Key: !Sub "files/core-automation/api-gateway/main/latest/${ZipFileName}"
       Timeout: 30
       MemorySize: 256
@@ -260,7 +260,7 @@ Resources:
           s3 = boto3.client("s3")
 
 
-          def handler(event, context):
+          def handler(event, context) -> dict:
               try:
                   bucket = os.environ["REACT_S3_BUCKET"]
 
@@ -1195,7 +1195,7 @@ Outputs:
   # Deployment Outputs
   LambdaCodeS3Bucket:
     Description: "S3 bucket containing Lambda code"
-    Value: core-automation-ap-southeast-1
+    Value: art-core-automation-ap-southeast-1
     Export:
       Name: "CoreAutomationApiLambdaCodeS3Bucket"
 
@@ -1213,13 +1213,13 @@ Outputs:
 
   LambdaCodeS3Url:
     Description: "Full S3 URL for Lambda code"
-    Value: !Sub "s3://core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest/${ZipFileName}"
+    Value: !Sub "s3://art-core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest/${ZipFileName}"
     Export:
       Name: "CoreAutomationApiLambdaCodeS3Url"
 
   LambdaCodeHttpsUrl:
     Description: "HTTPS URL for Lambda code (for cross-region access)"
-    Value: !Sub "https://s3.ap-southeast-1.amazonaws.com/core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest/${ZipFileName}"
+    Value: !Sub "https://s3.ap-southeast-1.amazonaws.com/art-core-automation-ap-southeast-1/files/core-automation/api-gateway/main/latest/${ZipFileName}"
     Export:
       Name: "CoreAutomationApiLambdaCodeHttpsUrl"
 

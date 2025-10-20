@@ -10,7 +10,7 @@ from collections import ChainMap
 from core_db.facter.actions import FactsActions
 
 from ..request import RouteEndpoint
-from ..response import Response
+from ..response import Response, SuccessResponse
 
 from ..actions import ApiActions
 
@@ -19,7 +19,7 @@ class ApiFactsActions(ApiActions, FactsActions):
     pass
 
 
-def get_facts_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def get_facts_action(*, query_params: dict | None = None, path_params: dict | None = None, **kwargs) -> Response:
     """
     API Documentation:
     ----------------
@@ -71,8 +71,8 @@ def get_facts_action(*, query_params: dict, path_params: dict, body: dict, **kwa
     """
     qsp = query_params or {}
     pp = path_params or {}
-    body = body or {}
-    return ApiFactsActions.get(**dict(ChainMap(body, pp, qsp)))
+    data = ApiFactsActions.get(**dict(ChainMap(pp, qsp)))
+    return SuccessResponse(data=data)
 
 
 # Define API Gateway routes

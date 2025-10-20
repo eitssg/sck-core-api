@@ -63,7 +63,7 @@ Resources:
                 Action:
                   - "s3:GetObject"
                   - "s3:GetObjectVersion"
-                Resource: !Sub "arn:${AWS::Partition}:s3:::core-automation-ap-southeast-1/files/core-automation/invoker/main/latest*"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::art-core-automation-ap-southeast-1/files/core-automation/invoker/main/latest*"
               # Permission to invoke orchestrated Lambda functions
               - Effect: Allow
                 Action:
@@ -98,7 +98,7 @@ Resources:
       Handler: core_invoker.invoker.handler:handler
       Role: !GetAtt InvokerLambdaExecutionRole.Arn
       Code:
-        S3Bucket: core-automation-ap-southeast-1
+        S3Bucket: art-core-automation-ap-southeast-1
         S3Key: !Sub "files/core-automation/invoker/main/latest/${ZipFileName}"
       Timeout: 900  # 15 minutes for orchestration workflows
       MemorySize: 512

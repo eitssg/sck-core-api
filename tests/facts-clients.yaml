@@ -15,7 +15,8 @@ client_facts:
     organization_id: o-1234567890
     organization_account: "123456789012"
     organization_email: admin@eits.com.sg
-    domain: eits.com.sg
+    domain: jvj28.com
+    zone_id: Z2XU8WRC1Y7XN
     homepage: https://www.eits.com.sg
     iam_account: "123456789012"
     audit_account: "123456789012"
@@ -30,7 +31,7 @@ client_facts:
     artefact_bucket_name: core-artefacts
     ui_bucket_name: core-ui
     ui_bucket: core-ui
-    scope: ca-
+    scope: 
     client_redirect_urls:
       - http://localhost:8090/authorized
       - http://localhost:8080/authorized

@@ -29,9 +29,9 @@ Resources:
           Value: {{ context.Branch }}
         - Key: Build
           Value: {{ context.Build }}
+          
+  {%- if context.ArtefactsBucketName %}
 
-
-  {% if context.ArtefactsBucketName %}
   ArtefactsBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -54,7 +54,7 @@ Resources:
         - Key: Build
           Value: {{ context.Build }}
 
-    {% endif %}
+    {%- endif -%}
 
 Outputs:
 
@@ -64,21 +64,15 @@ Outputs:
     Export:
       Name: !Sub "${Scope}core-automation-bucket-name"
 
-  {% if not context.ArtefactsBucketName %}
-
   ArtefactsBucketName:
-    Description: "Artefacts S3 Bucket Name"
-    Value: !Ref AutomationBucket
-    Export:
-      Name: !Sub "${Scope}artefacts-bucket-name"
-
-  {% endif %}
-      
-
-  {% if context.ArtefactsBucketName %}
-  ArtefactsBucketName:
+    {%- if context.ArtefactsBucketName %}
     Description: "Artefacts S3 Bucket Name"
     Value: !Ref ArtefactsBucket
     Export:
       Name: !Sub "${Scope}artefacts-bucket-name"
-  {% endif %}
+    {%- else -%}
+    Description: "Artefacts S3 Bucket Name"
+    Value: !Ref AutomationBucket
+    Export:
+      Name: !Sub "${Scope}artefacts-bucket-name"
+    {%- endif -%}

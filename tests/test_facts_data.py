@@ -134,7 +134,7 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                         "AwsAccountId": "123456789012",
                         "DelegateAwsAccountIds": ["123456789012"],
                     },
-                    "ResourceNamespace": "core-network-dev-ss",
+                    "ResourceNamespace": "{{ context.ResourceNamespace | d('core-network') }}-dev-ss",
                     "VpcAliases": {
                         "public": "SharedServicesVpc",
                         "private": "SharedServicesVpc",
@@ -267,7 +267,7 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                         "AwsAccountId": "123456789012",
                         "DelegateAwsAccountIds": ["123456789012"],
                     },
-                    "ResourceNamespace": "core-network-dev-ss",
+                    "ResourceNamespace": "{{ context.ResourceNamespace | d('core-network') }}-dev-ss",
                     "SubnetAliases": {
                         "public": "PublicSubnet",
                         "app": "PrivateSubnet",

@@ -143,3 +143,21 @@ app_facts:
     region: us-east-1
     metadata:
       description: Core Automation API lambda function. Handles API requests and responses.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:dns:develop:[^:].*$
+    name: sck-core-dns
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Route53 services. Handles DNS requests and responses.
+  - client: core
+    portfolio: core-automation
+    app_regex: ^prn:core-automation:bootstrap:develop:[^:].*$
+    name: sck-core-bootstrap
+    zone: core-automation-development
+    environment: dev
+    region: us-east-1
+    metadata:
+      description: Core Automation Bootstrap services. Creates core s3 buckets.

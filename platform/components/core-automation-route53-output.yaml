@@ -1,0 +1,66 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Manage or attach to the core automation Route 53 hosted zone.
+
+Parameters:
+	ZoneName:
+		Type: String
+        Default: 'jvj28.com'
+		Description: Fully-qualified domain name (trailing dot optional).
+	ExistingHostedZoneId:
+		Type: String
+		Default: 'Z2XU8WRC1Y7XN'
+		Description: >-
+			Optional; supply an existing Hosted Zone ID (Z...). Leave blank to let this
+			stack create the zone.
+	Comment:
+		Type: String
+		Default: Core Automation hosted zone managed by CloudFormation.
+
+Conditions:
+	CreateHostedZone: !Equals [!Ref ExistingHostedZoneId, '']
+
+Resources:
+	HostedZone:
+		Type: AWS::Route53::HostedZone
+		Condition: CreateHostedZone
+		Properties:
+			Name: !Ref ZoneName
+			HostedZoneConfig:
+				Comment: !Ref Comment
+
+	RootARecord:
+		Type: AWS::Route53::RecordSet
+		Properties:
+			HostedZoneId: !If [CreateHostedZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+			Name: !Ref ZoneName
+			Type: A
+			TTL: 60
+			ResourceRecords:
+				- 198.51.100.42
+
+	PfSenseCname:
+		Type: AWS::Route53::RecordSet
+		Properties:
+			HostedZoneId: !If [CreateHostedZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+			Name: !Join ['', ['pfsense.', !Ref ZoneName]]
+			Type: CNAME
+			TTL: 3600
+			ResourceRecords:
+				- monster-jj.jvj28.com.
+
+Outputs:
+	HostedZoneId:
+		Description: The zone ID owned or referenced by this stack.
+		Value: !If [CreateHostedZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+		Export:
+			Name: !Sub '${AWS::StackName}::HostedZoneId'
+	HostedZoneNameServers:
+		Condition: CreateHostedZone
+		Description: Name servers for delegation (newly created zones only).
+		Value: !Join [',', !GetAtt HostedZone.NameServers]
+	HostedZoneName:
+		Value: !Ref ZoneName
+		Export:
+			Name: !Sub '${AWS::StackName}::HostedZoneName'
+

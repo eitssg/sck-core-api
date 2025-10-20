@@ -94,7 +94,7 @@ Resources:
       Handler: core_execute.execute.handler:handler
       Role: !GetAtt RunnerLambdaExecutionRole.Arn
       Code:
-        S3Bucket: core-automation-ap-southeast-1
+        S3Bucket: art-core-automation-ap-southeast-1
         S3Key: !Sub "files/core-automation/runner/main/latest/${ZipFileName}"
       Timeout: 900  # 15 minutes for execution workflows
       MemorySize: 1024  # More memory for execution tasks
