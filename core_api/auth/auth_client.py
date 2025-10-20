@@ -3,6 +3,7 @@ OAuth 2.0 Dynamic Client Registration (RFC 7591)
 """
 
 import hashlib
+from math import perm
 import uuid
 from datetime import datetime, timezone
 import secrets
@@ -11,9 +12,13 @@ import secrets
 import core_logging as log
 
 from core_db.registry.client import ClientActions, ClientFact
+import jwt
 
 from ..request import RouteEndpoint
 from ..response import RedirectResponse, SuccessResponse, ErrorResponse, Response, SuccessResponse, CreatedResponse
+from ..security import EnhancedSecurityContext, Permission
+
+from ..auth.tools import get_authenticated_user
 
 ###########################################################
 #
@@ -25,8 +30,12 @@ from ..response import RedirectResponse, SuccessResponse, ErrorResponse, Respons
 ## INCOMPLETE:  This is a starting point for OAuth client registration, it is not complete
 
 
-def register_client(*, body: dict, **kwargs) -> Response:
+def register_client(*, headers: dict, cookies: dict, body: dict, **kwargs) -> Response:
     """Register a new OAuth client."""
+
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)  # Get JWT from cookies (session cookie)
+    if not jwt_payload or not jwt_payload.cid:
+        return ErrorResponse(code=401, message="Unauthorized")
 
     # Get the form data
     client = body.get("client")
@@ -37,10 +46,10 @@ def register_client(*, body: dict, **kwargs) -> Response:
     # Register the client
 
     if not client:
-        return ErrorResponse(code=400, message={"error": "Missing client name"})
+        return ErrorResponse(code=400, message="Missing client name")
 
     if not redirect_uris:
-        return ErrorResponse(code=400, message={"error": "Missing redirect_uris"})
+        return ErrorResponse(code=400, message="Missing redirect_uris")
 
     if isinstance(redirect_uris, str):
         redirect_uris = [redirect_uris]
@@ -66,16 +75,19 @@ def register_client(*, body: dict, **kwargs) -> Response:
 
     try:
 
-        record = ClientFact(**client_data)
+        record = ClientFact.model_validate(client_data)
+
         # Store in DynamoDB oauth-clients table
         ClientActions.create(client=client, record=record)
+
         log.info(
             "OAuth client registered",
             details={"client": client, "client_id": client_id, "client_type": client_type, "redirect_uris": redirect_uris},
         )
+
     except Exception as e:
         log.warn("OAuth client creation failed", details={"client": client, "error": str(e)})
-        return ErrorResponse(code=500, message={"error": str(e)})
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
     response = {"client": client, "client_id": client_id}
     if client_secret:
@@ -84,24 +96,29 @@ def register_client(*, body: dict, **kwargs) -> Response:
     return CreatedResponse(data=response)
 
 
-def update_client(*, query_params: dict, body: dict, **kwargs) -> Response:
+def update_client(*, headers: dict, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
     """Update an existing OAuth client."""
 
+    jwt_payload, _ = get_authenticated_user(cookies=cookies)
+    if not jwt_payload or not jwt_payload.cid:
+        return ErrorResponse(code=401, message="Unauthorized")
+
+    client_id = jwt_payload.cid
+
     client = query_params.get("client")
+    if not client:
+        return ErrorResponse(code=400, message="Missing client slug")
 
     log.debug(f"Updating client: {client}")
 
     # Fetch existing client data
     try:
-        data = ClientActions.get(client=client)
+        data: ClientFact = ClientActions.get(
+            jwt_payload.cid, client=client
+        )  # You can't update the client for a different OAuth Client_Id
     except Exception as e:
         log.debug("Client lookup failed for %s: %s", client, str(e))
-        return ErrorResponse(code=404, message={"error": "Client not found"})
-
-    client_id = data.client_id
-    if not data.client_id:
-        client_id = f"{client}_{uuid.uuid4().hex[:12]}"
-        data.client_id = client_id
+        return ErrorResponse(code=404, message="Client not found")
 
     client_type = body.get("client_type", data.client_type or "public")
     client_secret = secrets.token_urlsafe(32) if client_type == "confidential" else None
@@ -120,7 +137,7 @@ def update_client(*, query_params: dict, body: dict, **kwargs) -> Response:
         log.info("OAuth client updated", details={"client": client, "client_id": client_id, "client_type": client_type})
     except Exception as e:
         log.warn("OAuth client update failed", details={"client": client, "error": str(e)})
-        return ErrorResponse(code=500, message={"error": str(e)})
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
     return SuccessResponse(
         data={
@@ -135,6 +152,16 @@ def update_client(*, query_params: dict, body: dict, **kwargs) -> Response:
 # This file and these API may not be needed.
 
 auth_client_endpoints: dict[str, RouteEndpoint] = {
-    "POST:/api/v1/clients": register_client,
-    "PUT:/api/v1/clients/{client}": update_client,
+    "POST:/api/v1/clients": RouteEndpoint(
+        register_client,
+        permit_anonymous=False,
+        token_type="session",
+        permissions=[Permission.REGISTRY_CLIENT_ADMIN],
+    ),
+    "PUT:/api/v1/clients/{client}": RouteEndpoint(
+        update_client,
+        permit_anonymous=False,
+        token_type="session",
+        permissions=[Permission.REGISTRY_CLIENT_ADMIN],
+    ),
 }

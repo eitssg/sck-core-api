@@ -228,12 +228,10 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         if not endpoint_route:
             raise NotFoundException(f"Unsupported resource API: {route_key}")
 
-        security_context = None
+        security_context: EnhancedSecurityContext | None = None
         if not endpoint_route.allow_anonymous:
 
-            security_context: EnhancedSecurityContext = extract_security_context(
-                request, endpoint_route, require_aws_credentials=True
-            )
+            security_context = extract_security_context(request, endpoint_route, require_aws_credentials=True)
 
             # bale out if the security_context cannot be determined.
             if not security_context:
@@ -251,7 +249,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
                 raise UnauthorizedException(f"Missing permissions for this operation: {[str(p) for p in missing_perms]}")
 
             # Extract AWS credentials from Bearer JWT
-            aws_credentials: AwsCredentials = security_context.aws_credentials
+            aws_credentials: AwsCredentials | None = security_context.aws_credentials
 
             if not aws_credentials:
                 raise UnauthorizedException("aws_credentials_missing")
@@ -267,8 +265,8 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
 
         # Call the endpoint handler with enhanced security context
         response: Response = api_endpoints[route_key].handler(
-            headers=request.headers,
-            cookies=request.parsed_cookies,
+            headers=request.headers or {},
+            cookies=request.parsed_cookies or {},
             query_params=request.queryStringParameters or {},
             path_params=request.pathParameters or {},
             body=request.body or {},
@@ -298,7 +296,7 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         log.warning("Authentication failed", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
-    except OperationException as e:
+    except (NotFoundException, OperationException) as e:
         error_response = ErrorResponse(message=str(e), code=404, metadata={"correlation_id": correlation_id})
         log.warning("Returning 404 response", details=error_response.model_dump())
         return get_proxy_error_response(error_response)

@@ -45,6 +45,8 @@ async def proxy_forward(request: Request) -> Response:
     else:
         # Remote mode: invoke AWS Lambda function
         arn = util.get_api_lambda_arn()
+        if arn is None:
+            raise Exception("API Lambda ARN is not configured")
         result = aws.invoke_lambda(arn, event, role=role)
 
     return await generate_response_from_lambda(result)

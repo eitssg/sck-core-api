@@ -11,22 +11,22 @@ def test_encrypt_decrypt_roundtrip():
     try:
         # Test encrypt
         encrypted = encrypt_creds(test_creds)
-        print(f"✅ Encryption successful: {encrypted[:50]}...")
+        print(f"Encryption successful: {encrypted[:50]}...")
 
         # Test decrypt
         decrypted = decrypt_creds(encrypted)
-        print(f"✅ Decryption successful: {decrypted}")
+        print(f"Decryption successful: {decrypted}")
 
         # Verify round-trip
         if test_creds == decrypted:
-            print("✅ Round-trip verification PASSED")
+            print("Round-trip verification PASSED")
             return True
         else:
-            print(f"❌ Round-trip verification FAILED")
+            print(f"Round-trip verification FAILED")
             print(f"Original:  {test_creds}")
             print(f"Decrypted: {decrypted}")
             return False
 
     except Exception as e:
-        print(f"❌ Round-trip test FAILED with error: {e}")
+        print(f"Round-trip test FAILED with error: {e}")
         return False

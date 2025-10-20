@@ -1,4 +1,9 @@
-from os import path
+"""Task to handle package uploads via pre-signed URLs or direct upload.
+
+THIS FUNCTION IS NOT USED YET
+
+"""
+
 import boto3
 from botocore.exceptions import ClientError
 import uuid
@@ -7,8 +12,10 @@ from datetime import datetime, timedelta
 from core_db.exceptions import BadRequestException, UnknownException
 from core_framework.models import DeploymentDetails
 
+from ..security import EnhancedSecurityContext, Permission
 
-def upload_package(*, path_params: dict = None, body: dict = None, security: dict = None, **kwargs) -> dict:
+
+def upload_package(*, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> dict:
     """Generate pre-signed URL for package upload or handle direct upload.
 
     For large files: Returns pre-signed S3 URL for direct browser upload
@@ -26,7 +33,10 @@ def upload_package(*, path_params: dict = None, body: dict = None, security: dic
     branch = path_params.get("branch")
     build = path_params.get("build")
 
-    deployment_details = DeploymentDetails(**path_params)
+    if not all([portfolio, app, branch, build]):
+        raise BadRequestException("Missing required path parameters")
+
+    deployment_details = DeploymentDetails.model_validate(path_params)
 
     # Extract file info from body
     file_name = body.get("fileName")
@@ -40,12 +50,12 @@ def upload_package(*, path_params: dict = None, body: dict = None, security: dic
     # Determine upload strategy based on file size
     if file_size > 5 * 1024 * 1024:  # 5MB threshold
         # Large file - use pre-signed URL
-        return generate_presigned_upload_url(portfolio, app, branch, build, file_name, content_type)
+        return generate_presigned_upload_url(portfolio, app, branch, build, file_name, content_type)  # type: ignore
     else:
         # Small file - handle direct upload
         if not file_content:
             raise BadRequestException("fileContent is required for files under 5MB")
-        return handle_direct_upload(portfolio, app, branch, build, file_name, file_content, content_type)
+        return handle_direct_upload(portfolio, app, branch, build, file_name, file_content, content_type)  # type: ignore
 
 
 def generate_presigned_upload_url(portfolio: str, app: str, branch: str, build: str, file_name: str, content_type: str) -> dict:
@@ -92,7 +102,7 @@ def generate_presigned_upload_url(portfolio: str, app: str, branch: str, build: 
         }
 
     except ClientError as e:
-        raise UnknownException(f"Failed to generate upload URL: {str(e)}", exception=e)
+        raise UnknownException(f"Failed to generate upload URL: {str(e)}")
 
 
 def handle_direct_upload(
@@ -137,7 +147,7 @@ def handle_direct_upload(
         }
 
     except Exception as e:
-        raise UnknownException(f"Failed to upload file: {str(e)}", exception=e)
+        raise UnknownException(f"Failed to upload file: {str(e)}")
 
 
 def get_region() -> str:

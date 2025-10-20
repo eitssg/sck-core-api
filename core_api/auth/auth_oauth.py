@@ -1,4 +1,4 @@
-from typing import Set, Optional, Tuple
+from typing import Set, Optional, Tuple, Any
 
 import os
 import hashlib
@@ -382,7 +382,7 @@ def oauth_authorize(
         return RedirectResponse(url=ui_login)
 
     # 4) Database validation (client lookup) - AFTER auth check and rate limiting
-    app_info: ClientFact = get_oauth_app_info(client_id)
+    app_info: ClientFact | None = get_oauth_app_info(client_id)
     if not app_info:
         log.warn("Unknown client in authorize", details={"client_id": client_id})
         return RedirectResponse(url=_error_bridge("cid"))
@@ -431,8 +431,7 @@ def oauth_authorize(
             "code_challenge_method": code_challenge_method if code_challenge else None,
         }
 
-        result = AuthActions.create(**authorization)
-        authz = Authorizations(**result.data)
+        authz = AuthActions.create(**authorization)
 
         # Avoid logging the raw code/PKCE values in full; show presence and last 4
         safe_details = authz.model_dump(exclude_none=False)
@@ -456,11 +455,10 @@ def oauth_authorize(
     return RedirectResponse(url=redirect_back)
 
 
-def _get_token_authorization(app_info: ClientFact, code: str) -> Authorizations:
+def _get_token_authorization(app_info: ClientFact, code: str) -> Authorizations | None:
     try:
         # Will throw "Not found" if no such code for client or already used
-        rec = AuthActions.patch(client=app_info.client, code=code, client_id=app_info.client_id, used=True)
-        authz = Authorizations(**rec.data)
+        authz = AuthActions.patch(client=app_info.client, code=code, client_id=app_info.client_id, used=True)
         return authz
     except Exception as e:
         log.warn(
@@ -572,12 +570,12 @@ def _authorization_code_grant(
     return _get_grant_response(cid=authz.client_id, cnm=authz.client, sub=authz.subject, scp=authz.scopes)
 
 
-def _get_aws_credentials(client: str, subject: str) -> tuple[dict, list]:
+def _get_aws_credentials(client: str, subject: str) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         return get_user_access_key(client, subject)
     except Exception as e:
         log.warn("Failed to get AWS credentials", details={"client": client, "subject": subject, "error": str(e)})
-    return {}, [Permission.USER_READ]
+    return {}, {"permissions": [Permission.USER_READ]}
 
 
 def _refresh_token_grant(body: dict, app_info: ClientFact) -> OAuthErrorResponse | OAuthTokenResponse:
@@ -628,7 +626,7 @@ def _get_grant_response(*, cid, cnm, sub, scp) -> OAuthTokenResponse | OAuthErro
             "Refresh token access token creation failed",
             details={"client_id": cid, "user_id": sub, "error": str(e)},
         )
-        return OAuthErrorResponse(code=500, error_description="failed to create access token", exception=e)
+        return OAuthErrorResponse(code=500, error_description="failed to create access token")
 
     # Create new refresh token with client info
     new_refresh = _mint_refresh_token(
@@ -732,7 +730,7 @@ def oauth_token(*, headers: dict, body: dict, **kwargs) -> OAuthTokenResponse | 
             return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate client registration once
-    app_info: ClientFact = get_oauth_app_info(client_id)
+    app_info: ClientFact | None = get_oauth_app_info(client_id)
     if not app_info:
         log.warn("Unknown client on token exchange", details={"client_id": client_id})
         resp = OAuthErrorResponse(code=401, error_description="invalid_client: unknown client")
@@ -849,7 +847,7 @@ def oauth_introspect(*, headers: dict, body: dict, **kwargs) -> OAuthErrorRespon
 
     except Exception as e:
         log.error(f"Token introspection error: {e}")
-        return OAuthErrorResponse(code=500, error_description="introspection_failed", exception=e)
+        return OAuthErrorResponse(code=500, error_description="introspection_failed")
 
 
 def oauth_userinfo(*, cookies: dict, headers: dict, **kwargs) -> OAuthErrorResponse | OAuthUserInfoResponse:
@@ -872,10 +870,10 @@ def oauth_userinfo(*, cookies: dict, headers: dict, **kwargs) -> OAuthErrorRespo
         return OAuthErrorResponse(code=429, error_description="rate_limited")
 
     # Validate access token
-    jwt_payload, _ = get_authenticated_user(cookies=cookies, headers=headers)
+    jwt_payload, _ = get_authenticated_user(headers=headers)
 
     # Ensure this is an access token
-    if not jwt_payload or jwt_payload.typ != "access":
+    if not jwt_payload or not jwt_payload.cnm or jwt_payload.typ != "access":
         return OAuthErrorResponse(code=401, error_description="invalid_token: access token required")
 
     try:
@@ -883,7 +881,7 @@ def oauth_userinfo(*, cookies: dict, headers: dict, **kwargs) -> OAuthErrorRespo
         profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name="default")
     except Exception as e:
         log.debug(f"Failed to retrieve user profile: {str(e)}")
-        return OAuthErrorResponse(code=404, error_description="User Information unavailable", exception=e)
+        return OAuthErrorResponse(code=404, error_description="User Information unavailable")
 
     return OAuthUserInfoResponse(
         sub=jwt_payload.sub,
@@ -930,7 +928,7 @@ def oauth_jwks(*, headers: dict, **kwargs) -> OAuthErrorResponse | OAuthJWKSResp
 
     except Exception as e:
         log.error(f"JWKS endpoint error: {e}")
-        return OAuthErrorResponse(code=500, error_description="jwks_failed", exception=e)
+        return OAuthErrorResponse(code=500, error_description="jwks_failed")
 
 
 auth_oauth_endpoints = {

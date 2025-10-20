@@ -19,20 +19,20 @@ zone_facts:
             type: cidr
             vpc_id: vpc-0abcdef1234567890
             name: core-automation-private-vpc
-            cidr: 10.0.0.0/16
+            cidr: [10.0.0.0/16]
         public:
             description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
             type: cidr
             vpc_id: vpc-1234567890abcdef0
             name: core-automation-public-vpc
-            cidr: 10.0.1.0/24
+            cidr: [10.0.1.0/24]
       subnet_aliases:
         public:
             - subnet_id: sn-0fedcba9876543210
               name: core-automation-public-subnet-1
               availability_zone: us-east-1a
               cidr: 10.0.1.0/24
-            - id: sn-0123456789abcdef0
+            - subnet_id: sn-0123456789abcdef0
               name: core-automation-public-subnet-2
               availability_zone: us-east-1b
               cidr: 10.0.1.0/24
@@ -105,20 +105,20 @@ zone_facts:
             type: cidr
             vpc_id: vpc-0abcdef1234567890
             name: core-automation-private-vpc
-            cidr: 10.0.0.0/16
+            cidr: [10.0.0.0/16]
         public:
             description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
             type: cidr
             vpc_id: vpc-1234567890abcdef0
             name: core-automation-public-vpc
-            cidr: 10.0.1.0/24
+            cidr: [10.0.1.0/24]
       subnet_aliases:
         public:
             - subnet_id: sn-0fedcba9876543210
               name: core-automation-public-subnet-1
               availability_zone: us-east-1a
               cidr: 10.0.1.0/24
-            - id: sn-0123456789abcdef0
+            - subnet_id: sn-0123456789abcdef0
               name: core-automation-public-subnet-2
               availability_zone: us-east-1b
               cidr: 10.0.1.0/24
@@ -191,20 +191,20 @@ zone_facts:
             type: cidr
             vpc_id: vpc-0abcdef1234567890
             name: core-automation-private-vpc
-            cidr: 10.0.0.0/16
+            cidr: [10.0.0.0/16]
         public:
             description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
             type: cidr
             vpc_id: vpc-1234567890abcdef0
             name: core-automation-public-vpc
-            cidr: 10.0.1.0/24
+            cidr: [10.0.1.0/24]
       subnet_aliases:
         public:
             - subnet_id: sn-0fedcba9876543210
               name: core-automation-public-subnet-1
               availability_zone: us-east-1a
               cidr: 10.0.1.0/24
-            - id: sn-0123456789abcdef0
+            - subnet_id: sn-0123456789abcdef0
               name: core-automation-public-subnet-2
               availability_zone: us-east-1b
               cidr: 10.0.1.0/24
@@ -277,20 +277,20 @@ zone_facts:
             type: cidr
             vpc_id: vpc-0abcdef1234567890
             name: core-automation-private-vpc
-            cidr: 10.0.0.0/16
+            cidr: [10.0.0.0/16]
         public:
             description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
             type: cidr
             vpc_id: vpc-1234567890abcdef0
             name: core-automation-public-vpc
-            cidr: 10.0.1.0/24
+            cidr: [10.0.1.0/24]
       subnet_aliases:
         public:
             - subnet_id: sn-0fedcba9876543210
               name: core-automation-public-subnet-1
               availability_zone: us-east-1a
               cidr: 10.0.1.0/24
-            - id: sn-0123456789abcdef0
+            - subnet_id: sn-0123456789abcdef0
               name: core-automation-public-subnet-2
               availability_zone: us-east-1b
               cidr: 10.0.1.0/24
@@ -363,20 +363,20 @@ zone_facts:
             type: cidr
             vpc_id: vpc-0abcdef1234567890
             name: core-automation-private-vpc
-            cidr: 10.0.0.0/16
+            cidr: [10.0.0.0/16]
         public:
             description: "'public' is REQUIRED by Core Automation. Do not change this value. You may add additional VPC aliases as required."
             type: cidr
             vpc_id: vpc-1234567890abcdef0
             name: core-automation-public-vpc
-            cidr: 10.0.1.0/24
+            cidr: [10.0.1.0/24]
       subnet_aliases:
         public:
             - subnet_id: sn-0fedcba9876543210
               name: core-automation-public-subnet-1
               availability_zone: us-east-1a
               cidr: 10.0.1.0/24
-            - id: sn-0123456789abcdef0
+            - subnet_id: sn-0123456789abcdef0
               name: core-automation-public-subnet-2
               availability_zone: us-east-1b
               cidr: 10.0.1.0/24

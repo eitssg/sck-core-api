@@ -28,6 +28,11 @@ class Permission(str, Enum):
     PROFILE_WRITE = "profile:write"  # edit/view
     PROFILE_ADMIN = "profile:admin"  # create/delete/edit/view
 
+    # Event Log
+    EVENT_READ = "event:read"  # view
+    EVENT_CREATE = "event:create"  # create
+    EVENT_ADMIN = "event:admin"  # delete/edit/view
+
     # All Deployment permissions (all deployed items... portfolios, apps, branches, builds, components)
     DEPLOYMENT_ITEM_READ = "item:*:read"  # view
     DEPLOYMENT_ITEM_WRITE = "item:*:write"  # edit/view
@@ -106,6 +111,14 @@ class Permission(str, Enum):
     DATA_READ = "data:read"
     DATA_WRITE = "data:write"
     DATA_ADMIN = "data:admin"
+
+    TASK_UPLOAD = "task:upload"
+    TASK_COMPILE = "task:compile"
+    TASK_VERIFY = "task:verify"
+    TASK_PLAN = "task:plan"
+    TASK_APPLY = "task:apply"
+    TASK_DEPLOY = "task:deploy"
+    TASK_TEARDOWN = "task:teardown"
 
 
 class Role(str, Enum):

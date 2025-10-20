@@ -1,7 +1,8 @@
-from profile import Profile
-from typing import Optional
+from typing import Optional, Any
+
 from datetime import datetime, timezone, timedelta
 import random
+import secrets
 import os
 import re
 import uuid
@@ -201,7 +202,7 @@ def _verify_captcha(token: Optional[str], ip: Optional[str]) -> bool:
         return False
 
     try:
-        with httpx.AsyncClient(timeout=10) as client:
+        with httpx.Client(timeout=10) as client:
             if ts_secret:
                 r = client.post(
                     "https://challenges.cloudflare.com/turnstile/v0/siteverify",
@@ -266,7 +267,7 @@ def user_signup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respon
     if not client_id:
         return ErrorResponse(code=400, message="client_id is required")
 
-    app_info: ClientFact = get_oauth_app_info(client_id=client_id)
+    app_info: ClientFact | None = get_oauth_app_info(client_id=client_id)
     if not app_info:
         return ErrorResponse(code=400, message="invalid_client")
 
@@ -279,7 +280,7 @@ def user_signup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respon
         # SSO path: use identity cookie for user_id; encrypt with server key
         user_id = ident.get("sub") or ident.get("email")
         email = ident.get("email") or ident.get("sub")
-        password = random.token_urlsafe(16)  # Dummy password for encryption
+        password = secrets.token_urlsafe(16)  # Dummy password for encryption
 
     else:
         # Email/password path
@@ -300,6 +301,12 @@ def user_signup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respon
         if not ok:
             return ErrorResponse(code=400, message="Invalid captcha")
 
+    if not user_id:
+        return ErrorResponse(code=400, message="Invalid user identifier")
+
+    if not email:
+        return ErrorResponse(code=400, message="Invalid email address")
+
     # During sign-up, there may or may not be aws credentials.
     # If there are not credentials, we'll safe the password, and we'll add
     # AWS credentials to the user profile at a later time.
@@ -312,14 +319,16 @@ def user_signup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respon
     try:
         # Load in UserProfile for validation with Pydantic (includes email validation)
 
-        data = UserProfile(
-            user_id=user_id,
-            profile_name="default",
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-            credentials=encrypted_credentials,
-            email_verified=False,
+        data = UserProfile.model_validate(
+            {
+                "user_id": user_id,
+                "profile_name": "default",
+                "email": email,
+                "first_name": first_name,
+                "last_name": last_name,
+                "credentials": encrypted_credentials,
+                "email_verified": False,
+            }
         ).model_dump()
     except Exception as e:
         # Pydantic validation errors (including invalid email) are client errors
@@ -370,7 +379,7 @@ def get_user_profile(*, cookies: dict, headers: dict, path_params: dict, query_p
     """
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if jwt_payload is None:
+    if jwt_payload is None or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized")
 
     # Rate limit key standardized to auth:login
@@ -384,7 +393,7 @@ def get_user_profile(*, cookies: dict, headers: dict, path_params: dict, query_p
     profile_name = path_params.get("profile_name", profile_name) if path_params else profile_name
 
     try:
-        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        profile: UserProfile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
         data = profile.model_dump(by_alias=False, mode="json")
 
         if "Password" in data.get("credentials", {}):
@@ -421,7 +430,7 @@ def update_user_profile(*, cookies: dict, headers: dict, path_params: dict | Non
     """
     # Get authenticated user first
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if jwt_payload is None:
+    if jwt_payload is None or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized")
 
     # Rate limit key standardized to auth:profile:update
@@ -469,14 +478,15 @@ def update_user_profile(*, cookies: dict, headers: dict, path_params: dict | Non
             )
 
             # Get existing credentials envelope or create new one
-            existing_credentials = profile.credentials
+            existing_credentials: dict[str, Any] | None = profile.credentials
             if existing_credentials is None:
                 existing_credentials = {"created_at": datetime.now(timezone.utc).isoformat()}
 
             existing_credentials["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-            new_aws_creds = encrypt_aws_credentials(aws_access_key, aws_secret_key)
-            existing_credentials.update(new_aws_creds)
+            new_aws_creds: dict[str, Any] | None = encrypt_aws_credentials(aws_access_key, aws_secret_key)
+            if new_aws_creds is not None:
+                existing_credentials.update(new_aws_creds)
 
             # Preserve password hash if it exists
             update_data["credentials"] = existing_credentials
@@ -519,7 +529,7 @@ def list_user_profiles(*, cookies: dict, headers: dict, body: dict, **kwargs) ->
     """
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if jwt_payload is None:
+    if jwt_payload is None or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized")
 
     # Rate limit key standardized to auth:profile:list
@@ -551,7 +561,7 @@ def list_user_profiles(*, cookies: dict, headers: dict, body: dict, **kwargs) ->
 def create_user_profile(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if jwt_payload is None:
+    if jwt_payload is None or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized")
 
     # Rate limit key standardized to auth:profile:create
@@ -652,7 +662,7 @@ def delete_user_profile(*, cookies: dict, headers: dict, path_params: dict | Non
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
 
-    if jwt_payload is None:
+    if jwt_payload is None or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized")
 
     # Rate limit key standardized to auth:profile:delete
@@ -861,7 +871,7 @@ def user_login(*, headers: dict, body: dict, **kwargs) -> Response:
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
             return ErrorResponse(code=429, message="rate_limited")
 
-        app_info: ClientFact = get_oauth_app_info(client_id)
+        app_info: ClientFact | None = get_oauth_app_info(client_id)
         if not app_info:
             log.warn("Invalid client attempted login: %s", client_id)
             return ErrorResponse(code=400, message="invalid_client")
@@ -979,45 +989,58 @@ def _queue_email_via_security_chain(client: str, email_type: str, to_email: str,
     """Queue email sending via API→Invoker→Runner→StepFunction security chain."""
 
     try:
+        automation_account = util.get_automation_account()
+        automation_region = util.get_automation_region()
+        if not automation_account or not automation_region:
+            raise ValueError("Automation AWS Account and Region are not configured")
+
         # You must define which AWS Account has the permission to send emails
         # Will also need to be able to assume the role for the email sending
         # for the region that needs to send email
-        spec = SendEmailActionSpec(
-            account=util.get_automation_account(),
-            region=util.get_automation_region(),
-            to_email=to_email,
-            subject=_get_email_subject(email_type),
-            template_type=email_type,
-            template_data=template_data,
+        spec = SendEmailActionSpec.model_validate(
+            {
+                "account": automation_account,
+                "region": automation_region,
+                "to_email": to_email,
+                "subject": _get_email_subject(email_type),
+                "template_type": email_type,
+                "template_data": template_data,
+            }
         )
 
-        metadata = ActionMetadata(
-            name="system-send-email",
-            namespace="email",
-            description="Send email action",
+        metadata = ActionMetadata.model_validate(
+            {
+                "name": "system-send-email",
+                "namespace": "email",
+                "description": "Send email action",
+            }
         )
 
-        send_email_action = SendEmailActionResource(metadata=metadata, spec=spec)
+        send_email_action = SendEmailActionResource.model_validate({"metadata": metadata, "spec": spec})
 
         # Load the applications to the deployment package
-        package_details = PackageDetails(actions=[send_email_action])
+        package_details = PackageDetails.model_validate({"actions": [send_email_action]})
 
-        # Defines the applicationperforming the action
-        deployment_details = DeploymentDetails(
-            client=client,  # Customer: core, acme, bbr, etc.
-            portfolio="core-automation",  # System: automation (email system runs in automation portfolio)
-            # branch=None, build=None (not specified for portfolio scope)
+        # Defines the application performing the action
+        deployment_details = DeploymentDetails.model_validate(
+            {
+                "client": client,  # Customer: core, acme, bbr, etc.
+                "portfolio": "core-automation",  # System: automation (email system runs in automation portfolio)
+                # branch=None, build=None (not specified for portfolio scope)
+            }
         )
 
         # Build the task payload for the invoker.  Note, you can't put Jinja2 action payloads in this method.
         # see the "compile" task for core_deployspec for that.
-        task_payload = TaskPayload(
-            correlation_id=log.get_correlation_id(),
-            client=client,
-            task="deploy",  # "deploy" means "run the actions in this package"
-            deployment_details=deployment_details,
-            package=package_details,
-            type="deployspec",  # "deployspec" means "here is a full package spec"
+        task_payload = TaskPayload.model_validate(
+            {
+                "correlation_id": log.get_correlation_id(),
+                "client": client,
+                "task": "deploy",  # "deploy" means "run the actions in this package"
+                "deployment_details": deployment_details,
+                "package": package_details,
+                "type": "deployspec",  # "deployspec" means "here is a full package spec"
+            }
         )
 
         log.debug("Email task queued:", details=task_payload.model_dump())
@@ -1033,7 +1056,7 @@ def _queue_email_via_security_chain(client: str, email_type: str, to_email: str,
             log.debug("Email task invoked via Lambda", details={"response": response})
 
     except ValueError as ve:
-        errors = ve.errors() if hasattr(ve, "errors") else str(ve)
+        errors = getattr(ve, "errors", str(ve))
         log.warn("Failed to queue email via security chain: %s", errors)
     except Exception as e:
         log.warn("Failed to queue email via security chain: %s", str(e))
@@ -1081,11 +1104,10 @@ def verify_secret(*, cookies: dict, headers: dict, body: dict, **kwargs):
             return ErrorResponse(code=404, message="Verification code not found in database")
 
         key = f"forgot_password:{jwt_token.jti}"
-        result = ForgotPasswordActions.get(client=client, code=key)
-        if not result:
+        try:
+            data: ForgotPassword = ForgotPasswordActions.get(client=client, code=key)
+        except NotFoundException:
             return ErrorResponse(code=404, message="Forgot password request not found")
-
-        data = ForgotPassword(**result.data)
 
         if data.verified:
             return ErrorResponse(code=400, message="Secret already verified")
@@ -1111,7 +1133,7 @@ def set_new_password(*, cookies: dict, headers: dict, body: dict, **kwargs):
         log.debug(f"Failed to get authenticated password token: {str(e)}")
         return ErrorResponse(code=401, message=f"Unauthorized - missing or invalid token: {str(e)}")
 
-    if not jwt_token:
+    if not jwt_token or not jwt_token.cnm:
         log.debug("Authorization token is missing or expired")
         return ErrorResponse(
             code=401, message="Authorization token is missing or expired.  Please request a new authorization code."
@@ -1135,8 +1157,7 @@ def set_new_password(*, cookies: dict, headers: dict, body: dict, **kwargs):
 
     try:
         key = f"forgot_password:{jti}"
-        result = ForgotPasswordActions.get(client=client, code=key)
-        forgot_password = ForgotPassword(**result.data)
+        forgot_password = ForgotPasswordActions.get(client=client, code=key)
     except Exception as e:
         log.debug(f"Failed to get forgot password request: {str(e)}")
         return ErrorResponse(code=400, message="Forgot password request not found")
@@ -1468,6 +1489,9 @@ def resend_verification_email(*, headers: dict, body: dict, **kwargs) -> Respons
         log.debug(f"Profile not found for user {email}: {e}")
         return ErrorResponse(code=404, message="User not found")
 
+    if not profile.email:
+        return ErrorResponse(code=400, message="No email address configured for user")
+
     if profile.email_verified:
         return ErrorResponse(code=400, message="Email is already verified")
 
@@ -1508,7 +1532,7 @@ def mfa_totp_setup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Res
               }
     """
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if not jwt_payload:
+    if not jwt_payload or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
     # Rate limit key standardized to auth:mfa:setup
@@ -1560,7 +1584,7 @@ def mfa_totp_setup(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Res
 def mfa_totp_confirm(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Response:
     """Confirm TOTP MFA setup by validating the provided TOTP code."""
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if not jwt_payload:
+    if not jwt_payload or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
     # Rate limit key standardized to auth:mfa:confirm
@@ -1586,9 +1610,7 @@ def mfa_totp_confirm(*, cookies: dict, headers: dict, body: dict, **kwargs) -> R
         return ErrorResponse(code=401, message="invalid_code")
 
     try:
-        result = ProfileActions.patch(
-            client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, **{"mfa_enabled": True}
-        )
+        result = ProfileActions.patch(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name, mfa_enabled=True)
         log.debug("Updated user profile to enable MFA", details=result.model_dump())
     except Exception as e:
         log.error(f"Failed to update user profile to enable MFA: {e}")
@@ -1636,10 +1658,19 @@ def mfa_verify(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respons
         return ErrorResponse(code=429, message="rate_limited")
 
     if mfa_payload:
+
+        if not mfa_payload.cnm or not mfa_payload.cid:
+            return ErrorResponse(code=401, message="Unauthorized - missing or invalid MFA token")
+
         client_id = mfa_payload.cid
         client = mfa_payload.cnm
         user_id = mfa_payload.sub
-    else:
+
+    elif jwt_payload:
+
+        if not jwt_payload.cnm or not jwt_payload.cid:
+            return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
+
         client_id = jwt_payload.cid
         client = jwt_payload.cnm
         user_id = jwt_payload.sub
@@ -1666,7 +1697,7 @@ def mfa_verify(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respons
                 if bcrypt.checkpw(code.encode("utf-8"), hashed.encode("utf-8")):
                     verified = True
                     remaining = [h for h in profile.recovery_codes if h != hashed]
-                    ProfileActions.patch(client=client, user_id=user_id, profile_name=profile_name, **{"recovery_codes": remaining})
+                    ProfileActions.patch(client=client, user_id=user_id, profile_name=profile_name, recovery_codes=remaining)
                     break
             except Exception:
                 continue
@@ -1676,7 +1707,7 @@ def mfa_verify(*, cookies: dict, headers: dict, body: dict, **kwargs) -> Respons
 
     if not profile.mfa_enabled:
         try:
-            ProfileActions.patch(client=client, user_id=user_id, profile_name=profile_name, **{"mfa_enabled": True})
+            ProfileActions.patch(client=client, user_id=user_id, profile_name=profile_name, mfa_enabled=True)
         except Exception:
             pass
 
@@ -1705,7 +1736,7 @@ def mfa_status(*, cookies: dict, headers: dict, query_params: dict, **kwargs) ->
              "code": 200
     """
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if not jwt_payload:
+    if not jwt_payload or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
     query_params = query_params or {}
@@ -1755,17 +1786,26 @@ def get_permissions(*, cookies: dict, headers: dict, query_params: dict, **kwarg
     """
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
-    if not jwt_payload:
+    if not jwt_payload or not jwt_payload.cnm:
         return ErrorResponse(code=401, message="Unauthorized - missing or invalid token")
 
-    resource = query_params.get("resource")
-    action = query_params.get("action")
+    resource = query_params.get("resource", "")
+    action = query_params.get("action", "read")
     profile_name = query_params.get("profile_name", "default")
 
     try:
-        profile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
+        profile: UserProfile = ProfileActions.get(client=jwt_payload.cnm, user_id=jwt_payload.sub, profile_name=profile_name)
 
-        explaination = _explain_permissions(profile.permissions, resource, action)
+        permissions = profile.permissions or {}
+
+        perms = []
+        for k, v in permissions.items():
+            if isinstance(v, list):
+                perms.extend(f"{k}:{action}" for action in v)
+            elif isinstance(v, str):
+                perms.append(f"{k}:{v}")
+
+        explaination = _explain_permissions(perms, resource, action)
 
         return SuccessResponse(data=explaination)
     except Exception as e:

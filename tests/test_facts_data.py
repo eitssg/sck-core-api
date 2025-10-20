@@ -10,6 +10,7 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             "POST",
             "/api/v1/registry/clients",
             {
+                "client_id": "grp-1234567890",
                 "client": "eits",
                 "organization_id": "o-1234567890",
                 "organization_name": "My Organization",
