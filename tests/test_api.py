@@ -27,7 +27,7 @@ from core_api.security import Permission
 from .test_api_data import api_endpoints
 
 # Create a FastAPI test client the same that uvicorn will use
-client = TestClient(get_app())
+http_client = TestClient(get_app())
 
 from .bootstrap import *
 
@@ -54,7 +54,7 @@ def session_token() -> str:
                 "AccessKeyId": "TESTKEYXXXXXXX",
                 "SecretAccessKey": "TESTSECRETXXXXXXX",
             },
-            client_id="cid_1",
+            client_id="core_669a5fdd8be7",  # Our test seed data uses this client ID
             client="core",
             subject="simple-cloud-kit",
             scope="sck:admin sck:read sck:write",
@@ -90,10 +90,22 @@ def teardown_action(bootstrap_dynamo):
         }
     )
 
-    task_payload = TaskPayload(
-        task="teardown",  # Pydantic models use snake_case
-        deployment_details=DeploymentDetails(portfolio="simple-cloud-kit", app="api", branch="main", build="1"),
+    # IRL, these details would come from the deployment context calculated by environment variables
+    # Typcially client_id is set by the program environment and client is defaulted from environment variables
+    # or configuration files.
+
+    dd = DeploymentDetails.model_validate(
+        {
+            "client_id": "core_669a5fdd8be7",  # Our test seed data uses this client ID
+            "client": "core",
+            "portfolio": "simple-cloud-kit",
+            "app": "api",
+            "branch": "main",
+            "build": "1",
+        }
     )
+
+    task_payload = TaskPayload(Task="teardown", DeploymentDetails=dd)
 
     # Pydantic models use snake_case attributes
     bucket_name = task_payload.actions.bucket_name
@@ -131,20 +143,20 @@ def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action, clie
     assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
     assert teardown_action  # Fixed: ensure teardown action is available
 
-    client.headers = client_headers
+    http_client.headers = client_headers
 
     try:
         method, path, body = http_path
         if method == "GET":
-            response = client.get(path)
+            response = http_client.get(path)
         elif method == "POST":
-            response = client.post(path, json=body)
+            response = http_client.post(path, json=body)
         elif method == "PUT":
-            response = client.put(path, json=body)
+            response = http_client.put(path, json=body)
         elif method == "DELETE":
-            response = client.delete(path)
+            response = http_client.delete(path)
         elif method == "PATCH":
-            response = client.patch(path, json=body)
+            response = http_client.patch(path, json=body)
         else:
             assert False, f"Unknown method: {method}"
 

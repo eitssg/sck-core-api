@@ -8,6 +8,7 @@ Design notes:
     via Response.message.
 """
 
+from typing import Any
 import os
 import base64
 from datetime import datetime, timedelta, timezone
@@ -80,12 +81,10 @@ def _register_begin(**kwargs) -> dict:
     exclude_credentials = []
     if user_id:
         try:
-            existing = PassKeyActions.list(user_id=user_id)
-            if existing and existing.data:
-                for item in existing.data:
-                    cid = item.get("key_id")
-                    if cid:
-                        exclude_credentials.append({"type": "public-key", "id": cid})
+            existing, _ = PassKeyActions.list(user_id=user_id)
+            for item in existing:
+                if item.key_id:
+                    exclude_credentials.append({"type": "public-key", "id": item.key_id})
         except Exception:
             # Non-fatal: proceed without exclude list
             pass
@@ -184,16 +183,14 @@ def _authenticate_begin(**kwargs) -> dict:
         allow_credentials = kwargs["allow_credentials"]
     elif user_id:
         try:
-            existing = PassKeyActions.list(user_id=user_id)
-            if existing and existing.data:
-                for item in existing.data:
-                    cid = item.get("key_id")
-                    if cid:
-                        transports = item.get("transports") or None
-                        entry = {"type": "public-key", "id": cid}
-                        if transports:
-                            entry["transports"] = transports
-                        allow_credentials.append(entry)
+            existing, _ = PassKeyActions.list(user_id=user_id)
+            for item in existing:
+                if item.key_id:
+                    transports = item.transports or None
+                    entry: dict[str, Any] = {"type": "public-key", "id": item.key_id}
+                    if transports:
+                        entry["transports"] = transports
+                    allow_credentials.append(entry)
         except Exception:
             pass
 
@@ -241,7 +238,7 @@ def _authenticate_complete(**kwargs) -> dict:
     return {k: v for k, v in data.items() if v is not None}
 
 
-def register_begin(*, headers: dict | None = None, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
+def register_begin(*, headers: dict, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -262,6 +259,10 @@ def register_begin(*, headers: dict | None = None, cookies: dict, query_params: 
         options = _register_begin(**merged)
 
         user_id = merged.get("user_id")
+
+        if not user_id:
+            return ErrorResponse(code=400, message="user_id is required")
+
         challenge = options.get("challenge")
 
         token = JwtPayload(
@@ -283,7 +284,7 @@ def register_begin(*, headers: dict | None = None, cookies: dict, query_params: 
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def register_complete(*, headers: dict | None = None, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
+def register_complete(*, headers: dict, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -303,6 +304,9 @@ def register_complete(*, headers: dict | None = None, cookies: dict, query_param
 
     if tok.sub != jwt_payload.sub:
         return ErrorResponse(code=400, message="You cannot register a passkey for another user")
+
+    if not tok.cch:
+        return ErrorResponse(code=400, message="Invalid challenge provided")
 
     merged = _merge_params(query_params, body)
 
@@ -341,6 +345,10 @@ def register_complete(*, headers: dict | None = None, cookies: dict, query_param
         client_data_json = base64url_to_bytes(client_data_b64) if isinstance(client_data_b64, str) else client_data_b64
     except Exception as e:
         return ErrorResponse(code=400, message=f"Invalid attestation payload: {str(e)}")
+
+    if not isinstance(attestation_data, (bytes, bytearray)) or not isinstance(client_data_json, (bytes, bytearray)):
+        return ErrorResponse(code=400, message="Invalid attestation payload")
+
     transports = merged.get("transports")
 
     register_credential = RegistrationCredential(
@@ -420,9 +428,11 @@ def register_complete(*, headers: dict | None = None, cookies: dict, query_param
             transports=transports,
             device_type=device_type_str,
         )
-        response = PassKeyActions.create(**pass_key)
-        # Surface a friendly message; code remains int
-        response.message = "registered"
+
+        passkey = PassKeyActions.create(**pass_key)
+        data = passkey.model_dump(by_alias=False, mode="json")
+
+        response = SuccessResponse(data=data, message="registered")
         response.delete_cookie(PASSKEY_CHALLENGE_COOKIE, path="/")
         return response
 
@@ -430,13 +440,11 @@ def register_complete(*, headers: dict | None = None, cookies: dict, query_param
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def webauthn_authenticate_begin(*, query_params: dict, body: dict, **kwargs) -> Response:
+def webauthn_authenticate_begin(*, headers: dict, query_params: dict, body: dict, **kwargs) -> Response:
 
     merged = _merge_params(query_params, body)
 
     try:
-        # Rate-limit before issuing a new challenge/cookie
-        headers = kwargs.get("headers") if isinstance(kwargs, dict) else None
         if not check_rate_limit(headers, "passkey_auth", max_attempts=10, window_minutes=15):
             log.warn("Rate limit exceeded for Passkey auth begin")
             return RedirectResponse(url="/error?error=rle&redirect=/login")
@@ -464,9 +472,7 @@ def webauthn_authenticate_begin(*, query_params: dict, body: dict, **kwargs) -> 
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def webauthn_authenticate_complete(
-    *, headers: dict | None = None, cookies: dict | None = None, query_params: dict, body: dict, **kwargs
-) -> Response:
+def webauthn_authenticate_complete(*, headers: dict, cookies: dict, query_params: dict, body: dict, **kwargs) -> Response:
 
     merged = _merge_params(query_params, body)
 
@@ -494,7 +500,7 @@ def webauthn_authenticate_complete(
         or merged.get("clientDataJSON_challenge")
         or merged.get("clientDataChallenge")
     )
-    if not client_challenge or client_challenge != tok.cch:
+    if not client_challenge or not tok.cch or client_challenge != tok.cch:
         return ErrorResponse(code=400, message="challenge_mismatch")
 
     # Rate-limit after validating the issued challenge, before any DB or crypto
@@ -510,8 +516,7 @@ def webauthn_authenticate_complete(
 
     # Load stored passkey to supply public key and current counter into verification
     try:
-        stored_pk_resp = PassKeyActions.get(user_id=user_id, key_id=key_id)
-        stored_pk = PassKey(**stored_pk_resp.data)
+        stored_pk = PassKeyActions.get(user_id=user_id, key_id=key_id)
         # public_key may be base64url string; decode to bytes if so
         pk_bytes = None
         if isinstance(stored_pk.public_key, (bytes, bytearray)):
@@ -552,7 +557,7 @@ def webauthn_authenticate_complete(
             authenticator_data=base64url_to_bytes(authenticator_data_b64 or ""),
             signature=base64url_to_bytes(signature_b64 or ""),
             user_handle=(
-                base64url_to_bytes(merged.get("user_handle"))
+                base64url_to_bytes(merged.get("user_handle", ""))
                 if isinstance(merged.get("user_handle"), str)
                 else merged.get("user_handle")
             ),
@@ -564,7 +569,7 @@ def webauthn_authenticate_complete(
         expected_challenge=base64url_to_bytes(tok.cch),
         expected_rp_id=os.getenv("CLIENT_DOMAIN") or "localhost",
         expected_origin=os.getenv("CLIENT_HOST") or "http://localhost:8080",
-        credential_public_key=pk_bytes,
+        credential_public_key=pk_bytes or b'',
         credential_current_sign_count=current_count,
         require_user_verification=True,
     )
@@ -572,8 +577,7 @@ def webauthn_authenticate_complete(
     try:
         # Prefer client from challenge token
         client_slug = tok.cnm or AUTH_CLIENT
-        response = ProfileActions.get(client=client_slug, user_id=user_id, profile_name="default")
-        profile: UserProfile = UserProfile(**response.data)
+        profile: UserProfile = ProfileActions.get(client=client_slug, user_id=user_id, profile_name="default")
         if not profile.is_active:
             return ErrorResponse(code=403, message="User account is disabled")
     except Exception:
@@ -645,7 +649,7 @@ def webauthn_authenticate_complete(
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_passkey(*, headers: dict | None = None, cookies: dict | None = None, path_params: dict, **kwargs) -> Response:
+def delete_passkey(*, headers: dict, cookies: dict, path_params: dict, **kwargs) -> Response:
 
     jwt_payload, _ = get_authenticated_user(cookies=cookies)
     if not jwt_payload:
@@ -663,8 +667,8 @@ def delete_passkey(*, headers: dict | None = None, cookies: dict | None = None, 
         return ErrorResponse(code=400, message="key_id is required")
 
     try:
-        response = PassKeyActions.delete(user_id=user_id, key_id=key_id)
-        return response
+        PassKeyActions.delete(user_id=user_id, key_id=key_id)
+        return SuccessResponse(code=204)
 
     except Exception as e:
         return ErrorResponse(code=500, message=str(e), exception=e)
@@ -690,8 +694,9 @@ def update_passkey(*, cookies: dict | None = None, query_params: dict, path_para
 
     try:
 
-        response = PassKeyActions.patch(user_id=user_id, key_id=key_id, **merged)
-        return response
+        result = PassKeyActions.patch(user_id=user_id, key_id=key_id, **merged)
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
 
     except Exception as e:
         return ErrorResponse(code=500, message=str(e), exception=e)
@@ -706,8 +711,9 @@ def get_passkeys(*, cookies: dict | None = None, query_params: dict, path_params
     user_id = jwt_payload.sub
 
     try:
-        response = PassKeyActions.list(user_id=user_id)
-        return response
+        result, paginator = PassKeyActions.list(user_id=user_id)
+        data = [item.model_dump(by_alias=False, mode="json") for item in result]
+        return SuccessResponse(data=data, metadata=paginator.get_metadata())
 
     except Exception as e:
         return ErrorResponse(code=500, message=str(e), exception=e)

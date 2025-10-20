@@ -388,7 +388,7 @@ def generate_proxy_event(
     return rv
 
 
-def get_user_information(session_token: str, role: Optional[str] = None) -> Optional[CognitoIdentity]:
+def get_user_information(session_token: str, role: Optional[str] = None) -> dict[str, Any] | None:
     """
     Get AWS User Information
     """
@@ -470,8 +470,8 @@ class ProxyContext(BaseModel):
             client={
                 "installation_id": str(uuid.uuid4()),
                 "app_title": "core-api",
-                "app_version_name": __version__,
-                "app_version_code": __version__.replace(".", ""),
+                "app_version_name": "1.3.0",
+                "app_version_code": "130",
                 "app_package_name": "core_api.api",
             },
             environment={

@@ -12,47 +12,51 @@ from core_framework.constants import TR_RESPONSE
 from core_framework.status import RELEASE_REQUESTED, TEARDOWN_REQUESTED, BuildStatus
 from core_framework.models import (
     TaskPayload,
-    DeploymentDetails as DeploymentDetailsClass,
+    DeploymentDetails,
     PackageDetails,
 )
 
 import core_helper.aws as aws
 
-from core_db.exceptions import BadRequestException, NotFoundException
-from core_db.item.branch.models import BranchModel
+from core_db.exceptions import BadRequestException, NotFoundException, ConflictException, ForbiddenException
+
+from core_db.item.build.models import BuildItem
 from core_db.item.build.actions import BuildActions
-from core_db.item.build.models import BuildModel
+from core_db.item.branch.models import BranchItem
+from core_db.item.branch.actions import BranchActions
 
 from core_invoker.handler import handler as invoker_handler
 
 from ..request import RouteEndpoint
-from ..response import Response, SuccessResponse
+from ..security import EnhancedSecurityContext, Permission
+from ..response import Response, SuccessResponse, ErrorResponse
 from ..actions import ApiActions
 
 
 class ApiBuildActions(ApiActions, BuildActions):
 
     @classmethod
-    def __invoker_action_request(cls, action: str, build: BuildModel) -> dict:
+    def __invoker_action_request(cls, action: str, client: str, build: BuildItem) -> dict:
 
-        # Retrieve the branch Parent for this build
-        try:
-            branch = BranchModel.get(build.parent_prn)
-        except DoesNotExist:
-            raise NotFoundException(f"Build {build.prn}: Branch not found: {build.parent_prn}")
+        dd = DeploymentDetails.model_validate(
+            {
+                "Client": client,
+                "Portfolio": util.extract_portfolio(build),
+                "App": util.extract_app(build),
+                "Branch": util.extract_branch(build),
+                "Build": build.name,
+            }
+        )
+
+        pd = PackageDetails.model_validate(
+            {
+                "BucketName": util.get_bucket_name(),
+                "BucketRegion": util.get_bucket_region(),
+            }
+        )
 
         # The release and teardown actions do not require a "Package" definition.
-        payload = TaskPayload(
-            Task=action,
-            DeploymentDetails=DeploymentDetailsClass(
-                Portfolio=util.extract_portfolio(build) or "",
-                App=util.extract_app(build),
-                Branch=branch.name,
-                BranchShortName=branch.short_name,
-                Build=build.name,
-            ),
-            Package=PackageDetails(BucketName=util.get_bucket_name(), BucketRegion=util.get_bucket_region()),
-        )
+        payload = TaskPayload(Task=action, DeploymentDetails=dd, Package=pd)
 
         if util.is_local_mode():
             response = invoker_handler(payload.model_dump())
@@ -66,131 +70,183 @@ class ApiBuildActions(ApiActions, BuildActions):
         return response[TR_RESPONSE]
 
     @classmethod
-    def release(cls, **kwargs) -> Response:
+    def release(cls, client: str, **kwargs) -> Response:
 
-        response = BuildActions.get(**kwargs)
+        try:
+            item: BuildItem = BuildActions.get(client=client, **kwargs)
+        except NotFoundException:
+            return ErrorResponse(message="Build not found", code=404)
 
-        if not response or not response.data or not isinstance(response.data, dict):
-            raise NotFoundException(f"Cannot find build {kwargs}:")
+        if not BuildStatus(item.status).is_allowed_to_release():
+            raise BadRequestException(f"Build {item.prn} is not allowed to be released: {item.status}")
 
-        build = BuildModel(**response.data)
+        item.status = RELEASE_REQUESTED
 
-        if not BuildStatus(build.status).is_allowed_to_release():
-            raise BadRequestException(f"Build {build.prn} is not allowed to be released: {build.status}")
-
-        build.status = RELEASE_REQUESTED
-
-        response = BuildActions.update(**build.to_simple_dict())
+        response = BuildActions.update(client=client, **item.model_dump())
 
         log.info("Build status updated: RELEASE_REQUESTED")
 
         # It can be released, so let's do it
         try:
             # Trigger the release
-            release_response = cls.__invoker_action_request("release", build)
+            release_response = cls.__invoker_action_request("release", client, item)
         except NotFoundException:
             raise
         except ClientError as e:
-            raise BadRequestException(f"AWS Client Error requesting bu8ild releasing: {e}")
+            raise BadRequestException(f"AWS Client Error requesting build releasing: {e}")
 
         if not release_response:
             raise BadRequestException(f"Invalid release response: {release_response}")
 
-        log.info(f"Build {build.prn} release response: ", details=release_response)
+        log.info(f"Build {item.prn} release response: ", details=release_response)
 
-        return SuccessResponse(message=f"Build {build.prn} release requested")
+        return SuccessResponse(message=f"Build {item.prn} release requested")
 
     @classmethod
-    def teardown(cls, **kwargs) -> Response:
+    def teardown(cls, client: str, **kwargs) -> Response:
 
-        response = BuildActions.get(**kwargs)
+        try:
+            item: BuildItem = BuildActions.get(client=client, **kwargs)
+        except NotFoundException:
+            return ErrorResponse(message="Build not found", code=404)
 
-        if not response or not response.data or not isinstance(response.data, dict):
-            raise NotFoundException(f"Cannot find build {kwargs}:")
+        if not BuildStatus(item.status).is_allowed_to_teardown():
+            raise BadRequestException(f"Build {item.prn} is not allowed to be teared down: {item.status}")
 
-        build = BuildModel(**response.data)
+        item.status = TEARDOWN_REQUESTED
 
-        if not BuildStatus(build.status).is_allowed_to_teardown():
-            raise BadRequestException(f"Build {build.prn} is not allowed to be teared down: {build.status}")
-
-        build.status = TEARDOWN_REQUESTED
-
-        response = BuildActions.update(**build.to_simple_dict())
+        response = BuildActions.update(client=client, **item.model_dump())
 
         log.info("Build status updated: TEARDOWN_REQUESTED")
 
         try:
             # Trigger the teardown
-            teardown_response = cls.__invoker_action_request("teardown", build)
+            teardown_response = cls.__invoker_action_request("teardown", client, item)
         except ClientError as e:
             raise BadRequestException(f"AWS Client Error requesting build teardown: {e}")
 
         if not teardown_response:
             raise BadRequestException(f"Invalid teardown response: {teardown_response}")
 
-        log.info(f"Build {build.prn} teardown response: ", details=teardown_response)
+        log.info(f"Build {item.prn} teardown response: ", details=teardown_response)
 
         log.trace("Build teardown response", details=response)
 
-        return SuccessResponse(message=f"Build {build.prn} teardown requested")
+        return SuccessResponse(message=f"Build {item.prn} teardown requested")
 
 
-def get_builds(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.list(**dict(ChainMap(body, pp, qsp)))
+def get_builds(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        results, paginator = ApiBuildActions.list(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = [item.model_dump(by_alias=False, mode="json") for item in results]
+        return SuccessResponse(data=data, metadata=paginator.get_metadata())
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def get_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.get(**dict(ChainMap(body, pp, qsp)))
+def get_build(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        result = ApiBuildActions.get(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def create_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.create(**dict(ChainMap(body, pp, qsp)))
+def create_build(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        result = ApiBuildActions.create(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data, code=201)
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def update_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.update(**dict(ChainMap(body, pp, qsp)))
+def update_build(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        result = ApiBuildActions.update(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.delete(**dict(ChainMap(body, pp, qsp)))
+def delete_build(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        ApiBuildActions.delete(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        return SuccessResponse(code=204)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def release_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.release(**dict(ChainMap(body, pp, qsp)))
+def release_build(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        ApiBuildActions.release(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        return SuccessResponse(code=204)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def teardown_build(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiBuildActions.teardown(**dict(ChainMap(body, pp, qsp)))
+def teardown_build(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
+    try:
+        ApiBuildActions.teardown(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        return SuccessResponse(code=204)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
 # API Gateway Lambda Proxy Integration routes
 item_build_actions: dict[str, RouteEndpoint] = {
-    "GET:/api/v1/item/builds": RouteEndpoint(get_builds, permissions=["read:builds"]),
-    "GET:/api/v1/item/build": RouteEndpoint(get_build, permissions=["read:build"]),
-    "PUT:/api/v1/item/build": RouteEndpoint(update_build, permissions=["update:build"]),
-    "DELETE:/api/v1/item/build": RouteEndpoint(delete_build, permissions=["delete:build"]),
-    "POST:/api/v1/item/build": RouteEndpoint(create_build, permissions=["create:build"]),
-    "POST:/api/v1/item/build/teardown": RouteEndpoint(teardown_build, permissions=["teardown:build"]),
-    "POST:/api/v1/item/build/release": RouteEndpoint(release_build, permissions=["release:build"]),
+    "GET:/api/v1/item/builds": RouteEndpoint(
+        get_builds,
+        permissions=["read:builds"],
+    ),
+    "GET:/api/v1/item/build": RouteEndpoint(
+        get_build,
+        permissions=["read:build"],
+    ),
+    "PUT:/api/v1/item/build": RouteEndpoint(
+        update_build,
+        permissions=["update:build"],
+    ),
+    "DELETE:/api/v1/item/build": RouteEndpoint(
+        delete_build,
+        permissions=["delete:build"],
+    ),
+    "POST:/api/v1/item/build": RouteEndpoint(
+        create_build,
+        permissions=["create:build"],
+    ),
+    "POST:/api/v1/item/build/teardown": RouteEndpoint(
+        teardown_build,
+        permissions=["teardown:build"],
+    ),
+    "POST:/api/v1/item/build/release": RouteEndpoint(
+        release_build,
+        permissions=["release:build"],
+    ),
 }

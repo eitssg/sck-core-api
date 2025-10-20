@@ -4,10 +4,10 @@ from core_db.audit.audit import AuthAuditSchemas, AuthAuditActions
 from .tools import get_authenticated_user
 
 from ..request import RouteEndpoint
-from ..response import ErrorResponse, SuccessResponse
+from ..response import ErrorResponse, SuccessResponse, Response
 
 
-def create_audit_record(*, cookies: dict, path_params: dict, body: dict, **kwargs) -> SuccessResponse:
+def create_audit_record(*, cookies: dict, path_params: dict, body: dict, **kwargs) -> Response:
     """Create a new audit record for user authorization changes.
 
     This function creates an audit record in the database to log changes made to user
@@ -34,7 +34,11 @@ def create_audit_record(*, cookies: dict, path_params: dict, body: dict, **kwarg
             return ErrorResponse(code=401, message="Unauthorized: No valid session token")
 
         client = path_params.get("client")
-        record = AuthAuditSchemas(**body or {})
+
+        if not client or client != jwt_payload.cnm:
+            return ErrorResponse(code=403, message="Forbidden: Client mismatch or missing")
+
+        record = AuthAuditSchemas.model_validate(body)
 
         # Create the audit record in the database
         record = AuthAuditActions.create(client=client, record=record)
@@ -46,7 +50,7 @@ def create_audit_record(*, cookies: dict, path_params: dict, body: dict, **kwarg
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def get_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> SuccessResponse:
+def get_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> Response:
     """Retrieve an existing audit record.
 
     This function retrieves an audit record from the database based on the provided
@@ -72,6 +76,9 @@ def get_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> SuccessRe
         pk = path_params.get("pk")
         sk = path_params.get("sk")
 
+        if not client or not pk or not sk:
+            return ErrorResponse(code=400, message="Missing required path parameters")
+
         record = AuthAuditActions.get(client=client, pk=pk, sk=sk)
 
         return SuccessResponse(data=record.model_dump(by_alias=False, mode="json"))
@@ -82,7 +89,7 @@ def get_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> SuccessRe
         return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> SuccessResponse:
+def delete_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> Response:
     """Delete an existing audit record.
 
     This function deletes an audit record from the database based on the provided
@@ -107,6 +114,9 @@ def delete_audit_record(*, cookies: dict, path_params: dict, **kwargs) -> Succes
         client = path_params.get("client")
         pk = path_params.get("pk")
         sk = path_params.get("sk")
+
+        if not client or not pk or not sk:
+            return ErrorResponse(code=400, message="Missing required path parameters")
 
         AuthAuditActions.delete(client=client, pk=pk, sk=sk)
 

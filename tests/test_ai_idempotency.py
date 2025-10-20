@@ -31,7 +31,12 @@ def test_generate_templates_idempotent_hit(tmp_path, monkeypatch):
     # First call should compute
     resp1 = generate_templates(cookies={}, headers={}, path_params={}, query_params={}, body=body, security=security)
     data1 = resp1.data
+
+    assert resp1.headers is not None
+    assert isinstance(resp1.headers, dict)
+
     key1 = resp1.headers.get("X-Idempotent-Key")
+
     assert key1
     assert resp1.headers.get("X-Idempotent-Hit") == "0"
     assert "X-Idempotent-Compute-Ms" in resp1.headers
@@ -39,6 +44,10 @@ def test_generate_templates_idempotent_hit(tmp_path, monkeypatch):
     # Second call identical -> cache hit
     resp2 = generate_templates(cookies={}, headers={}, path_params={}, query_params={}, body=body, security=security)
     data2 = resp2.data
+
+    assert resp2.headers is not None
+    assert isinstance(resp2.headers, dict)
+
     key2 = resp2.headers.get("X-Idempotent-Key")
     assert key1 == key2
     assert resp2.headers.get("X-Idempotent-Hit") == "1"
@@ -51,10 +60,18 @@ def test_compile_template_idempotent(tmp_path, monkeypatch):
     body = {"source": "some template dsl"}
 
     resp1 = compile_template(cookies={}, headers={}, path_params={}, query_params={}, body=body)
+
+    assert resp1.headers is not None
+    assert isinstance(resp1.headers, dict)
+
     assert resp1.headers.get("X-Idempotent-Key")
     assert resp1.headers.get("X-Idempotent-Hit") == "0"
 
     resp2 = compile_template(cookies={}, headers={}, path_params={}, query_params={}, body=body)
+
+    assert resp2.headers is not None
+    assert isinstance(resp2.headers, dict)
+
     assert resp2.headers.get("X-Idempotent-Key") == resp1.headers.get("X-Idempotent-Key")
     assert resp2.headers.get("X-Idempotent-Hit") == "1"
 

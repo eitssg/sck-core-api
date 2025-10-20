@@ -2,10 +2,12 @@
 from collections import ChainMap
 
 from core_db.event.actions import EventActions
+from core_db.exceptions import BadRequestException, NotFoundException, ConflictException, ForbiddenException
 
+from ..security import EnhancedSecurityContext, Permission
 from ..actions import ApiActions
 from ..request import RouteEndpoint
-from ..response import Response
+from ..response import Response, SuccessResponse, ErrorResponse
 
 
 class ApiEventActions(ApiActions, EventActions):
@@ -13,7 +15,7 @@ class ApiEventActions(ApiActions, EventActions):
     pass
 
 
-def action_get_event_list(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def action_get_event_list(*, query_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
     """
     returns the event for the given prn and timestamp.  Because you
     may leav timestamp blank, there may be more than one event for the prn,
@@ -36,15 +38,19 @@ def action_get_event_list(*, query_params: dict, path_params: dict, body: dict, 
         event (dict): the event form an http request (lambda event)
 
     Returns:
-        SeccessResponse: a list of all the respones in the SuccessRepsonse body.
+        SuccessResponse: a list of all the responses in the SuccessResponse body.
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiEventActions.list(**dict(ChainMap(body, pp, qsp)))
+    try:
+        results, paginator = ApiEventActions.list(client=security.client, **dict(ChainMap(body, query_params)))
+        data = [item.model_dump(by_alias=False, mode="json") for item in results]
+        return SuccessResponse(data=data, metadata=paginator.get_metadata())
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def action_create_event(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def action_create_event(*, query_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
     """
     creates a new event
 
@@ -62,13 +68,18 @@ def action_create_event(*, query_params: dict, path_params: dict, body: dict, **
     Args:
         event (dict): The event to create from REST API
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiEventActions.create(**dict(ChainMap(body, pp, qsp)))
+    try:
+        data = ApiEventActions.create(client=security.client, **dict(ChainMap(body, query_params)))
+        return SuccessResponse(data=data.model_dump(by_alias=False, mode="json"), code=201)
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def action_delete_event(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def action_delete_event(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """
     deletes the event for the given prn in the parameters
 
@@ -82,14 +93,29 @@ def action_delete_event(*, query_params: dict, path_params: dict, body: dict, **
     Args:
         event (dict): The lambda event
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiEventActions.delete(**dict(ChainMap(body, pp, qsp)))
+    try:
+        ApiEventActions.delete(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        return SuccessResponse(code=204)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
 event_actions: dict[str, RouteEndpoint] = {
-    "GET:/api/v1/events": RouteEndpoint(action_get_event_list, permissions=["read:events"]),
-    "PUT:/api/v1/event": RouteEndpoint(action_create_event, permissions=["create:event"]),
-    "DELETE:/api/v1/event": RouteEndpoint(action_delete_event, permissions=["delete:event"]),
+    "GET:/api/v1/events": RouteEndpoint(
+        action_get_event_list,
+        permissions=[Permission.EVENT_READ],
+        client_isolated=True,
+    ),
+    "PUT:/api/v1/event": RouteEndpoint(
+        action_create_event,
+        permissions=[Permission.EVENT_CREATE],
+        client_isolated=True,
+    ),
+    "DELETE:/api/v1/event": RouteEndpoint(
+        action_delete_event,
+        permissions=[Permission.EVENT_ADMIN],
+        client_isolated=True,
+    ),
 }

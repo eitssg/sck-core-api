@@ -10,13 +10,13 @@ import jwt
 
 import core_logging as log
 
-from core_db.registry.client import ClientFact, ClientActions
+from core_db.registry.client import ClientActions
 from core_db.profile import UserProfile, ProfileActions
 from core_db.exceptions import NotFoundException, UnknownException
 
 from ..request import RouteEndpoint
 from ..security import Permission
-from ..response import SuccessResponse, Response, RedirectResponse
+from ..response import Response, RedirectResponse
 
 from ..constants import (
     GITHUB_CLIENT_ID,
@@ -153,7 +153,7 @@ def github_login(*, query_params: dict, body: dict, **kwargs) -> RedirectRespons
     """
     try:
         # Prefer POST body params; fall back to query if not provided
-        params = ChainMap(body or {}, query_params or {})
+        params = dict(ChainMap(body or {}, query_params or {}))
 
         # Validate OAuth parameters and create JWT token (includes client_id)
         oauth_params = get_oauth_params_token(params)
@@ -315,8 +315,12 @@ def github_callback(
     client_id = jwt_payload.cid
     client = jwt_payload.cnm
 
+    if not client_id or not client:
+        log.warn("GitHub OAuth callback missing client_id or client in OAuth params")
+        return RedirectResponse(url="/error?error=cid&redirect=/login")
+
     try:
-        app_info = ClientActions.get(client=client)
+        app_info = ClientActions.get(client_id, client)
     except Exception as e:
         log.warn("GitHub OAuth callback with unknown client_id: %s", client_id)
         return RedirectResponse(url="/error?error=cid&redirect=/login")
@@ -374,7 +378,7 @@ def github_callback(
         )
 
         # Create redirect response to OAuth server with session cookie
-        resp: RedirectResponse = emit_session_cookie(
+        resp = emit_session_cookie(
             RedirectResponse(url=oauth_url),
             client_id,
             client,

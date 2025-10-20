@@ -8,10 +8,11 @@ This FACTS database should come from DynamoDB.  Not 'accounts.yaml' and 'apps.ya
 from collections import ChainMap
 
 from core_db.facter.actions import FactsActions
+from core_db.exceptions import ConflictException, NotFoundException, BadRequestException
 
 from ..request import RouteEndpoint
-from ..response import Response, SuccessResponse
-
+from ..response import Response, SuccessResponse, ErrorResponse
+from ..security import EnhancedSecurityContext, Permission
 from ..actions import ApiActions
 
 
@@ -19,7 +20,7 @@ class ApiFactsActions(ApiActions, FactsActions):
     pass
 
 
-def get_facts_action(*, query_params: dict | None = None, path_params: dict | None = None, **kwargs) -> Response:
+def get_facts_action(*, query_params: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
     """
     API Documentation:
     ----------------
@@ -69,13 +70,19 @@ def get_facts_action(*, query_params: dict | None = None, path_params: dict | No
                 "error": "Facts not found for given PRN"
             }
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    data = ApiFactsActions.get(**dict(ChainMap(pp, qsp)))
-    return SuccessResponse(data=data)
+    try:
+        args = {"client_id": security.client_id, "client": security.client, "prn": query_params.get("prn", "")}
+        data = ApiFactsActions.get(**args)
+        return SuccessResponse(data=data)
+    except NotFoundException as e:
+        return ErrorResponse(message=str(e), code=404)
+    except BadRequestException as e:
+        return ErrorResponse(message=str(e), code=400)
+    except ConflictException as e:
+        return ErrorResponse(message=str(e), code=500, exception=e)
 
 
 # Define API Gateway routes
 facts_actions: dict[str, RouteEndpoint] = {
-    "GET:/api/v1/facts/{client}": RouteEndpoint(get_facts_action, permissions=["read:facts"]),
+    "GET:/api/v1/facts": RouteEndpoint(get_facts_action, permissions=[Permission.DATA_READ]),
 }

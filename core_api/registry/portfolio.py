@@ -20,8 +20,9 @@ import core_framework as util
 import core_helper.aws as aws
 
 from core_db.registry.portfolio import PortfolioActions, PortfolioFact
+from core_db.exceptions import BadRequestException, ConflictException, NotFoundException
 
-from ..security import Permission
+from ..security import EnhancedSecurityContext, Permission
 from ..request import ActionHandlerRoutes, RouteEndpoint
 from ..actions import ApiActions
 from ..response import Response, SuccessResponse, ErrorResponse, RedirectResponse
@@ -31,14 +32,13 @@ class ApiRegPortfolioActions(ApiActions, PortfolioActions):
     pass
 
 
-def _merge_map(*, query_params: dict = None, path_params: dict = None, body: dict = None, **kwargs) -> dict:
-    pp = path_params or {}
-    body = body or {}
-    qsp = query_params or {}
-    return dict(ChainMap(body, pp, qsp))
+def _merge_map(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> dict:
+    return dict(ChainMap(body, path_params, query_params))
 
 
-def list_portfolios_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def list_portfolios_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """
     Returns a list of all portfolios for the client.
 
@@ -61,7 +61,11 @@ def list_portfolios_action(*, query_params: dict, path_params: dict, body: dict,
     """
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
-    client = (path_params or {}).get("client")
+    client = path_params.get("client")
+
+    if not client or client != security.client:
+        return ErrorResponse(code=400, message="Missing client specified or unauthorized")
+
     if "client" in merged:
         del merged["client"]
 
@@ -74,7 +78,7 @@ def list_portfolios_action(*, query_params: dict, path_params: dict, body: dict,
     )
 
     try:
-        result = ApiRegPortfolioActions.list(client=client, **merged)
+        results, paginator = ApiRegPortfolioActions.list(client=client, **merged)
 
         # Minimal fields for the list view (snake_case names from PortfolioFact)
         include_fields = {
@@ -94,7 +98,7 @@ def list_portfolios_action(*, query_params: dict, path_params: dict, body: dict,
         }
 
         # The DB returns data in PascalCase, but we want to return in snake_case
-        data = [PortfolioFact(**item).model_dump(by_alias=False, include=include_fields, mode="json") for item in result.data]
+        data = [item.model_dump(by_alias=False, include=include_fields, mode="json") for item in results]
 
         log.debug(
             f"Listed {len(data)} portfolios",
@@ -105,21 +109,26 @@ def list_portfolios_action(*, query_params: dict, path_params: dict, body: dict,
             },
         )
 
-        return SuccessResponse(data=data, metadata=result.metadata)
+        return SuccessResponse(data=data, metadata=paginator.get_metadata())
 
     except Exception as e:
         log.error("List portfolios failed", details={"client": client, "error": str(e)}, exc_info=True)
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def get_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def get_portfolio_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """
     Returns a portfolio for the client.
     """
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
-    client = (path_params or {}).get("client")
-    portfolio = (path_params or {}).get("portfolio")
+    client = path_params.get("client")
+    portfolio = path_params.get("portfolio")
+
+    if not client or not portfolio or client != security.client:
+        return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
     if "client" in merged:
         del merged["client"]
@@ -133,13 +142,20 @@ def get_portfolio_action(*, query_params: dict, path_params: dict, body: dict, *
         )
         result = ApiRegPortfolioActions.get(client=client, portfolio=portfolio, **merged)
 
-        data = PortfolioFact(**result.data).model_dump(by_alias=False)
+        data = result.model_dump(by_alias=False, mode="json")
 
         log.debug(
             "Get portfolio success",
             details={"client": client, "portfolio": portfolio},
         )
         return SuccessResponse(data=data)
+
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e), exception=e)
+
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e), exception=e)
+
     except Exception as e:
         log.error(
             "Get portfolio failed",
@@ -149,32 +165,49 @@ def get_portfolio_action(*, query_params: dict, path_params: dict, body: dict, *
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def create_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def create_portfolio_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
-    client = (path_params or {}).get("client")
-
+    client = path_params.get("client")
     if "client" in merged:
         del merged["client"]
 
+    if not client or client != security.client:
+        return ErrorResponse(code=400, message="Missing client specified or unauthorized")
+
     try:
         log.debug("Create portfolio request", details={"client": client, "payload": merged})
-        result = ApiRegPortfolioActions.create(client=client, **merged)
 
-        data = PortfolioFact(**result.data).model_dump(by_alias=False)
+        result = ApiRegPortfolioActions.create(client=client, **merged)
+        data = result.model_dump(by_alias=False, mode="json")
 
         log.debug("Create portfolio success", details={"client": client, "portfolio": data.get("portfolio")})
+
         return SuccessResponse(data=data)
+
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+
+    except ConflictException as e:
+        return ErrorResponse(code=409, message=str(e))
+
     except Exception as e:
         log.error("Create portfolio failed", details={"client": client, "error": str(e)}, exc_info=True)
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def update_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def update_portfolio_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
-    client = (path_params or {}).get("client")
-    portfolio = (path_params or {}).get("portfolio")
+    client = path_params.get("client")
+    portfolio = path_params.get("portfolio")
+
+    if not client or not portfolio or client != security.client:
+        return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
     if "client" in merged:
         del merged["client"]
@@ -188,10 +221,18 @@ def update_portfolio_action(*, query_params: dict, path_params: dict, body: dict
         )
         result = ApiRegPortfolioActions.update(client=client, portfolio=portfolio, **merged)
 
-        data = PortfolioFact(**result.data).model_dump(by_alias=False)
+        data = result.model_dump(by_alias=False, mode="json")
 
         log.debug("Update portfolio success", details={"client": client, "portfolio": portfolio})
+
         return SuccessResponse(data=data)
+
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e), exception=e)
+
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e), exception=e)
+
     except Exception as e:
         log.error(
             "Update portfolio failed",
@@ -201,11 +242,17 @@ def update_portfolio_action(*, query_params: dict, path_params: dict, body: dict
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def patch_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def patch_portfolio_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
+
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
-    client = (path_params or {}).get("client")
-    portfolio = (path_params or {}).get("portfolio")
+    client = path_params.get("client")
+    portfolio = path_params.get("portfolio")
+
+    if not client or not portfolio or client != security.client:
+        return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
     if "client" in merged:
         del merged["client"]
@@ -219,10 +266,16 @@ def patch_portfolio_action(*, query_params: dict, path_params: dict, body: dict,
         )
         result = ApiRegPortfolioActions.patch(client=client, portfolio=portfolio, **merged)
 
-        data = PortfolioFact(**result.data).model_dump(by_alias=False)
+        data = result.model_dump(by_alias=False)
 
         log.debug("Patch portfolio success", details={"client": client, "portfolio": portfolio})
         return SuccessResponse(data=data)
+
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e), exception=e)
+
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e), exception=e)
 
     except Exception as e:
         log.error(
@@ -233,11 +286,16 @@ def patch_portfolio_action(*, query_params: dict, path_params: dict, body: dict,
         return ErrorResponse(code=500, message="Internal server error", exception=e)
 
 
-def delete_portfolio_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def delete_portfolio_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
-    client = (path_params or {}).get("client")
-    portfolio = (path_params or {}).get("portfolio")
+    client = path_params.get("client")
+    portfolio = path_params.get("portfolio")
+
+    if not client or not portfolio or client != security.client:
+        return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
     if "client" in merged:
         del merged["client"]
@@ -253,7 +311,13 @@ def delete_portfolio_action(*, query_params: dict, path_params: dict, body: dict
         ApiRegPortfolioActions.delete(client=client, portfolio=portfolio, **merged)
 
         log.debug("Delete portfolio success", details={"client": client, "portfolio": portfolio})
-        return SuccessResponse(message="Portfolio deleted successfully")
+        return SuccessResponse(code=204, message="Portfolio deleted successfully")
+
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e), exception=e)
+
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e), exception=e)
 
     except Exception as e:
         log.error(

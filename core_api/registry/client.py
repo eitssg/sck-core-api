@@ -10,6 +10,7 @@ from core_db.registry.client import ClientActions, ClientFact
 from core_api.security import Permission
 
 from ..request import RouteEndpoint
+from ..security import EnhancedSecurityContext, Permission
 from ..response import SuccessResponse, ErrorResponse, Response
 from ..actions import ApiActions
 
@@ -19,7 +20,9 @@ class ApiRegClientActions(ApiActions, ClientActions):
     pass
 
 
-def get_client_list_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def get_client_list_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """
     Handler for GET /api/v1/clients endpoint.
     Lists all clients in the platform.
@@ -30,18 +33,14 @@ def get_client_list_action(*, query_params: dict, path_params: dict, body: dict,
     Returns:
         Response: list of client names
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
 
     start = perf_counter()
-    log.debug("registry.clients.list.start", extra={"query_params": qsp})
+    log.debug("registry.clients.list.start", extra={"query_params": query_params})
 
     try:
-        security = kwargs.get("security")
-        client_id = getattr(security, "client_id", None) if security else None
+        client_id = security.client_id
 
-        results, paginator = ApiRegClientActions.list(client_id=client_id, **dict(ChainMap(body, pp, qsp)))
+        results, paginator = ApiRegClientActions.list(client_id=client_id, **dict(ChainMap(body, path_params, query_params)))
         include_fields = {
             "client",
             "client_id",
@@ -51,7 +50,7 @@ def get_client_list_action(*, query_params: dict, path_params: dict, body: dict,
             "client_description",
         }
 
-        data = [r.model_dump(by_alias=False, mode="json", include=include_fields) for r in results or []]
+        data = [r.model_dump(by_alias=False, mode="json", include=include_fields) for r in results]
 
         duration = (perf_counter() - start) * 1000
         log.info(
@@ -67,25 +66,29 @@ def get_client_list_action(*, query_params: dict, path_params: dict, body: dict,
             "registry.clients.list.error",
             extra={"error": str(e), "duration_ms": round(duration, 2)},
         )
-        return ErrorResponse(f"Failed to list clients: {str(e)}")
+        return ErrorResponse(code=500, message=f"Failed to list clients: {str(e)}", exception=e)
 
 
-def get_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def get_client_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """Get a single client.
 
     Path: GET /api/v1/registry/clients/{client}
     """
-    pp = path_params or {}
-    body = body or {}
 
     start = perf_counter()
 
-    log.debug("registry.client.get.start", extra={"path_params": pp})
+    log.debug("registry.client.get.start", extra={"path_params": path_params})
 
     try:
-        client = os.path.basename(pp.get("client"))
+        client = path_params.get("client")
+        client_id = security.client_id
 
-        result = ApiRegClientActions.get(client=client)
+        if not client or not client_id:
+            return ErrorResponse(message="Unauthorized to access this client", code=403)
+
+        result = ApiRegClientActions.get(client_id=client_id, client=client)
 
         exclude_fields = {"client_secret", "credentials"}
 
@@ -100,12 +103,14 @@ def get_client_action(*, query_params: dict, path_params: dict, body: dict, **kw
         duration = (perf_counter() - start) * 1000
         log.warning(
             "registry.client.get.error",
-            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+            extra={"error": str(e), "path_params": path_params, "duration_ms": round(duration, 2)},
         )
-        return ErrorResponse(f"Client not found: {str(e)}")
+        return ErrorResponse(code=500, message=f"Client not found: {str(e)}", exception=e)
 
 
-def create_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def create_client_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """
     Handler for POST /api/v1/client endpoint.
     Creates a new client.
@@ -116,13 +121,21 @@ def create_client_action(*, query_params: dict, path_params: dict, body: dict, *
     Returns:
         Response: Created client details or error if client exists
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
     start = perf_counter()
+
     log.debug("registry.client.create.start", extra={"body_keys": list(body.keys())})
+
     try:
-        result = ApiRegClientActions.create(**dict(ChainMap(body, pp, qsp)))
+
+        if not security.client_id:
+            return ErrorResponse(message="Unauthorized to create client", code=403)
+
+        client_fact = ClientFact.model_validate(dict(ChainMap(body, path_params, query_params)))
+
+        # any new client must belong to the caller's client_id (a.k.a client group ID.  Or a.k.a oauth client id)
+        client_fact.client_id = security.client_id
+
+        result = ApiRegClientActions.create(record=client_fact)
 
         exclude_fields = {"client_secret", "credentials"}
 
@@ -132,32 +145,30 @@ def create_client_action(*, query_params: dict, path_params: dict, body: dict, *
         log.info("registry.client.create.success", extra={"client": data.get("client"), "duration_ms": round(duration, 2)})
 
         return SuccessResponse(data=data, message="Client created successfully")
+
     except Exception as e:  # noqa: BLE001
         duration = (perf_counter() - start) * 1000
         log.error(
             "registry.client.create.error",
             extra={"error": str(e), "body_keys": list(body.keys()), "duration_ms": round(duration, 2)},
         )
-        return ErrorResponse(f"Failed to create client: {str(e)}")
+        return ErrorResponse(code=500, message=f"Failed to create client: {str(e)}", exception=e)
 
 
-def update_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def update_client_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """Full update (idempotent) of a client.
 
     Path: PUT /api/v1/registry/clients/{client}
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-
     start = perf_counter()
-    log.debug("registry.client.update.start", extra={"path_params": pp, "body_keys": list(body.keys())})
+    log.debug("registry.client.update.start", extra={"path_params": path_params, "body_keys": list(body.keys())})
     try:
 
-        record = ClientFact(**body)
-        client = record.client
+        client_fact = ClientFact.model_validate(dict(ChainMap(body, path_params, query_params)))
 
-        result = ApiRegClientActions.update(client=client, record=record)
+        result = ApiRegClientActions.update(record=client_fact)
 
         exclude_fields = {"client_secret", "credentials"}
 
@@ -173,25 +184,26 @@ def update_client_action(*, query_params: dict, path_params: dict, body: dict, *
         duration = (perf_counter() - start) * 1000
         log.warning(
             "registry.client.update.notfound",
-            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+            extra={"error": str(e), "path_params": path_params, "duration_ms": round(duration, 2)},
         )
-        return ErrorResponse(f"Client not found for update: {str(e)}", code=404)
+        return ErrorResponse(message=f"Client not found for update: {str(e)}", code=404)
     except Exception as e:  # noqa: BLE001
-        return ErrorResponse(f"Failed to update client: {str(e)}", code=500)
+        return ErrorResponse(message=f"Failed to update client: {str(e)}", code=500, exception=e)
 
 
-def patch_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def patch_client_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """Partial update for a client.
 
     Path: PATCH /api/v1/registry/clients/{client}
     """
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
     start = perf_counter()
-    log.debug("registry.client.patch.start", extra={"path_params": pp, "body_keys": list(body.keys())})
+
+    log.debug("registry.client.patch.start", extra={"path_params": path_params, "body_keys": list(body.keys())})
+
     try:
-        result = ApiRegClientActions.patch(**dict(ChainMap(body, pp, qsp)))
+        result = ApiRegClientActions.patch(**dict(ChainMap(body, path_params, query_params)))
 
         exclude_fields = {"client_secret", "credentials"}
 
@@ -209,31 +221,35 @@ def patch_client_action(*, query_params: dict, path_params: dict, body: dict, **
         duration = (perf_counter() - start) * 1000
         log.warning(
             "registry.client.patch.notfound",
-            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+            extra={"error": str(e), "path_params": path_params, "duration_ms": round(duration, 2)},
         )
-        return ErrorResponse(f"Client not found for patch: {str(e)}", code=404)
+        return ErrorResponse(message=f"Client not found for patch: {str(e)}", code=404)
     except Exception as e:  # noqa: BLE001
-        return ErrorResponse(f"Failed to patch client: {str(e)}", code=500)
+        return ErrorResponse(message=f"Failed to patch client: {str(e)}", code=500, exception=e)
 
 
-def delete_client_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
+def delete_client_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
     """Delete a client.
 
     Path: DELETE /api/v1/registry/clients/{client}
     """
-    pp = path_params or {}
-    body = body or {}
-
     start = perf_counter()
 
-    log.debug("registry.client.delete.start", extra={"path_params": pp})
+    log.debug("registry.client.delete.start", extra={"path_params": path_params})
     try:
-        client = pp.get("client")
 
-        ApiRegClientActions.delete(client=client)
+        client = path_params.get("client")
+        client_id = security.client_id
+
+        if not client or not client_id:
+            return ErrorResponse(message="Client identifier is required for deletion", code=400)
+
+        ApiRegClientActions.delete(client_id=client_id, client=client)
 
         duration = (perf_counter() - start) * 1000
-        log.info("registry.client.delete.success", extra={"path_params": pp, "duration_ms": round(duration, 2)})
+        log.info("registry.client.delete.success", extra={"path_params": path_params, "duration_ms": round(duration, 2)})
 
         return SuccessResponse(message="Client deleted successfully")
 
@@ -241,9 +257,9 @@ def delete_client_action(*, query_params: dict, path_params: dict, body: dict, *
         duration = (perf_counter() - start) * 1000
         log.error(
             "registry.client.delete.error",
-            extra={"error": str(e), "path_params": pp, "duration_ms": round(duration, 2)},
+            extra={"error": str(e), "path_params": path_params, "duration_ms": round(duration, 2)},
         )
-        return ErrorResponse(f"Failed to delete client: {str(e)}")
+        return ErrorResponse(message=f"Failed to delete client: {str(e)}", code=500, exception=e)
 
 
 registry_client_actions: dict[str, RouteEndpoint] = {

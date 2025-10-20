@@ -21,10 +21,9 @@ Example:
         pytest tests/test_auth.py::test_authenticate_success -v
 """
 
-from dotenv.cli import get
 import pytest
 import jwt
-import os
+
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 from moto import mock_aws
@@ -43,7 +42,7 @@ from core_api.constants import (
 )
 from core_api.auth.tools import get_authenticated_user
 
-from core_api.response import Response, ErrorResponse
+from core_api.response import Response, ErrorResponse, SuccessResponse
 
 
 # ============================================================================
@@ -53,7 +52,7 @@ from core_api.response import Response, ErrorResponse
 
 @pytest.fixture
 def valid_aws_credentials():
-    """Fixture providing valid AWS credentials for testing."""
+    """Fixture providing example AWS credentials for testing."""
     return {
         "access_key": "AKIAIOSFODNN7EXAMPLE",
         "access_secret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
@@ -143,6 +142,11 @@ def api_gateway_event_base():
 # ============================================================================
 
 
+def _authenticate(**kwargs) -> Response:
+
+    return SuccessResponse(data=kwargs)
+
+
 @pytest.mark.parametrize(
     "invalid_access_key",
     [
@@ -163,6 +167,8 @@ def test_authenticate_invalid_access_key_format(invalid_access_key):
 
     assert isinstance(result, ErrorResponse)
     assert result.code == 400
+    assert result.message is not None
+
     assert "Invalid AWS access key format" in result.message
 
 
@@ -185,6 +191,7 @@ def test_authenticate_invalid_secret_format(invalid_secret):
 
     assert isinstance(result, ErrorResponse)
     assert result.code == 400
+    assert result.message is not None
     assert "Invalid AWS secret key format" in result.message
 
 
@@ -239,6 +246,7 @@ def test_authenticate_aws_errors():
 
             result = _authenticate(**valid_format_creds)
             assert result.code == expected_status
+            assert result.message is not None
             assert expected_message in result.message
 
 
@@ -258,10 +266,16 @@ def test_authenticate_success(valid_aws_credentials, mock_sts_response):
 
         assert isinstance(result, Response)
         assert result.code == 200
+        assert result.message is not None
+        assert result.data is not None
+
         assert "token" in result.data
         assert "expires_in" in result.data
         assert "token_type" in result.data
-        assert result.data["token_type"] == "Bearer"
+
+        assert isinstance(result.data, dict)
+
+        assert result.data.get("token_type") == "Bearer"
 
         # FIXED: Verify the correct boto3.client call including region
         mock_boto_client.assert_called_once_with(
@@ -286,7 +300,12 @@ def test_authenticate_with_custom_region(valid_aws_credentials, mock_sts_respons
 
         assert isinstance(result, Response)
         assert result.code == 200
-        assert result.data["region"] == "eu-west-1"  # Should return the region used
+        assert result.message is not None
+        assert result.data is not None
+
+        assert isinstance(result.data, dict)
+
+        assert result.data.get("region") == "eu-west-1"  # Should return the region used
 
         # Verify custom region was used
         mock_boto_client.assert_called_once_with(
@@ -304,6 +323,7 @@ def test_authenticate_missing_credentials():
 
     assert isinstance(result, ErrorResponse)
     assert result.code == 400
+    assert result.message is not None
     assert "Missing required AWS credentials" in result.message
 
 
@@ -316,6 +336,7 @@ def test_authenticate_missing_credential_field(valid_aws_credentials, missing_fi
 
     assert isinstance(result, ErrorResponse)
     assert result.code == 400
+    assert result.message is not None
     assert "Missing required AWS credentials" in result.message
 
 
@@ -365,6 +386,7 @@ def test_authenticate_invalid_aws_credentials():
 
         assert isinstance(result, ErrorResponse)
         assert result.code == 401  # Now this will be 401 from AWS STS
+        assert result.message is not None
         assert "Invalid AWS credentials" in result.message
 
         # Verify region was included in call
@@ -410,6 +432,7 @@ def test_authenticate_unexpected_error(valid_aws_credentials):
 
         assert isinstance(result, ErrorResponse)
         assert result.code == 500
+        assert result.message is not None
         assert "Authentication processing error" in result.message
 
 
@@ -437,10 +460,12 @@ def test_authenticate_with_moto_sts(valid_aws_credentials):
         # moto STS returns success for any credentials, so expect success
         assert isinstance(result, Response)
         assert result.code == 200
+        assert result.data is not None
         assert "token" in result.data
         assert "expires_in" in result.data
         assert "token_type" in result.data
-        assert result.data["token_type"] == "Bearer"
+        assert isinstance(result.data, dict)
+        assert result.data.get("token_type") == "Bearer"
 
         # Verify the JWT token is valid
         token = result.data["token"]
@@ -463,7 +488,10 @@ def test_get_credentials_success_with_authorization_header(valid_jwt_token):
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
 
     assert credentials is not None
@@ -483,7 +511,9 @@ def test_get_credentials_case_insensitive_header(valid_jwt_token):
         }
     }  # lowercase
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
 
     assert credentials is not None
@@ -500,7 +530,11 @@ def test_get_credentials_case_insensitive_header(valid_jwt_token):
 )
 def test_get_credentials_no_authorization(kwargs):
     """Test credential extraction when Authorization header is missing."""
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -514,7 +548,9 @@ def test_get_credentials_invalid_authorization_format(valid_jwt_token):
         }
     }  # Wrong type
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -523,7 +559,9 @@ def test_get_credentials_malformed_authorization_header():
     """Test credential extraction with malformed Authorization header."""
     kwargs = {"headers": {"Authorization": "Bearer", "Content-Type": "application/json"}}  # Missing token
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -537,7 +575,9 @@ def test_get_credentials_expired_jwt_token(expired_jwt_token):
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -551,7 +591,9 @@ def test_get_credentials_invalid_jwt_token():
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -574,7 +616,9 @@ def test_get_credentials_jwt_without_credentials():
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -600,7 +644,9 @@ def test_get_credentials_incomplete_credentials():
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -628,7 +674,9 @@ def test_get_credentials_expired_sts_credentials():
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
 
@@ -656,13 +704,11 @@ def test_get_credentials_invalid_expiration_format():
         }
     }
 
-    jwt_payload, _ = get_authenticated_user({}, kwargs["headers"])
+    jwt_payload, _ = get_authenticated_user(headers=kwargs["headers"])
+    assert jwt_payload is not None
+
     credentials = get_credentials(jwt_payload)
     assert credentials is None
-
-
-def _authenticate(**kwargs):
-    return kwargs
 
 
 # ============================================================================
@@ -681,6 +727,11 @@ def test_authenticate_includes_jti_claim(valid_aws_credentials, mock_sts_respons
 
         assert isinstance(result, Response)
         assert result.code == 200
+        assert result.data is not None
+
+        assert isinstance(result.data, dict)
+
+        assert "token" in result.data
 
         # Verify JWT contains jti claim
         token = result.data["token"]
@@ -728,6 +779,7 @@ def test_authenticate_enhanced_aws_errors():
 
             result = _authenticate(**valid_format_creds)
             assert result.code == expected_status
+            assert result.message is not None
             assert expected_message in result.message
 
             # Verify region parameter included
@@ -868,5 +920,9 @@ def test_authenticate_response_includes_region():
 
         assert isinstance(result, Response)
         assert result.code == 200
+        assert result.data is not None
+
+        assert isinstance(result.data, dict)
+
         assert "region" in result.data
         assert result.data["region"] == "eu-west-1"

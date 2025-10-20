@@ -1,9 +1,11 @@
 from collections import ChainMap
 
 from core_db.item.component import ComponentActions
+from core_db.exceptions import BadRequestException, NotFoundException, ConflictException, ForbiddenException
 
 from ..request import RouteEndpoint
-from ..response import Response
+from ..security import EnhancedSecurityContext, Permission
+from ..response import Response, SuccessResponse, ErrorResponse
 from ..actions import ApiActions
 
 
@@ -11,46 +13,98 @@ class ApiComponentActions(ApiActions, ComponentActions):
     pass
 
 
-def get_component_list_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiComponentActions.list(**dict(ChainMap(body, pp, qsp)))
+def get_component_list_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
+    try:
+        result, paginator = ApiComponentActions.list(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = [item.model_dump(by_alias=False, mode="json") for item in result]
+        return SuccessResponse(data=data, metadata=paginator.get_metadata())
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def get_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiComponentActions.get(**dict(ChainMap(body, pp, qsp)))
+def get_component_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
+    try:
+        result = ApiComponentActions.get(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def create_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiComponentActions.create(**dict(ChainMap(body, pp, qsp)))
+def create_component_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
+    try:
+        result = ApiComponentActions.create(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data, code=201)
+    except ConflictException as e:
+        return ErrorResponse(code=409, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def update_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiComponentActions.update(**dict(ChainMap(body, pp, qsp)))
+def update_component_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
+    try:
+        result = ApiComponentActions.update(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        data = result.model_dump(by_alias=False, mode="json")
+        return SuccessResponse(data=data)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
-def delete_component_action(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> Response:
-    qsp = query_params or {}
-    pp = path_params or {}
-    body = body or {}
-    return ApiComponentActions.delete(**dict(ChainMap(body, pp, qsp)))
+def delete_component_action(
+    *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
+) -> Response:
+    try:
+        ApiComponentActions.delete(client=security.client, **dict(ChainMap(body, path_params, query_params)))
+        return SuccessResponse(code=204)
+    except NotFoundException as e:
+        return ErrorResponse(code=404, message=str(e))
+    except BadRequestException as e:
+        return ErrorResponse(code=403, message=str(e))
+    except Exception as e:
+        return ErrorResponse(code=500, message=str(e), exception=e)
 
 
 # API Gateway Lambda Proxy Integration routes
 item_component_actions: dict[str, RouteEndpoint] = {
-    "GET:/api/v1/items/components": RouteEndpoint(get_component_list_action, permissions=["read:components"]),
-    "GET:/api/v1/items/component": RouteEndpoint(get_component_action, permissions=["read:component"]),
-    "POST:/api/v1/items/component": RouteEndpoint(create_component_action, permissions=["create:component"]),
-    "PUT:/api/v1/items/component": RouteEndpoint(update_component_action, permissions=["update:component"]),
-    "DELETE:/api/v1/items/component": RouteEndpoint(delete_component_action, permissions=["delete:component"]),
+    "GET:/api/v1/items/components": RouteEndpoint(
+        get_component_list_action,
+        permissions=[Permission.ITEM_COMPONENT_READ],
+    ),
+    "GET:/api/v1/items/component": RouteEndpoint(
+        get_component_action,
+        permissions=[Permission.ITEM_COMPONENT_READ],
+    ),
+    "POST:/api/v1/items/component": RouteEndpoint(
+        create_component_action,
+        permissions=[Permission.ITEM_COMPONENT_WRITE],
+    ),
+    "PUT:/api/v1/items/component": RouteEndpoint(
+        update_component_action,
+        permissions=[Permission.ITEM_COMPONENT_WRITE],
+    ),
+    "DELETE:/api/v1/items/component": RouteEndpoint(
+        delete_component_action,
+        permissions=[Permission.ITEM_COMPONENT_ADMIN],
+    ),
 }

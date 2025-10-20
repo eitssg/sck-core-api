@@ -144,8 +144,8 @@ def test_public_browser_auth():
     # We need to call "/auth/v1/token" to convert our OAUTH server token to a CORE_API token
 
     # To use this API, the BROWSER APP needs to login, NOT the user.  We'll get the token from the 'code'
-    auth = {CLIENT_ID: CLIENT_SECRET}
-    data = {
+    auth: tuple[str, str] = (CLIENT_ID, CLIENT_SECRET)
+    data: dict[str, str] = {
         "grant_type": "authorization_code",
         "code": code,
         "code_verifier": code_verifier,

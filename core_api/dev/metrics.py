@@ -6,9 +6,15 @@ prometheus-client coupling out of the base application code.
 
 from __future__ import annotations
 
+import importlib
+import time
+import threading
+import tracemalloc
+
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, JSONResponse
-from core_helper.aws import store
+
+from core_helper.store import store
 
 
 def add_dev_metrics_endpoint(app: FastAPI) -> None:
@@ -17,10 +23,6 @@ def add_dev_metrics_endpoint(app: FastAPI) -> None:
     Safe for dev use; uses dynamic imports and raises no exceptions to callers.
     """
     try:
-        import importlib
-        import time
-        import threading
-        import tracemalloc
 
         prom = importlib.import_module("prometheus_client")
         CollectorRegistry = prom.CollectorRegistry
