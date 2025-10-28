@@ -1,5 +1,6 @@
 from collections import ChainMap
 
+from botocore import args
 import core_logging as log
 
 from core_db.registry.zone import ZoneActions, ZoneFact
@@ -16,29 +17,30 @@ class ApiRegZoneActions(ApiActions, ZoneActions):
     pass
 
 
-def _merge_map(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> dict:
-    return dict(ChainMap(body, path_params, query_params))
-
+def _merged(query_params: dict, path_params: dict, body: dict, skip: list[str] = None) -> dict:
+    args = dict(ChainMap(path_params, query_params, body))
+    if skip:
+        for key in skip:
+            if key in args: 
+                del args[key]
+    return args
 
 def list_zones_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
 
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
+
+    args = _merged(query_params, path_params, body, skip=["client"])
 
     if not client or client != security.client:
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or missing")
 
-    if "client" in merged:
-        del merged["client"]
-
     try:
 
-        log.debug(f"Listing zones for client '{client}'", details={"params": merged})
+        log.debug(f"Listing zones for client '{client}'", details={"params": args})
 
-        results, paginator = ApiRegZoneActions.list(client=client, **merged)
+        results, paginator = ApiRegZoneActions.list(client=client, **args)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
         data = [item.model_dump(by_alias=False, mode="json") for item in results]
@@ -55,28 +57,22 @@ def list_zones_action(
 
 
 def get_zone_action(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     client = path_params.get("client")
+    zone = path_params.get("zone")
+
+    args = _merged(query_params, path_params, body, skip=["client", "zone"])
 
     if not client or client != security.client:
         return ErrorResponse(code=403, message="Forbidden: Client or zone mismatch or missing or unauthorized")
 
-    if "client" in merged:
-        del merged["client"]
+    if not zone:
+        return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
 
     try:
-        zone = path_params.get("zone")
+        log.debug(f"Getting zone for client '{client}' zone '{zone}'", details={"params": args})
 
-        if not zone:
-            return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
-
-        if "zone" in merged:
-            del merged["zone"]
-
-        log.debug(f"Getting zone for client '{client}' zone '{zone}'", details={"params": merged})
-
-        result = ApiRegZoneActions.get(client=client, zone=zone, **merged)
+        result = ApiRegZoneActions.get(client=client, zone=zone, **args)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
         data = result.model_dump(by_alias=False, mode="json")
@@ -98,60 +94,55 @@ def get_zone_action(*, query_params: dict, path_params: dict, body: dict, securi
 def create_zones_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
+    
     client = path_params.get("client")
 
+    args = _merged(query_params, path_params, body, skip=["client"])
+    
     if not client or client != security.client:
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or missing or unauthorized")
-
-    if "client" in merged:
-        del merged["client"]
-
     try:
 
-        log.debug(f"Creating zone for client '{client}'", details={"params": merged})
+        log.debug(f"Creating zone for client '{client}'", details={"params": args})
 
-        result = ApiRegZoneActions.create(client=client, **merged)
+        result = ApiRegZoneActions.create(client=client, **args)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
         data = result.model_dump(by_alias=False, mode="json")
 
         log.debug(f"Created zone for client '{client}'", details=data)
 
-        return SuccessResponse(data=data)
+        return SuccessResponse(code=201, data=data)
 
     except ConflictException as e:
-        return ErrorResponse(code=409, message="Conflict error", exception=e)
+        return ErrorResponse(code=409, message=f"Conflict error: {str(e)}")
+    
+    except BadRequestException as e:
+        return ErrorResponse(code=400, message=f"Bad request: {str(e)}")
+    
     except Exception as e:
-        return ErrorResponse(code=500, message="Internal server error", exception=e)
+        return ErrorResponse(code=500, message=f"Internal server error: {str(e)}", exception=e)
 
 
 def update_zones_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
+    zone = path_params.get("zone")
 
-    if "client" in merged:
-        del merged["client"]
+    args = _merged(query_params, path_params, body, skip=["client", "zone"])
 
     if not client or client != security.client:
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or missing or unauthorized")
 
+    if not zone:
+        return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
+
     try:
-        zone = path_params.get("zone")
 
-        if not zone:
-            return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
+        log.debug(f"Updating zone for client '{client}' zone '{zone}'", details={"params": args})
 
-        if "zone" in merged:
-            del merged["zone"]
-
-        log.debug(f"Updating zone for client '{client}' zone '{zone}'", details={"params": merged})
-
-        result = ApiRegZoneActions.update(client=client, zone=zone, **merged)
+        result = ApiRegZoneActions.update(client=client, zone=zone, **args)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
         data = result.model_dump(by_alias=False, mode="json")
@@ -173,28 +164,21 @@ def update_zones_action(
 def patch_zones_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
+    zone = path_params.get("zone")
+
+    args = _merged(query_params, path_params, body, skip=["client", "zone"])
 
     if not client or client != security.client:
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or missing or unauthorized")
 
-    if "client" in merged:
-        del merged["client"]
+    if not zone:
+        return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
 
     try:
-        zone = path_params.get("zone")
+        log.debug(f"Patching zone for client '{client}' zone '{zone}'", details={"params": args})
 
-        if not zone:
-            return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
-
-        if "zone" in merged:
-            del merged["zone"]
-
-        log.debug(f"Patching zone for client '{client}' zone '{zone}'", details={"params": merged})
-
-        result = ApiRegZoneActions.patch(client=client, zone=zone, **merged)
+        result = ApiRegZoneActions.patch(client=client, zone=zone, **args)
 
         # The DB returns data in PascalCase, but we want to return in snake_case
         data = result.model_dump(by_alias=False, mode="json")
@@ -216,28 +200,22 @@ def patch_zones_action(
 def delete_zones_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
+    zone = path_params.get("zone")
+
+    args = _merged(query_params, path_params, body, skip=["client", "zone"])
 
     if not client or client != security.client:
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or missing or unauthorized")
 
-    if "client" in merged:
-        del merged["client"]
+    if not zone:
+        return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
 
     try:
-        zone = path_params.get("zone")
 
-        if not zone:
-            return ErrorResponse(code=400, message="Bad request: Missing zone parameter")
+        log.debug(f"Deleting zone for client '{client}' zone '{zone}'", details={"params": args})
 
-        if "zone" in merged:
-            del merged["zone"]
-
-        log.debug(f"Deleting zone for client '{client}' zone '{zone}'", details={"params": merged})
-
-        ApiRegZoneActions.delete(client=client, zone=zone, **merged)
+        ApiRegZoneActions.delete(client=client, zone=zone, **args)
 
         log.debug(f"Deleted zone for client '{client}' zone '{zone}'")
 

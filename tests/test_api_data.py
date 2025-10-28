@@ -4,10 +4,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         ("PUT", "/api/v1/event", {"prn": "prn:simple-cloud-kit:api:main:1"}),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "event_type": "STATUS",
                     "item_type": "build",
@@ -40,12 +40,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         ("DELETE", "/api/v1/event?prn=prn%3Asimple-cloud-kit%3Aapi%3Amain%3A1", {}),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Event deleted: prn:simple-cloud-kit:api:main:1",
-            },
+            204,
+            {},
         ),
     ),
     # Portfolios Deployed
@@ -61,10 +57,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "contact_email": "simple@gmail.com",
                     "item_type": "portfolio",
@@ -143,8 +139,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         ("DELETE", "/api/v1/item/portfolio?prn=prn%3Asimple-cloud-kit", {}),
         (
-            200,
-            {"status": "ok", "code": 200, "data": "Item deleted: prn:simple-cloud-kit"},
+            204,
+            {},
         ),
     ),
     # Apps Deployed
@@ -161,10 +157,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "contact_email": "simple@gmail.com",
                     "item_type": "app",
@@ -248,12 +244,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         ("DELETE", "/api/v1/items/app?prn=prn%3Asimple-cloud-kit%3Acore-api", {}),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Item deleted: prn:simple-cloud-kit:core-api",
-            },
+            204,
+            {},
         ),
     ),
     # Branches Deployed
@@ -270,10 +262,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "app_prn": "prn:simple-cloud-kit:api",
                     "item_type": "branch",
@@ -361,12 +353,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         ("DELETE", "/api/v1/item/branch?prn=prn%3Asimple-cloud-kit%3Aapi%3Amain", {}),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Item deleted: prn:simple-cloud-kit:api:main",
-            },
+            204,
+            {},
         ),
     ),
     # Case 18, put the branch back for the build processing
@@ -382,10 +370,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "app_prn": "prn:simple-cloud-kit:api",
                     "item_type": "branch",
@@ -413,10 +401,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "app_prn": "prn:simple-cloud-kit:api",
                     "branch_prn": "prn:simple-cloud-kit:api:main",
@@ -513,11 +501,11 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {"prn": "prn:simple-cloud-kit:api:main:1"},
         ),
         (
-            200,
+            202,
             {
                 "status": "ok",
-                "code": 200,
-                "data": "Build prn:simple-cloud-kit:api:main:1 teardown requested",
+                "code": 202,
+                "message": "Build teardown requested: prn:simple-cloud-kit:api:main:1",
             },
         ),
     ),
@@ -529,11 +517,11 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {"prn": "prn:simple-cloud-kit:api:main:1"},
         ),
         (
-            200,
+            202,
             {
                 "status": "ok",
-                "code": 200,
-                "data": "Build prn:simple-cloud-kit:api:main:1 release requested",
+                "code": 202,
+                "message": "Build release requested: prn:simple-cloud-kit:api:main:1",
             },
         ),
     ),
@@ -541,16 +529,12 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "DELETE",
-            "/api/vi/item/build?prn=prn%3Asimple-cloud-kit%3Aapi%3Amain%3A1",
+            "/api/v1/item/build?prn=prn%3Asimple-cloud-kit%3Aapi%3Amain%3A1",
             {},
         ),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Item deleted: prn:simple-cloud-kit:api:main:1",
-            },
+            204,
+            {},
         ),
     ),
     # Components Deployed
@@ -569,10 +553,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
                     "app_prn": "prn:simple-cloud-kit:api",
                     "branch_prn": "prn:simple-cloud-kit:api:main",
@@ -678,43 +662,39 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {},
         ),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Item deleted: prn:simple-cloud-kit:api:main:1:webserver",
-            },
+            204,
+            {},
         ),
     ),
     # Registry of Clients
     # Case 31
     (
-        ("POST", "/api/v1/registry/clients", {"client": "eits"}),
-        (200, {"status": "ok", "code": 200, "data": {"Client": "eits"}}),
+        ("POST", "/api/v1/registry/clients", {"client": "core"}),
+        (201, {"status": "ok", "code": 201, "data": {"client": "core"}}),
     ),
     # Case 32
     (
         ("GET", "/api/v1/registry/clients", {}),
-        (200, {"status": "ok", "code": 200, "data": ["eits"]}),
+        (200, {"status": "ok", "code": 200, "data": [{"client": "core"}]}),
     ),
     # Case 33
     (
-        ("GET", "/api/v1/registry/client/eits", {}),
-        (200, {"status": "ok", "code": 200, "data": {"Client": "eits"}}),
+        ("GET", "/api/v1/registry/clients/core", {}),
+        (200, {"status": "ok", "code": 200, "data": {"client": "core"}}),
     ),
     # Case 34
     (
         (
             "PUT",
-            "/api/v1/registry/client/eits",
-            {"client": "eits", "scope_prefix": "alternate"},
+            "/api/v1/registry/clients/core",
+            {"client": "core", "scope": "alternate"},
         ),
         (
             200,
             {
                 "status": "ok",
                 "code": 200,
-                "data": {"Client": "eits", "ScopePrefix": "alternate"},
+                "data": {"client": "core", "scope": "alternate"},
             },
         ),
     ),
@@ -722,9 +702,9 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PATCH",
-            "/api/v1/registry/client/eits",
+            "/api/v1/registry/clients/core",
             {
-                "automation_bucket_region": "ap-southeast-2",
+                "bucket_region": "ap-southeast-2",
                 "master_region": "us-east-1",
             },
         ),
@@ -734,46 +714,46 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "AutomationBucketRegion": "ap-southeast-2",
-                    "Client": "eits",
-                    "MasterRegion": "us-east-1",
-                    "ScopePrefix": "alternate",
+                    "bucket_region": "ap-southeast-2",
+                    "client": "core",
+                    "master_region": "us-east-1",
+                    "scope": "alternate",
                 },
             },
         ),
     ),
     # Case 36
     (
-        ("DELETE", "/api/v1/registry/client/eits", {}),
-        (200, {"status": "ok", "code": 200, "data": "Client eits deleted"}),
+        ("DELETE", "/api/v1/registry/clients/core", {}),
+        (204, {}),
     ),
     # Registry of Portfolios
     # Case 37
     (
-        ("POST", "/api/v1/registry/eits/portfolios", {"portfolio": "simple-cloud-kit"}),
+        ("POST", "/api/v1/registry/clients/core/portfolios", {"portfolio": "simple-cloud-kit"}),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
-                "data": {"Client": "eits", "Portfolio": "simple-cloud-kit"},
+                "code": 201,
+                "data": {"portfolio": "simple-cloud-kit"},
             },
         ),
     ),
     # Case 38
     (
-        ("GET", "/api/v1/registry/eits/portfolios", {}),
-        (200, {"status": "ok", "code": 200, "data": ["simple-cloud-kit"]}),
+        ("GET", "/api/v1/registry/clients/core/portfolios", {}),
+        (200, {"status": "ok", "code": 200, "data": [{"portfolio": "simple-cloud-kit"}]}),
     ),
     # Case 39
     (
-        ("GET", "/api/v1/registry/eits/portfolio/simple-cloud-kit", {}),
+        ("GET", "/api/v1/registry/clients/core/portfolios/simple-cloud-kit", {}),
         (
             200,
             {
                 "status": "ok",
                 "code": 200,
-                "data": {"Client": "eits", "Portfolio": "simple-cloud-kit"},
+                "data": {"portfolio": "simple-cloud-kit"},
             },
         ),
     ),
@@ -781,7 +761,7 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PUT",
-            "/api/v1/registry/eits/portfolio/simple-cloud-kit",
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit",
             {"owner": {"name": "the_big_boss", "email": "boss@gmail.com"}},
         ),
         (
@@ -790,9 +770,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "Client": "eits",
-                    "Owner": {"Email": "boss@gmail.com", "Name": "the_big_boss"},
-                    "Portfolio": "simple-cloud-kit",
+                    "owner": {"email": "boss@gmail.com", "name": "the_big_boss"},
+                    "portfolio": "simple-cloud-kit",
                 },
             },
         ),
@@ -801,8 +780,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PATCH",
-            "/api/v1/registry/eits/portfolio/simple-cloud-kit",
-            {"bizapp": {"Name": "the awesome cloud kit", "Code": "awesome"}},
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit",
+            {"bizapp": {"name": "the awesome cloud kit", "code": "awesome"}},
         ),
         (
             200,
@@ -810,24 +789,19 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "Bizapp": {"Code": "awesome", "Name": "the awesome cloud kit"},
-                    "Client": "eits",
-                    "Owner": {"Email": "boss@gmail.com", "Name": "the_big_boss"},
-                    "Portfolio": "simple-cloud-kit",
+                    "bizapp": {"code": "awesome", "name": "the awesome cloud kit"},
+                    "owner": {"email": "boss@gmail.com", "name": "the_big_boss"},
+                    "portfolio": "simple-cloud-kit",
                 },
             },
         ),
     ),
     # Case 42
     (
-        ("DELETE", "/api/v1/registry/eits/portfolio/simple-cloud-kit", {}),
+        ("DELETE", "/api/v1/registry/clients/core/portfolios/simple-cloud-kit", {}),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Portfolio deleted: eits:simple-cloud-kit",
-            },
+            204,
+            {},
         ),
     ),
     # Registry of Apps
@@ -835,41 +809,43 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "POST",
-            "/api/v1/registry/eits/simple-cloud-kit/app",
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit/apps",
             {
-                "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                "Region": "sin",
-                "Zone": "my-landing-zone",
+                "app": "api",
+                "app_regex": "^prn:simple-cloud-kit:api:.*:.*$",
+                "region": "sin",
+                "zone": "my-landing-zone",
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
-                    "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                    "ClientPortfolio": "eits:simple-cloud-kit",
-                    "Region": "sin",
-                    "Zone": "my-landing-zone",
+                    "app": "api",
+                    "app_regex": "^prn:simple-cloud-kit:api:.*:.*$",
+                    "portfolio": "simple-cloud-kit",
+                    "region": "sin",
+                    "zone": "my-landing-zone",
                 },
             },
         ),
     ),
     # Case 44
     (
-        ("GET", "/api/v1/registry/eits/simple-cloud-kit/apps", {}),
+        ("GET", "/api/v1/registry/clients/core/portfolios/simple-cloud-kit/apps", {}),
         (
             200,
-            {"status": "ok", "code": 200, "data": ["^prn:simple-cloud-kit:api:.*:.*$"]},
+            {"status": "ok", "code": 200, "data": [{"app": "api", "app_regex": "^prn:simple-cloud-kit:api:.*:.*$"}]},
         ),
     ),
     # Case 45
     (
         (
             "PUT",
-            "/api/v1/registry/eits/simple-cloud-kit/app",
-            {"AppRegex": "^prn:simple-cloud-kit:api:.*:.*$", "Environment": "dev"},
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit/apps/api",
+            {"app_regex": "^prn:simple-cloud-kit:api:.*:.*$", "environment": "dev"},
         ),
         (
             200,
@@ -877,11 +853,12 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                    "ClientPortfolio": "eits:simple-cloud-kit",
-                    "Environment": "dev",
-                    "Region": "sin",
-                    "Zone": "my-landing-zone",
+                    "app": "api",
+                    "app_regex": "^prn:simple-cloud-kit:api:.*:.*$",
+                    "portfolio": "simple-cloud-kit",
+                    "environment": "dev",
+                    "region": "sin",
+                    "zone": "my-landing-zone",
                 },
             },
         ),
@@ -890,8 +867,8 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PATCH",
-            "/api/v1/registry/eits/simple-cloud-kit/app",
-            {"AppRegex": "^prn:simple-cloud-kit:api:.*:.*$", "Environment": "prod"},
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit/apps/api",
+            {"environment": "prod"},
         ),
         (
             200,
@@ -899,11 +876,12 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                    "ClientPortfolio": "eits:simple-cloud-kit",
-                    "Environment": "prod",
-                    "Region": "sin",
-                    "Zone": "my-landing-zone",
+                    "app": "api",
+                    "app_regex": "^prn:simple-cloud-kit:api:.*:.*$",
+                    "portfolio": "simple-cloud-kit",
+                    "environment": "prod",
+                    "region": "sin",
+                    "zone": "my-landing-zone",
                 },
             },
         ),
@@ -912,16 +890,12 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "DELETE",
-            "/api/v1/registry/eits/simple-cloud-kit/app?AppRegex=%5Eprn%3Asimple-cloud-kit%3Aapi%3A.%2A%3A.%2A%24",
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit/apps/api",
             {},
         ),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "App [eits:simple-cloud-kit:^prn:simple-cloud-kit:api:.*:.*$] deleted",
-            },
+            204,
+            {},
         ),
     ),
     # Registry of Zones
@@ -929,62 +903,61 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "POST",
-            "/api/v1/registry/eits/zone",
+            "/api/v1/registry/clients/core/zones",
             {
-                "Zone": "simple-cloud-kit-api-production",
-                "AccountFacts": {
-                    "AwsAccountId": "123456789012",
-                    "Kms": {
-                        "AwsAccountId": "123456789012",
-                        "DelegateAwsAccountIds": ["123456789012"],
+                "zone": "simple-cloud-kit-api-production",
+                "account_facts": {
+                    "aws_account_id": "123456789012",
+                    "kms": {
+                        "aws_account_id": "123456789012",
+                        "delegate_aws_account_ids": ["123456789012"],
                     },
                 },
-                "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
+                "region_facts": {"sin": {"aws_region": "ap-southeast-1"}},
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
-                    "AccountFacts": {
-                        "AwsAccountId": "123456789012",
-                        "Kms": {
-                            "AwsAccountId": "123456789012",
-                            "DelegateAwsAccountIds": ["123456789012"],
+                    "account_facts": {
+                        "aws_account_id": "123456789012",
+                        "kms": {
+                            "aws_account_id": "123456789012",
+                            "delegate_aws_account_ids": ["123456789012"],
                         },
                     },
-                    "Client": "eits",
-                    "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
-                    "Zone": "simple-cloud-kit-api-production",
+                    "region_facts": {"sin": {"aws_region": "ap-southeast-1"}},
+                    "zone": "simple-cloud-kit-api-production",
                 },
             },
         ),
     ),
     # Case 49
     (
-        ("GET", "/api/v1/registry/eits/zones", {}),
+        ("GET", "/api/v1/registry/clients/core/zones", {}),
         (
             200,
-            {"status": "ok", "code": 200, "data": ["simple-cloud-kit-api-production"]},
+            {"status": "ok", "code": 200, "data": [{"zone": "simple-cloud-kit-api-production"}]},
         ),
     ),
     # Case 50
     (
         (
             "PUT",
-            "/api/v1/registry/eits/zone/simple-cloud-kit-api-production",
+            "/api/v1/registry/clients/core/zones/simple-cloud-kit-api-production",
             {
-                "Zone": "simple-cloud-kit-api-production",
-                "AccountFacts": {
-                    "AwsAccountId": "123456789012",
-                    "Kms": {
-                        "AwsAccountId": "123456789012",
-                        "DelegateAwsAccountIds": ["123456789012"],
+                "zone": "simple-cloud-kit-api-production",
+                "account_facts": {
+                    "aws_account_id": "123456789012",
+                    "kms": {
+                        "aws_account_id": "123456789012",
+                        "delegate_aws_account_ids": ["123456789012"],
                     },
                 },
-                "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
+                "region_facts": {"sin": {"aws_region": "ap-southeast-1"}},
             },
         ),
         (
@@ -993,16 +966,15 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "AccountFacts": {
-                        "AwsAccountId": "123456789012",
-                        "Kms": {
-                            "AwsAccountId": "123456789012",
-                            "DelegateAwsAccountIds": ["123456789012"],
+                    "account_facts": {
+                        "aws_account_id": "123456789012",
+                        "kms": {
+                            "aws_account_id": "123456789012",
+                            "delegate_aws_account_ids": ["123456789012"],
                         },
                     },
-                    "Client": "eits",
-                    "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
-                    "Zone": "simple-cloud-kit-api-production",
+                    "region_facts": {"sin": {"aws_region": "ap-southeast-1"}},
+                    "zone": "simple-cloud-kit-api-production",
                 },
             },
         ),
@@ -1011,10 +983,10 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "PATCH",
-            "/api/v1/registry/eits/zone/simple-cloud-kit-api-production",
+            "/api/v1/registry/clients/core/zones/simple-cloud-kit-api-production",
             {
-                "AccountFacts": {"Kms": {"KmsKeyArn": "arn:kms:key"}},
-                "RegionFacts": {"sin": {"AzCount": 3}},
+                "account_facts": {"kms": {"kms_key_arn": "arn:kms:key"}},
+                "region_facts": {"sin": {"az_count": 3}},
             },
         ),
         (
@@ -1023,17 +995,16 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "AccountFacts": {
-                        "AwsAccountId": "123456789012",
-                        "Kms": {
-                            "AwsAccountId": "123456789012",
-                            "KmsKeyArn": "arn:kms:key",
-                            "DelegateAwsAccountIds": ["123456789012"],
+                    "account_facts": {
+                        "aws_account_id": "123456789012",
+                        "kms": {
+                            "aws_account_id": "123456789012",
+                            "kms_key_arn": "arn:kms:key",
+                            "delegate_aws_account_ids": ["123456789012"],
                         },
                     },
-                    "Client": "eits",
-                    "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1", "AzCount": 3}},
-                    "Zone": "simple-cloud-kit-api-production",
+                    "region_facts": {"sin": {"aws_region": "ap-southeast-1", "az_count": 3}},
+                    "zone": "simple-cloud-kit-api-production",
                 },
             },
         ),
@@ -1042,16 +1013,12 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
     (
         (
             "DELETE",
-            "/api/v1/registry/eits/zone/simple-cloud-kit-api-production",
+            "/api/v1/registry/clients/core/zones/simple-cloud-kit-api-production",
             {},
         ),
         (
-            200,
-            {
-                "status": "ok",
-                "code": 200,
-                "data": "Zone deleted: simple-cloud-kit-api-production",
-            },
+            204,
+            {},
         ),
     ),
 ]

@@ -1,73 +1,70 @@
 import os
 from pathlib import Path
 
+import pytest
+
 import core_framework as util
 
+from core_api.auth.tools import encrypt_credentials
 from core_db.registry.client import ClientActions
 from core_db.registry.zone import ZoneActions
 from core_db.registry.portfolio import PortfolioActions
 from core_db.registry.app import AppActions
 from core_db.profile import ProfileActions
 
-from .bootstrap import *
+from .bootstrap import bootstrap_dynamo
 
 oauth_client_secret_hash = os.getenv("CLIENT_SECRET")
 
 
-def test_seed_data(bootstrap_dynamo):
+@pytest.fixture(scope="session")
+def seed_test_data(bootstrap_dynamo):
 
-    # Load the seed data from YAML files
     CLIENT_FACTS_PATH = Path(__file__).with_name("facts-clients.yaml")
     _client_facts_payload = util.load_yaml_file(str(CLIENT_FACTS_PATH))
     client_facts = util.clean_yaml(_client_facts_payload["client_facts"])
 
-    # Create test data for clients
     for fact in client_facts:
-        if fact["client"] == "core":  # Only 'core' is the oauth client
-            fact["client_secret"] = oauth_client_secret_hash  # will set after creation
-        client_fact = ClientActions.create(**fact)
-        print(client_fact.model_dump_json(indent=2))
+        if fact["client"] == "core":
+            fact["client_secret"] = oauth_client_secret_hash
+        ClientActions.create(**fact)
 
-    # Load zone facts
     ZONE_FACTS_PATH = Path(__file__).with_name("facts-zones.yaml")
     _zone_facts_payload = util.load_yaml_file(str(ZONE_FACTS_PATH))
     zone_facts = util.clean_yaml(_zone_facts_payload["zone_facts"])
 
-    # Create test data for zones
     for fact in zone_facts:
-        client = fact.pop("client")  # client is not part of the fact, it's part of the table name
-        zone_fact = ZoneActions.create(client=client, **fact)
-        print(zone_fact.model_dump_json(indent=2))
+        client = fact.pop("client")
+        ZoneActions.create(client=client, **fact)
 
-    # Load portfolio facts
     PORTFOLIO_FACTS_PATH = Path(__file__).with_name("facts-portfolios.yaml")
     _portfolio_facts_payload = util.load_yaml_file(str(PORTFOLIO_FACTS_PATH))
     portfolio_facts = util.clean_yaml(_portfolio_facts_payload["portfolio_facts"])
 
-    # Create test data for portfolios
     for fact in portfolio_facts:
-        client = fact.pop("client")  # client is not part of the fact, it's part of the table name
-        portfolio_fact = PortfolioActions.create(client=client, **fact)
-        print(portfolio_fact.model_dump_json(indent=2))
+        client = fact.pop("client")
+        PortfolioActions.create(client=client, **fact)
 
-    # Load app facts
     APPS_FACTS_PATH = Path(__file__).with_name("facts-apps.yaml")
     _apps_facts_payload = util.load_yaml_file(str(APPS_FACTS_PATH))
     app_facts = util.clean_yaml(_apps_facts_payload["app_facts"])
 
-    # Create deployments (prod/dev)
     for fact in app_facts:
-        client = fact.pop("client")  # client is not part of the fact, it's part of the table name
-        app_fact = AppActions.create(client=client, **fact)
-        print(app_fact.model_dump_json(indent=2))
+        client = fact.pop("client")
+        AppActions.create(client=client, **fact)
 
-    # Load the administrator profiles
     PROFILES_FACTS_PATH = Path(__file__).with_name("facts-profiles.yaml")
     _profiles_facts_payload = util.load_yaml_file(str(PROFILES_FACTS_PATH))
     profile_facts = util.clean_yaml(_profiles_facts_payload["profile_facts"])
 
-    # Create administrator profiles
+    seed_password = os.getenv("SEED_USER_PASSWORD", "Passw0rd!")
     for fact in profile_facts:
         client = fact.pop("client")
-        profile = ProfileActions.create(client=client, **fact)
-        print(profile.model_dump_json(indent=2))
+        fact["credentials"] = encrypt_credentials(password=seed_password)
+        ProfileActions.create(client=client, **fact)
+
+    return True
+
+
+def test_seed_data(seed_test_data):
+    assert seed_test_data

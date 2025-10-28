@@ -15,41 +15,41 @@ actions: dict[str, RouteEndpoint] = {
     # Read operations (safe, cacheable)
     "GET:/api/v1/{portfolio}/{app}/{branch}/{build}/plan": RouteEndpoint(
         create_change_set,
-        permissions=[Role.USER],
+        required_permissions={Role.USER},
     ),
     "GET:/api/v1/{portfolio}/{app}/{branch}/{build}/verify": RouteEndpoint(
         verify_package,
-        permissions=[Role.USER],
+        required_permissions={Role.USER},
     ),
     # Create/Deploy operations (not idempotent)
     "POST:/api/v1/{portfolio}/{app}/{branch}/{build}/compile": RouteEndpoint(
         compile_templates,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
     "POST:/api/v1/{portfolio}/{app}/{branch}/{build}/deploy": RouteEndpoint(
         deploy_package,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
     "POST:/api/v1/{portfolio}/{app}/{branch}/{build}/upload": RouteEndpoint(
         upload_package,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
     "POST:/api/v1/{portfolio}/{app}/{branch}/{build}/release": RouteEndpoint(
         release_build,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
     # Update operations (idempotent)
     "PUT:/api/v1/{portfolio}/{app}/{branch}/{build}/apply": RouteEndpoint(
         apply_change_set,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
     "PUT:/api/v1/{portfolio}/{app}/{branch}/{build}/rollback": RouteEndpoint(
         rollback_release,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
     # Delete operations
     "DELETE:/api/v1/{portfolio}/{app}/{branch}/{build}/teardown": RouteEndpoint(
         teardown_environment,
-        permissions=[Role.ADMIN],
+        required_permissions={Role.ADMIN},
     ),
 }

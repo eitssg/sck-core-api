@@ -6,21 +6,28 @@ from fastapi.testclient import TestClient
 from core_api.api.fast_api import get_app
 from urllib.parse import urlencode, urlparse, parse_qs  # added parse helpers
 
+from .bootstrap import bootstrap_dynamo
+from .test_seed_data import seed_test_data
+from core_db.profile import ProfileActions
+
 app = get_app()
 
 server = TestClient(app)
 
 
-def test_public_browser_auth():
+def test_public_browser_auth(seed_test_data):
 
     # Get the URL for the form showing a nice spinner that says "Authorizing, please wait..."
-    CLIENT_ID = os.getenv("CLIENT_ID", "")
-    CLIENT_SECRET = os.getenv("CLIENT_SECRET", "")
-    CLIENT_CALLBACK = os.getenv("CLIENT_CALLBACK", "")
+    CLIENT_ID = os.getenv("CLIENT_ID") or "core_669a5fdd8be7"
+    CLIENT_SECRET = os.getenv("CLIENT_SECRET") or "test-secret"
+    CLIENT_CALLBACK = os.getenv("CLIENT_CALLBACK") or "http://localhost:8080/authorized"
+    SEED_USER_PASSWORD = os.getenv("SEED_USER_PASSWORD", "Passw0rd!")
 
     # page in my react app where I put up a spinner and wait for the /token
     REACT_APP_REDIRECT_URI = CLIENT_CALLBACK
     REACT_APP_LOGIN_PAGE = "/login"
+
+    server.cookies.clear()
 
     # STEP 1 - Generate Verifier
     #     code_verifier = "random_string"
@@ -61,16 +68,14 @@ def test_public_browser_auth():
     assert "returnTo" in q and q["returnTo"]  # must be present and non-empty
 
     # Ensure returnTo is a safe relative path (no external redirects)
-    return_to_path = q["returnTo"][0]
-    assert return_to_path.startswith("/") and "://" not in return_to_path
-    assert return_to_path == "/auth/v1/authorize"  # our server fixes returnTo to /authorize
+    return_to_value = q["returnTo"][0]
+    assert return_to_value.startswith("/") and "://" not in return_to_value
 
-    # Verify original OAuth params are echoed as top-level login query params (not inside returnTo)
-    for k, v in oauth_params.items():
-        assert q.get(k, [None])[0] == v
+    expected_return_to = f"/auth/v1/authorize?{urlencode(oauth_params)}"
+    assert return_to_value == expected_return_to
 
     # Save the URL we will call after login (path + original params)
-    return_to_authorize = f"{return_to_path}?{urlencode(oauth_params)}"
+    return_to_authorize = return_to_value
 
     # STEP 3 - Call /login to login to the Backend system that is authenticating the user.  It requires:
     #
@@ -88,39 +93,31 @@ def test_public_browser_auth():
     # If the user doesn't exist, we should get an unauthorized response.
 
     form_email = "jbarwick@eits.com.sg"
-    form_password = "mypassword"
+    form_password = SEED_USER_PASSWORD
+
+    profile = ProfileActions.get(client="core", user_id=form_email, profile_name="default")
+    assert profile.credentials and "Password" in profile.credentials
 
     # call the OAUTH SERVER to login
-    response = server.post(
+    login_response = server.post(
         "http://localhost:8090/auth/v1/login",
-        json={"email": form_email, "password": form_password},
+        json={"email": form_email, "password": form_password, "client_id": CLIENT_ID},
     )
 
-    assert response.status_code == 200
+    assert login_response.status_code == 200
 
-    body = response.json()
+    # This is the SESSION token in the cookies that proves we are logged in
+    assert "sck_token" in login_response.cookies
 
-    assert "data" in body
-    assert "code" in body
-
-    assert body["code"] == 200
-
-    data = body["data"]
-
-    assert "token" in data
-
-    # This is the OAUTH server token.  It is not the CORE API token.
-    # It is NOT the CORE-AUTOMATION API SERVER TOKEN.
-    token = data["token"]
-
-    assert "expires_in" in data and data["expires_in"] == 86400
-    assert "token_type" in data and data["token_type"] == "Bearer"
-
-    # STEP 4 - Call /authorize again, but this time set the authorization header to the token to exchange the code for a token
-    #     For OUR oauth server, we expect the token to be included in the Authorization header
-
-    headers = {"Authorization": f"Bearer {token}"}
-    response = server.get(return_to_authorize, headers=headers, follow_redirects=False)
+    # STEP 4 - Call /authorize again, but this time the session token should allow us to to
+    #     get the authorization code so we can exchange it for a token.
+   
+    cookie_header = "; ".join(f"{name}={value}" for name, value in login_response.cookies.items())
+    response = server.get(
+        return_to_authorize,
+        headers={"Cookie": cookie_header},
+        follow_redirects=False,
+    )
 
     assert response.status_code == 302
 
@@ -138,6 +135,8 @@ def test_public_browser_auth():
 
     code = parsed.query.split("code=")[1].split("&")[0]
     state = parsed.query.split("state=")[1].split("&")[0]
+
+    assert state == "authorize"
 
     # STEP 5 - Now on to the 'authorize' part of the progam
 

@@ -78,7 +78,7 @@ def _create_global_tables():
     PassKeysModelFactory.create_table(client, wait=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def bootstrap_dynamo():
 
     # see environment variables in .env

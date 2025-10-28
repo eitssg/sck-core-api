@@ -1,3 +1,4 @@
+import profile
 from typing import Optional, Any
 
 from datetime import datetime, timezone, timedelta
@@ -33,6 +34,7 @@ from core_db.profile import ProfileActions, UserProfile
 from core_db.oauth import ForgotPassword, ForgotPasswordActions
 from core_db.registry.client import ClientActions, ClientFact
 from core_db.exceptions import NotFoundException, ConflictException
+from sympy.physics.mechanics import body
 
 from core_api.response import RedirectResponse
 
@@ -857,12 +859,16 @@ def user_login(*, headers: dict, body: dict, **kwargs) -> Response:
     """
 
     try:
+        profile = body.get("profile", "default") # authenticate to the user's default profile by default
         user_id = body.get("email")
         password = body.get("password", "")
+        
+        client_id = body.get("client_id")
+        client = body.get("client", "core")  # authenticate within the core client by default
+        
         if not user_id or not password:
             return ErrorResponse(code=400, message="Email and password are required")
 
-        client_id = body.get("client_id")
         if not client_id:
             return ErrorResponse(code=400, message="The field client_id is required")
 
@@ -871,17 +877,15 @@ def user_login(*, headers: dict, body: dict, **kwargs) -> Response:
             log.warning(f"Rate limit exceeded for user {user_id} on /auth/v1/login")
             return ErrorResponse(code=429, message="rate_limited")
 
+        # app_info is not used in user login, however, we validate it to be sure the client_id exists.
         app_info: ClientFact | None = get_oauth_app_info(client_id)
         if not app_info:
             log.warn("Invalid client attempted login: %s", client_id)
             return ErrorResponse(code=400, message="invalid_client")
 
-        client = app_info.client
-
         # Get user profile and validate password
         try:
-            profile_name = "default"
-            profile_data = ProfileActions.get(client=client, user_id=user_id, profile_name=profile_name)
+            profile_data = ProfileActions.get(client=client, user_id=user_id, profile_name=profile)
         except Exception as e:
             log.debug(f"Profile not found for user {user_id}: {e}")
             return ErrorResponse(code=401, message="Authorization Failed", exception=e)
@@ -1894,152 +1898,152 @@ def _explain_permissions(permissions: list[str], resource: str, action: str) -> 
 auth_direct_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/signup": RouteEndpoint(
         user_signup,
-        permissions=["user:signup"],
+        required_permissions={"user:signup"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "GET:/auth/v1/me": RouteEndpoint(
         get_user_profile,
-        permissions=["user:read"],
+        required_permissions={"user:read"},
         required_token_type="session",
         client_isolation=False,
     ),
     "PUT:/auth/v1/me": RouteEndpoint(
         update_user_profile,
-        permissions=["user:update"],
+        required_permissions={"user:update"},
         required_token_type="session",
         client_isolation=False,
     ),
     "PATCH:/auth/v1/me": RouteEndpoint(
         update_user_profile,
-        permissions=["user:update"],
+        required_permissions={"user:update"},
         required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/me": RouteEndpoint(
         create_user_profile,
-        permissions=["user:update"],
+        required_permissions={"user:update"},
         required_token_type="session",
         client_isolation=False,
     ),
     "DELETE:/auth/v1/me": RouteEndpoint(
         delete_user_profile,
-        permissions=["user:delete"],
+        required_permissions={"user:delete"},
         required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/login": RouteEndpoint(
         user_login,
-        permissions=["user:login"],
+        required_permissions={"user:login"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "POST:/auth/v1/refresh": RouteEndpoint(
         refresh_session_cookie,
-        permissions=["user:refresh"],
+        required_permissions={"user:refresh"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "POST:/auth/v1/forgot": RouteEndpoint(
         forgot_password,
-        permissions=["user:forgot_password"],
+        required_permissions={"user:forgot_password"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "POST:/auth/v1/verify-secret": RouteEndpoint(
         verify_secret,
-        permissions=["user:verify_secret"],
+        required_permissions={"user:verify_secret"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "PUT:/auth/v1/password": RouteEndpoint(
         set_new_password,
-        permissions=["user:set_new_password"],
+        required_permissions={"user:set_new_password"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "POST:/auth/v1/logout": RouteEndpoint(
         user_logout,
-        permissions=["user:logout"],
+        required_permissions={"user:logout"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "GET:/auth/v1/organizations": RouteEndpoint(
         list_organizations,
-        permissions=["org:list"],
+        required_permissions={"org:list"},
         required_token_type="session",
         client_isolation=False,
     ),
     "GET:/auth/v1/verify": RouteEndpoint(
         verify_email_address,
-        permissions=["user:verify_email"],
+        required_permissions={"user:verify_email"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "POST:/auth/v1/verification/resend": RouteEndpoint(
         resend_verification_email,
-        permissions=["user:resend_verification"],
+        required_permissions={"user:resend_verification"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     # MFA endpoints are defined in core_api/oauth/auth_mfa.py
     "POST:/auth/v1/mfa/totp/setup": RouteEndpoint(
         mfa_totp_setup,
-        permissions=["mfa:setup"],
+        required_permissions={"mfa:setup"},
         required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/mfa/totp/confirm": RouteEndpoint(
         mfa_totp_confirm,
-        permissions=["mfa:confirm"],
+        required_permissions={"mfa:confirm"},
         required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/mfa/verify": RouteEndpoint(
         mfa_verify,
-        permissions=["mfa:verify"],
+        required_permissions={"mfa:verify"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "GET:/auth/v1/mfa/status": RouteEndpoint(
         mfa_status,  # Implemented in auth_mfa.py
-        permissions=["mfa:status"],
+        required_permissions={"mfa:status"},
         required_token_type="session",
         client_isolation=False,
     ),
     "GET:/auth/v1/profiles": RouteEndpoint(
         list_user_profiles,
-        permissions=["user:profile:list"],
+        required_permissions={"user:profile:list"},
         required_token_type="session",
         client_isolation=False,
     ),
     "POST:/auth/v1/profiles": RouteEndpoint(
         create_user_profile,
-        permissions=["user:profile:create"],
+        required_permissions={"user:profile:create"},
         required_token_type="session",
         client_isolation=False,
     ),
     "GET:/auth/v1/profiles/{profile_name}": RouteEndpoint(
         get_user_profile,
-        permissions=["user:profile:read"],
+        required_permissions={"user:profile:read"},
         required_token_type="session",
         client_isolation=False,
     ),
     "PATCH:/auth/v1/profiles/{profile_name}": RouteEndpoint(
         update_user_profile,
-        permissions=["user:profile:update"],
+        required_permissions={"user:profile:update"},
         required_token_type="session",
         client_isolation=False,
     ),
     "DELETE:/auth/v1/profiles/{profile_name}": RouteEndpoint(
         delete_user_profile,
-        permissions=["user:profile:delete"],
+        required_permissions={"user:profile:delete"},
         required_token_type="session",
         client_isolation=False,
     ),
     "GET:/auth/v1/permissions/explain": RouteEndpoint(
         get_permissions,
-        permissions=["user:permissions:explain"],
+        required_permissions={"user:permissions:explain"},
         required_token_type="session",
         client_isolation=False,
     ),

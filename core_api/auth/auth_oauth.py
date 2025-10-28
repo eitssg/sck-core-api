@@ -380,7 +380,7 @@ def oauth_authorize(
             },
         )
         return RedirectResponse(url=ui_login)
-
+    
     # 4) Database validation (client lookup) - AFTER auth check and rate limiting
     app_info: ClientFact | None = get_oauth_app_info(client_id)
     if not app_info:
@@ -934,42 +934,42 @@ def oauth_jwks(*, headers: dict, **kwargs) -> OAuthErrorResponse | OAuthJWKSResp
 auth_oauth_endpoints = {
     "GET:/auth/v1/authorize": RouteEndpoint(
         oauth_authorize,
-        permissions={Permission.DATA_READ},
+        required_permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=True,  # Enable client isolation for now; revisit as the platform evolves
     ),
     "GET:/auth/v1/cred_enc_key": RouteEndpoint(
         get_cred_enc_key,
-        permissions={Permission.DATA_READ},
+        required_permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "POST:/auth/v1/token": RouteEndpoint(
         oauth_token,
-        permissions={Permission.DATA_READ},
+        required_permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "POST:/auth/v1/revoke": RouteEndpoint(
         oauth_revoke,
-        permissions={Permission.USER_MANAGE},
+        required_permissions={Permission.USER_MANAGE},
         client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "POST:/auth/v1/introspect": RouteEndpoint(
         oauth_introspect,
-        permissions={Permission.DATA_READ},
+        required_permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "GET:/auth/v1/userinfo": RouteEndpoint(
         oauth_userinfo,
-        permissions={Permission.DATA_READ},
+        required_permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=True,  # Enable client isolation for now; revisit
     ),
     "GET:/auth/v1/jwks": RouteEndpoint(
         oauth_jwks,
-        permissions={Permission.DATA_READ},
+        required_permissions={Permission.DATA_READ},
         allow_anonymous=True,
         client_isolation=True,  # Enable client isolation for now; revisit
     ),

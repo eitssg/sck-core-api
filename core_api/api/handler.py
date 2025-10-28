@@ -283,6 +283,10 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         )
         log.debug("Action result data:", details=response.model_dump())
 
+        if response.metadata is None:
+            response.metadata = {}
+        response.metadata["correlation_id"] = correlation_id
+
         # Convert Response to ProxyResponse (dict) and return for API Gateway
         return get_proxy_response(response)
 
@@ -291,9 +295,9 @@ def handler(event: Any, context: Optional[Any] = None) -> Dict[str, Any]:
         log.warning("Client error in API request", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
-    except UnauthorizedException as e:
+    except (UnauthorizedException, PermissionError) as e:
         error_response = ErrorResponse(message=str(e), code=403, metadata={"correlation_id": correlation_id})
-        log.warning("Authentication failed", details=error_response.model_dump())
+        log.warning("Authorization failed", details=error_response.model_dump())
         return get_proxy_error_response(error_response)
 
     except (NotFoundException, OperationException) as e:

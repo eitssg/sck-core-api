@@ -15,6 +15,20 @@ from .auth.tools import JwtPayload, get_authenticated_user
 from .request import ProxyEvent, RouteEndpoint
 
 
+class PermissionCategory(str, Enum):
+    """Categories for system permissions."""
+
+    WILDCARD = "*"
+    REGISTRY = "registry"
+    PROFILE = "profile"
+    EVENT = "event"
+    ITEM = "item"
+    USER = "user"
+    SYSTEM = "system"
+    OAUTH_CLIENT = "client"
+    DATA = "data"
+    TASK = "task"
+
 class Permission(str, Enum):
     """System permissions that can be granted to users."""
 
@@ -30,7 +44,7 @@ class Permission(str, Enum):
 
     # Event Log
     EVENT_READ = "event:read"  # view
-    EVENT_CREATE = "event:create"  # create
+    EVENT_WRITE = "event:write"  # write a new event (create)
     EVENT_ADMIN = "event:admin"  # delete/edit/view
 
     # All Deployment permissions (all deployed items... portfolios, apps, branches, builds, components)
@@ -129,6 +143,31 @@ class Role(str, Enum):
     APPROVER = "approver"
     SERVICE = "service"
 
+def get_matched_permissions(perm_with_wilecard: str) -> Set[str]:
+    """Get all permissions that match a wildcard permission."""
+    matched_permissions = set()
+
+    if perm_with_wilecard == Permission.WILDCARD_ADMIN.value:
+        # Matches all permissions
+        matched_permissions = {perm.value for perm in Permission}
+    else:
+        # Split the wildcard permission into parts
+        parts = perm_with_wilecard.split(":")
+        for perm in Permission:
+            perm_parts = perm.value.split(":")
+            if len(parts) != len(perm_parts):
+                continue
+
+            match = True
+            for p1, p2 in zip(parts, perm_parts):
+                if p1 != "*" and p1 != p2:
+                    match = False
+                    break
+
+            if match:
+                matched_permissions.add(perm.value)
+
+    return matched_permissions
 
 @dataclass
 class EnhancedSecurityContext:
@@ -248,12 +287,12 @@ def derive_roles_from_permissions(permissions: Set[str]) -> Set[str]:
     roles = {"user"}  # Default role
 
     # Admin role if they have admin permissions
-    admin_perms = {"user:manage", "client:manage", "*:admin", "system:config"}
+    admin_perms = {"user:manage", "client:manage", "*:admin", "*:*:admin", "system:config"}
     if admin_perms.intersection(permissions):
         roles.add("admin")
 
     # Service role if they have service-specific permissions
-    service_perms = {"service:*", "registry:client:write", "registry:portfolio:write"}
+    service_perms = {"service:*", "registry:*:admin", "registry:client:write", "registry:portfolio:write"}
     if service_perms.intersection(permissions):
         roles.add("service")
 
@@ -262,7 +301,7 @@ def derive_roles_from_permissions(permissions: Set[str]) -> Set[str]:
         roles.add("billing_admin")
 
     # Read-only role
-    read_only_perms = {"*:read", "portfolio:read", "app:read", "component:read"}
+    read_only_perms = {"*:read", "event:read", "registry:read", "portfolio:read", "app:read", "component:read"}
     if read_only_perms.intersection(permissions) and not admin_perms.intersection(permissions):
         roles.add("readonly")
 
@@ -281,10 +320,24 @@ def has_permission_with_wildcard(user_permissions: Set[str], required_permission
 
     # Check resource and action wildcards
     if ":" in required_permission:
-        resource, action = required_permission.split(":", 1)
-        if f"{resource}:*" in user_permissions:
+        parts = required_permission.split(":")
+        if len(parts) == 2:
+            category, action = parts[0], parts[1]
+        elif len(parts) == 3:
+            category, action = parts[0], parts[2]
+        else:
+            return False
+        
+        # Perform all actions in the category
+        if f"{category}:*" in user_permissions:
             return True
+    
+        # Perform the specific action across all categories and resoruces
         if f"*:{action}" in user_permissions:
+            return True
+
+        # Perform the action on all resources the category
+        if f"{category}:*:{action}" in user_permissions:
             return True
 
     return False

@@ -3,6 +3,7 @@
 from calendar import c
 from collections import ChainMap
 
+from botocore import args
 from core_db.registry.app import AppActions, AppFact
 from core_db.exceptions import BadRequestException, NotFoundException, ConflictException, ForbiddenException
 
@@ -18,20 +19,21 @@ class ApiRegAppActions(ApiActions, AppActions):
     pass
 
 
-def _merge_params(query_params: dict, path_params: dict, body: dict) -> dict:
-    return dict(ChainMap(body, query_params, path_params))
+def _merged(query_params: dict, path_params: dict, body: dict, skip: list[str] = None) -> dict:
+    args = dict(ChainMap(path_params, query_params, body))
+    if skip:
+        for key in skip:
+            if key in args: 
+                del args[key]
+    return args
 
 
 def list_app_action(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
-    merged = _merge_params(query_params, path_params, body)
-
+    
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio"])
 
     if not client or not portfolio:
         return ErrorResponse(code=400, message="Bad request: Missing required path parameters")
@@ -40,7 +42,7 @@ def list_app_action(*, query_params: dict, path_params: dict, body: dict, securi
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or unauthorized")
 
     try:
-        response, paginator = ApiRegAppActions.list(client=client, portfolio=portfolio, **merged)
+        response, paginator = ApiRegAppActions.list(client=client, portfolio=portfolio, **args)
 
         exclude_fields = {
             "image_aliases",
@@ -64,15 +66,11 @@ def list_app_action(*, query_params: dict, path_params: dict, body: dict, securi
 def create_app_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_params(query_params, path_params, body)
-
+    
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio"])
 
     if not client or not portfolio:
         return ErrorResponse(code=400, message="Bad request: Missing required path parameters")
@@ -81,7 +79,7 @@ def create_app_action(
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or unauthorized")
 
     try:
-        response = ApiRegAppActions.create(client=client, portfolio=portfolio, **merged)
+        response = ApiRegAppActions.create(client=client, portfolio=portfolio, **args)
 
         # The database responds in PascalCase, but we want to return in snake_case
         data = response.model_dump(by_alias=False, mode="json")
@@ -100,18 +98,12 @@ def create_app_action(
 
 
 def get_app_action(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
-    merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
     app = path_params.get("app")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
-    if "app" in merged:
-        del merged["app"]
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio", "app"])
 
     if not client or not portfolio or not app:
         return ErrorResponse(code=400, message="Bad request: Missing required path parameters")
@@ -121,7 +113,7 @@ def get_app_action(*, query_params: dict, path_params: dict, body: dict, securit
 
     try:
 
-        response = ApiRegAppActions.get(client=client, portfolio=portfolio, app=app, **merged)
+        response = ApiRegAppActions.get(client=client, portfolio=portfolio, app=app, **args)
 
         # The database responds in PascalCase, but we want to return in snake_case
         data = response.model_dump(by_alias=False, mode="json")
@@ -141,18 +133,12 @@ def get_app_action(*, query_params: dict, path_params: dict, body: dict, securit
 def update_app_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_params(query_params, path_params, body)
-
+    
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
     app = path_params.get("app")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
-    if "app" in merged:
-        del merged["app"]
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio", "app"])
 
     if not client or not portfolio or not app:
         return ErrorResponse(code=400, message="Bad request: Missing required path parameters")
@@ -162,8 +148,8 @@ def update_app_action(
 
     try:
 
-        response = ApiRegAppActions.update(client=client, portfolio=portfolio, app=app, **merged)
-        data = AppFact(**response.data).model_dump(by_alias=False, mode="json")
+        response = ApiRegAppActions.update(client=client, portfolio=portfolio, app=app, **args)
+        data = response.model_dump(by_alias=False, mode="json")
         return SuccessResponse(data=data)
 
     except NotFoundException as e:
@@ -180,18 +166,11 @@ def update_app_action(
 
 
 def patch_app_action(*, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
-    merged = _merge_params(query_params, path_params, body)
-
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
     app = path_params.get("app")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
-    if "app" in merged:
-        del merged["app"]
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio", "app"])
 
     if not client or not portfolio or not app:
         return ErrorResponse(code=400, message="Bad request: Missing required path parameters")
@@ -201,8 +180,8 @@ def patch_app_action(*, query_params: dict, path_params: dict, body: dict, secur
 
     try:
 
-        response = ApiRegAppActions.patch(client=client, portfolio=portfolio, app=app, **merged)
-        data = AppFact(**response.data).model_dump(by_alias=False, mode="json")
+        response = ApiRegAppActions.patch(client=client, portfolio=portfolio, app=app, **args)
+        data = response.model_dump(by_alias=False, mode="json")
         return SuccessResponse(data=data)
 
     except NotFoundException as e:
@@ -221,18 +200,12 @@ def patch_app_action(*, query_params: dict, path_params: dict, body: dict, secur
 def delete_app_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_params(query_params, path_params, body)
 
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
     app = path_params.get("app")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
-    if "app" in merged:
-        del merged["app"]
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio", "app"])
 
     if not client or not portfolio or not app:
         return ErrorResponse(code=400, message="Bad request: Missing required parameters")
@@ -241,9 +214,8 @@ def delete_app_action(
         return ErrorResponse(code=403, message="Forbidden: Client mismatch or unauthorized")
 
     try:
-        response = ApiRegAppActions.delete(client=client, portfolio=portfolio, app=app, **merged)
-        data = AppFact(**response.data).model_dump(by_alias=False, mode="json")
-        return SuccessResponse(data=data)
+        ApiRegAppActions.delete(client=client, portfolio=portfolio, app=app, **args)
+        return SuccessResponse(code=204)
 
     except NotFoundException as e:
         return ErrorResponse(code=404, message=str(e))
@@ -261,26 +233,26 @@ def delete_app_action(
 registry_app_actions: dict[str, RouteEndpoint] = {
     "GET:/api/v1/registry/clients/{client}/portfolios/{portfolio}/apps": RouteEndpoint(
         list_app_action,
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_APP_READ},
     ),
     "POST:/api/v1/registry/clients/{client}/portfolios/{portfolio}/apps": RouteEndpoint(
         create_app_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_APP_WRITE},
     ),
     "GET:/api/v1/registry/clients/{client}/portfolios/{portfolio}/apps/{app}": RouteEndpoint(
         get_app_action,
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_APP_READ},
     ),
     "PUT:/api/v1/registry/clients/{client}/portfolios/{portfolio}/apps/{app}": RouteEndpoint(
         update_app_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_APP_WRITE},
     ),
     "DELETE:/api/v1/registry/clients/{client}/portfolios/{portfolio}/apps/{app}": RouteEndpoint(
         delete_app_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_APP_WRITE},
     ),
     "PATCH:/api/v1/registry/clients/{client}/portfolios/{portfolio}/apps/{app}": RouteEndpoint(
         patch_app_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_APP_WRITE},
     ),
 }

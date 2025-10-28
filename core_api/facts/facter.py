@@ -5,8 +5,6 @@ This FACTS database should come from DynamoDB.  Not 'accounts.yaml' and 'apps.ya
 (In re-rewrite.  We need to use DynamoDB instead of FACTS YAML files)
 """
 
-from collections import ChainMap
-
 from core_db.facter.actions import FactsActions
 from core_db.exceptions import ConflictException, NotFoundException, BadRequestException
 
@@ -22,67 +20,29 @@ class ApiFactsActions(ApiActions, FactsActions):
 
 def get_facts_action(*, query_params: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
     """
-    API Documentation:
-    ----------------
-    GET /api/v1/facts
-        Retrieves facts for a given Pipeline Reference Number (PRN).
-
-        Query Parameters:
-            prn (string): Pipeline Reference Number in format prn:p:a:b:n where:
-                p = portfolio
-                a = application
-                b = branch
-                n = build number
-
-        Response:
-            200 OK
-            {
-                "AwsAccountId": "123456789012",
-                "AwsAccountName": "example-account"
-                "AwsRegion": "ap-southeast-1",
-                "RegionAlias": "sin"
-                "Tags": {
-                    "client": "example-client",
-                    "portfolio": "example-portfolio",
-                    "app": "example-app",
-                    "branch": "main",
-                    "build": "123",
-                    "environment": "prod",
-                    "region": "sin",
-                    "zone": "example-zone",
-                    "owner": "team@example.com",
-                    "opex-code": "OPEX123",
-                    "capex-code": "CAPEX456",
-                    "jira-code": "PROJ"
-                },
-                "Approvers": ["approver1@example.com"],
-                "Contacts": ["contact1@example.com"],
-                "Owner": "owner@example.com"
-            }
-
-            400 Bad Request
-            {
-                "error": "Invalid PRN format"
-            }
-
-            404 Not Found
-            {
-                "error": "Facts not found for given PRN"
-            }
+    Returns FACTS information for the given PRN. FACTS are provided as context to the compilers
+    used in Jinja2 templates throughout the system.
     """
     try:
+
         args = {"client_id": security.client_id, "client": security.client, "prn": query_params.get("prn", "")}
         data = ApiFactsActions.get(**args)
         return SuccessResponse(data=data)
+
     except NotFoundException as e:
         return ErrorResponse(message=str(e), code=404)
+
     except BadRequestException as e:
         return ErrorResponse(message=str(e), code=400)
+
     except ConflictException as e:
         return ErrorResponse(message=str(e), code=500, exception=e)
 
 
 # Define API Gateway routes
 facts_actions: dict[str, RouteEndpoint] = {
-    "GET:/api/v1/facts": RouteEndpoint(get_facts_action, permissions=[Permission.DATA_READ]),
+    "GET:/api/v1/facts": RouteEndpoint(
+        get_facts_action, 
+        required_permissions={Permission.REGISTRY_READ}
+    ),
 }

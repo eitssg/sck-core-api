@@ -11,16 +11,19 @@ The user will then perform action_get_item() to retrieve the deployment definiti
 """
 
 from collections import ChainMap
+from os import path
 from botocore.exceptions import ClientError
 from botocore.config import Config
 
+from core_helper import MagicS3Client
 import core_logging as log
 
 import core_framework as util
 import core_helper.aws as aws
 
-from core_db.registry.portfolio import PortfolioActions, PortfolioFact
+from core_db.registry.portfolio import PortfolioActions
 from core_db.exceptions import BadRequestException, ConflictException, NotFoundException
+from multipart import p
 
 from ..security import EnhancedSecurityContext, Permission
 from ..request import ActionHandlerRoutes, RouteEndpoint
@@ -32,8 +35,13 @@ class ApiRegPortfolioActions(ApiActions, PortfolioActions):
     pass
 
 
-def _merge_map(*, query_params: dict, path_params: dict, body: dict, **kwargs) -> dict:
-    return dict(ChainMap(body, path_params, query_params))
+def _merged(query_params: dict, path_params: dict, body: dict, skip: list[str] = None) -> dict:
+    args = dict(ChainMap(path_params, query_params, body))
+    if skip:
+        for key in skip:
+            if key in args: 
+                del args[key]
+    return args
 
 
 def list_portfolios_action(
@@ -59,26 +67,23 @@ def list_portfolios_action(
     Returns:
         Response: AWS Api Gateway Response
     """
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
+
+    args = _merged(query_params, path_params, body, skip=["client"])
 
     if not client or client != security.client:
         return ErrorResponse(code=400, message="Missing client specified or unauthorized")
-
-    if "client" in merged:
-        del merged["client"]
 
     log.debug(
         "List portfolios request",
         details={
             "client": client,
-            "filters": merged,
+            "filters": args,
         },
     )
 
     try:
-        results, paginator = ApiRegPortfolioActions.list(client=client, **merged)
+        results, paginator = ApiRegPortfolioActions.list(client=client, **args)
 
         # Minimal fields for the list view (snake_case names from PortfolioFact)
         include_fields = {
@@ -122,25 +127,23 @@ def get_portfolio_action(
     """
     Returns a portfolio for the client.
     """
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
+
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio"])
 
     if not client or not portfolio or client != security.client:
         return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
+    if not portfolio:
+        return ErrorResponse(code=400, message="Missing portfolio parameter")
 
     try:
         log.debug(
             "Get portfolio request",
-            details={"client": client, "portfolio": portfolio, "filters": merged},
+            details={"client": client, "portfolio": portfolio, "filters": args},
         )
-        result = ApiRegPortfolioActions.get(client=client, portfolio=portfolio, **merged)
+        result = ApiRegPortfolioActions.get(client=client, portfolio=portfolio, **args)
 
         data = result.model_dump(by_alias=False, mode="json")
 
@@ -168,24 +171,22 @@ def get_portfolio_action(
 def create_portfolio_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
-    if "client" in merged:
-        del merged["client"]
+
+    args = _merged(query_params, path_params, body, skip=["client"])
 
     if not client or client != security.client:
         return ErrorResponse(code=400, message="Missing client specified or unauthorized")
 
     try:
-        log.debug("Create portfolio request", details={"client": client, "payload": merged})
+        log.debug("Create portfolio request", details={"client": client, "payload": args})
 
-        result = ApiRegPortfolioActions.create(client=client, **merged)
+        result = ApiRegPortfolioActions.create(client=client, **args)
         data = result.model_dump(by_alias=False, mode="json")
 
         log.debug("Create portfolio success", details={"client": client, "portfolio": data.get("portfolio")})
 
-        return SuccessResponse(data=data)
+        return SuccessResponse(code=201, data=data)
 
     except BadRequestException as e:
         return ErrorResponse(code=400, message=str(e))
@@ -201,25 +202,23 @@ def create_portfolio_action(
 def update_portfolio_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
+
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio"])
 
     if not client or not portfolio or client != security.client:
         return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
-
+    if not portfolio:
+        return ErrorResponse(code=400, message="Missing portfolio parameter")
+    
     try:
         log.debug(
             "Update portfolio request",
-            details={"client": client, "portfolio": portfolio, "payload": merged},
+            details={"client": client, "portfolio": portfolio, "payload": args},
         )
-        result = ApiRegPortfolioActions.update(client=client, portfolio=portfolio, **merged)
+        result = ApiRegPortfolioActions.update(client=client, portfolio=portfolio, **args)
 
         data = result.model_dump(by_alias=False, mode="json")
 
@@ -246,25 +245,20 @@ def patch_portfolio_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
 
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
-
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
+
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio"])
 
     if not client or not portfolio or client != security.client:
         return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
-
     try:
         log.debug(
             "Patch portfolio request",
-            details={"client": client, "portfolio": portfolio, "payload": merged},
+            details={"client": client, "portfolio": portfolio, "payload": args},
         )
-        result = ApiRegPortfolioActions.patch(client=client, portfolio=portfolio, **merged)
+        result = ApiRegPortfolioActions.patch(client=client, portfolio=portfolio, **args)
 
         data = result.model_dump(by_alias=False)
 
@@ -289,18 +283,14 @@ def patch_portfolio_action(
 def delete_portfolio_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
 ) -> Response:
-    merged = _merge_map(query_params=query_params, body=body, **kwargs)
 
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
 
+    args = _merged(query_params, path_params, body, skip=["client", "portfolio"])
+
     if not client or not portfolio or client != security.client:
         return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
-
-    if "client" in merged:
-        del merged["client"]
-    if "portfolio" in merged:
-        del merged["portfolio"]
 
     try:
         log.debug(
@@ -308,7 +298,7 @@ def delete_portfolio_action(
             details={"client": client, "portfolio": portfolio},
         )
 
-        ApiRegPortfolioActions.delete(client=client, portfolio=portfolio, **merged)
+        ApiRegPortfolioActions.delete(client=client, portfolio=portfolio, **args)
 
         log.debug("Delete portfolio success", details={"client": client, "portfolio": portfolio})
         return SuccessResponse(code=204, message="Portfolio deleted successfully")
@@ -356,23 +346,22 @@ def _icon_s3_bucket_and_key(client: str, portfolio: str, filename: str | None = 
     return bucket, key
 
 
-def upload_portfolio_icon_action(*, path_params: dict, body: dict, **kwargs) -> Response:
+def upload_portfolio_icon_action(*, path_params: dict, body: dict, security: EnhancedSecurityContext,**kwargs) -> Response:
     """Generate a presigned S3 PUT URL for uploading a portfolio icon.
 
     Request body (JSON): { fileName, contentType, fileSize }
     Response: { uploadUrl, method: "PUT", headers: { Content-Type, Cache-Control }, s3Bucket, s3Key, iconUrl, expiresIn }
     """
-    path_params = path_params or {}
-    body = body or {}
+
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
 
+    if not client or not portfolio or client != security.client:
+        return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
+    
     file_name = body.get("fileName") or body.get("filename") or "icon.png"
     content_type = body.get("contentType") or "image/png"
     file_size = int(body.get("fileSize") or 0)
-
-    if not client or not portfolio:
-        return ErrorResponse(code=400, message="Missing client or portfolio")
 
     # Compute bucket/key
     bucket, key = _icon_s3_bucket_and_key(client, portfolio, file_name)
@@ -429,24 +418,23 @@ def upload_portfolio_icon_action(*, path_params: dict, body: dict, **kwargs) -> 
         return ErrorResponse(code=500, message="Failed to generate upload URL", exception=e)
 
 
-def get_portfolio_icon_action(*, path_params: dict, **kwargs) -> Response:
+def get_portfolio_icon_action(*, path_params: dict, security: EnhancedSecurityContext, **kwargs) -> Response:
     """Redirect to a short-lived presigned GET for the portfolio icon in the private bucket.
 
     If object not found, return 404.
     """
-    path_params = path_params or {}
     client = path_params.get("client")
     portfolio = path_params.get("portfolio")
 
-    if not client or not portfolio:
-        return ErrorResponse(code=400, message="Missing client or portfolio")
+    if not client or not portfolio or client != security.client:
+        return ErrorResponse(code=400, message="Missing client or portfolio or unauthorized")
 
     # Try common extensions in order of preference
     exts = [".webp", ".png", ".svg", ".jpg", ".jpeg"]
     region = util.get_artefact_bucket_region()
     bucket = util.get_artefact_bucket_name(client, region)
-    session = aws.get_session(region=region)
-    s3 = session.client("s3", config=Config(signature_version="s3v4"))
+
+    s3 = MagicS3Client.get_client(region, Config=Config(signature_version="s3v4"))
 
     key_found = None
     for ext in exts:
@@ -476,8 +464,8 @@ def get_portfolio_icon_action(*, path_params: dict, **kwargs) -> Response:
             ExpiresIn=60,  # short TTL for browsers
         )
         # 302 redirect to the signed URL
-        resp = RedirectResponse(url=get_url)
-        return resp
+        return RedirectResponse(url=get_url)
+       
     except ClientError as e:
         log.error("Failed to presign icon GET", details={"client": client, "portfolio": portfolio, "error": str(e)}, exc_info=True)
         return ErrorResponse(code=500, message="Failed to get icon", exception=e)
@@ -486,36 +474,36 @@ def get_portfolio_icon_action(*, path_params: dict, **kwargs) -> Response:
 registry_portfolio_actions: ActionHandlerRoutes = {
     "GET:/api/v1/registry/clients/{client}/portfolios": RouteEndpoint(
         list_portfolios_action,
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_READ},
     ),
     "POST:/api/v1/registry/clients/{client}/portfolios": RouteEndpoint(
         create_portfolio_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_WRITE},
     ),
     "GET:/api/v1/registry/clients/{client}/portfolios/{portfolio}": RouteEndpoint(
         get_portfolio_action,
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_READ},
     ),
     "PUT:/api/v1/registry/clients/{client}/portfolios/{portfolio}": RouteEndpoint(
         update_portfolio_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_WRITE},
     ),
     "DELETE:/api/v1/registry/clients/{client}/portfolios/{portfolio}": RouteEndpoint(
         delete_portfolio_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_WRITE},
     ),
     "PATCH:/api/v1/registry/clients/{client}/portfolios/{portfolio}": RouteEndpoint(
         patch_portfolio_action,
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_WRITE},
     ),
     # Icon upload: returns presigned PUT URL and derived icon URL
     "POST:/api/v1/registry/clients/{client}/portfolios/{portfolio}/icon/upload": RouteEndpoint(
         lambda **kwargs: upload_portfolio_icon_action(**kwargs),
-        required_permissions={Permission.DATA_WRITE},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_WRITE},
     ),
     # Icon fetch: 302 redirect to presigned GET for private bucket object
     "GET:/api/v1/registry/clients/{client}/portfolios/{portfolio}/icon": RouteEndpoint(
         lambda **kwargs: get_portfolio_icon_action(**kwargs),
-        required_permissions={Permission.DATA_READ},
+        required_permissions={Permission.REGISTRY_PORTFOLIO_READ},
     ),
 }

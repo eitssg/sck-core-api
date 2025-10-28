@@ -30,10 +30,9 @@ import core_logging as log
 from core_db.passkey import PassKeyActions, PassKey
 from core_db.profile import ProfileActions, UserProfile
 
-from ..security import get_authenticated_user
 from ..request import RouteEndpoint
 from ..response import Response, SuccessResponse, ErrorResponse, RedirectResponse, cookie_opts
-from ..auth.tools import JwtPayload, check_rate_limit, emit_session_cookie
+from ..auth.tools import JwtPayload, check_rate_limit, emit_session_cookie, get_authenticated_user
 
 PASSKEY_CHALLENGE_COOKIE = "sck_passkey_challenge"
 AUTH_CLIENT = "core"
@@ -722,47 +721,47 @@ def get_passkeys(*, cookies: dict | None = None, query_params: dict, path_params
 auth_passkey_endpoints: dict[str, RouteEndpoint] = {
     "POST:/auth/v1/webauthn/register/begin": RouteEndpoint(
         register_begin,
-        permissions=["user:sigpasskey:register"],
+        required_permissions={"user:sigpasskey:register"},
         required_token_type="session",
         allow_anonymous=False,
         client_isolation=False,
     ),
     "POST:/auth/v1/webauthn/register/complete": RouteEndpoint(
         register_complete,
-        permissions=["user:passkey:register"],
+        required_permissions={"user:passkey:register"},
         required_token_type="session",
         allow_anonymous=False,
         client_isolation=False,
     ),
     "POST:/auth/v1/webauthn/authenticate/begin": RouteEndpoint(
         webauthn_authenticate_begin,
-        permissions=["user:sigpasskey:authenticate"],
+        required_permissions={"user:sigpasskey:authenticate"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "POST:/auth/v1/webauthn/authenticate/complete": RouteEndpoint(
         webauthn_authenticate_complete,
-        permissions=["user:sigpasskey:authenticate"],
+        required_permissions={"user:sigpasskey:authenticate"},
         allow_anonymous=True,
         client_isolation=False,
     ),
     "DELETE:/auth/v1/passkey/{key_id}": RouteEndpoint(
         delete_passkey,
-        permissions=["user:passkey:delete"],
+        required_permissions={"user:passkey:delete"},
         required_token_type="session",
         allow_anonymous=False,
         client_isolation=False,
     ),
     "PATCH:/auth/v1/passkey/{key_id}": RouteEndpoint(
         update_passkey,
-        permissions=["user:passkey:update"],
+        required_permissions={"user:passkey:update"},
         required_token_type="session",
         allow_anonymous=False,
         client_isolation=False,
     ),
     "GET:/auth/v1/passkeys": RouteEndpoint(
         get_passkeys,
-        permissions=["user:passkey:list"],
+        required_permissions={"user:passkey:list"},
         required_token_type="session",
         allow_anonymous=False,
         client_isolation=False,

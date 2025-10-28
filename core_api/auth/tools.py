@@ -41,7 +41,7 @@ from ..constants import (
     SCK_TOKEN_COOKIE_NAME,
 )
 
-from ..response import Response, SuccessResponse
+from ..response import Response
 
 
 class JwtPayload(BaseModel):
@@ -1401,18 +1401,19 @@ def get_oauth_app_info(client_id: str, client: str | None = None) -> ClientFact 
         ...     return JSONResponse({"error": "invalid_client"}, status_code=401)
     """
     try:
-        client_list, _ = ClientActions.list(client_id=client_id)
+        if client is None:
+            client = client_id.split("_")[0] if "_" in client_id else "core "
+
+        client_list, _ = ClientActions.list(client_id=client_id, client=client)
         if not client_list:
             log.debug(f"OAuth client ID not found: {client_id}")
             return None
-        if client:
-            for c in client_list:
-                if c.client == client or c.client:
-                    log.debug(f"OAuth app info for client {client_id} and client {client}", details=c.model_dump())
-                    return c
-        first_client: ClientFact = client_list[0]
-        log.debug(f"OAuth app info for client {client_id}", details=first_client.model_dump())
-        return first_client
+        if len(client_list) == 0:
+            log.debug(f"No OAuth clients found for client ID {client_id}")
+            return None
+        if len(client_list) > 1:
+            log.debug(f"Multiple OAuth clients found for client ID {client_id}, using first")
+        return client_list[0]  
     except Exception as e:
         log.debug(f"Failed to get OAuth app info for client {client_id}: {str(e)}")
         return None

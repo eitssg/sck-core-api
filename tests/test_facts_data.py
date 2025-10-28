@@ -3,15 +3,15 @@ import os
 volume = os.getenv("VOLUME", "/core-data")
 
 api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
-    # Registry of Clients
+    # Registry of Clients (client_id comes from the user authentication token)
     # Case 0
     (
         (
-            "POST",
-            "/api/v1/registry/clients",
+            "PUT",  # Updaate the current seed data to below
+            "/api/v1/registry/clients/core",
             {
-                "client_id": "grp-1234567890",
-                "client": "eits",
+                "client_id": "core_669a5fdd8be7",
+                "client": "core",
                 "organization_id": "o-1234567890",
                 "organization_name": "My Organization",
                 "organization_account": "1234566890",
@@ -32,153 +32,152 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             {
                 "status": "ok",
                 "code": 200,
-                "data": {"Client": "eits", "OrganizationId": "o-1234567890"},
+                "data": {"client": "core", "organization_id": "o-1234567890"},
             },
         ),
     ),
     # Registry of Portfolios or Business Applications
-    # Case 1
+    # Case 1 (client_id comes from the user authentication token)
     (
         (
             "POST",
-            "/api/v1/registry/eits/portfolios",
+            "/api/v1/registry/clients/core/portfolios",
             {
                 "portfolio": "simple-cloud-kit",
-                "owner": {"Email": "boss@gmail.com", "Name": "The Boss"},
-                "contacts": [{"Name": "Contact 1", "Email": "contact1@gmail.com"}],
+                "owner": {"email": "boss@gmail.com", "name": "The Boss"},
+                "contacts": [{"name": "Contact 1", "email": "contact1@gmail.com"}],
                 "approvers": [
                     {
-                        "Sequence": 1,
-                        "Name": "Approver 1",
-                        "Email": "contact2@gmail.com",
-                        "DependsOn": [],
+                        "sequence": 1,
+                        "name": "Approver 1",
+                        "email": "contact2@gmail.com",
+                        "depends_on": [],
                     },
                     {
-                        "Sequence": 2,
-                        "Name": "Approver 1",
-                        "Email": "contact2@gmail.com",
-                        "DependsOn": [1],
+                        "sequence": 2,
+                        "name": "Approver 1",
+                        "email": "contact2@gmail.com",
+                        "depends_on": [1],
                     },
                 ],
                 "project": {
-                    "Name": "My Big Buisness Project",
-                    "Code": "MBBP",
-                    "Repository": "https://github.com/eits/mbbp.git",
-                    "Description": "This business project will impact people in a big way with big blue colors",
+                    "name": "My Big Buisness Project",
+                    "code": "MBBP",
+                    "repository": "https://github.com/core/mbbp.git",
+                    "description": "This business project will impact people in a big way with big blue colors",
                 },
                 "bizapp": {
-                    "Name": "CMDB Record Name",
-                    "Code": "Big Prj",
-                    "Description": "This is the Big Boss project",
+                    "name": "CMDB Record Name",
+                    "code": "Big Prj",
+                    "description": "This is the Big Boss project",
                 },
-                "Attributes": {
+                "attributes": {
                     "key1": "value1",
                 },
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
-                    "Approvers": [
+                    "approvers": [
                         {
-                            "Email": "contact2@gmail.com",
-                            "Enabled": True,
-                            "Name": "Approver 1",
+                            "email": "contact2@gmail.com",
+                            "enabled": True,
+                            "name": "Approver 1",
                         },
                         {
-                            "Sequence": 2,
-                            "Name": "Approver 1",
-                            "Email": "contact2@gmail.com",
-                            "DependsOn": [1],
+                            "sequence": 2,
+                            "name": "Approver 1",
+                            "email": "contact2@gmail.com",
+                            "depends_on": [1],
                         },
                     ],
-                    "Attributes": {"key1": "value1"},
-                    "Bizapp": {
-                        "Code": "Big Prj",
-                        "Description": "This is the Big Boss project",
-                        "Name": "CMDB Record Name",
+                    "attributes": {"key1": "value1"},
+                    "bizapp": {
+                        "code": "Big Prj",
+                        "description": "This is the Big Boss project",
+                        "name": "CMDB Record Name",
                     },
-                    "Client": "eits",
-                    "Contacts": [
+                    "contacts": [
                         {
-                            "Email": "contact1@gmail.com",
-                            "Enabled": True,
-                            "Name": "Contact 1",
+                            "email": "contact1@gmail.com",
+                            "enabled": True,
+                            "name": "Contact 1",
                         }
                     ],
-                    "Owner": {"Email": "boss@gmail.com", "Name": "The Boss"},
-                    "Portfolio": "simple-cloud-kit",
-                    "Project": {
-                        "Code": "MBBP",
-                        "Description": "This business project will impact people in a big way with big blue colors",
-                        "Name": "My Big Buisness Project",
-                        "Repository": "https://github.com/eits/mbbp.git",
+                    "owner": {"email": "boss@gmail.com", "name": "The Boss"},
+                    "portfolio": "simple-cloud-kit",
+                    "project": {
+                        "code": "MBBP",
+                        "description": "This business project will impact people in a big way with big blue colors",
+                        "name": "My Big Buisness Project",
+                        "repository": "https://github.com/core/mbbp.git",
                     },
                 },
             },
         ),
     ),
     # After we register a Client and Portfolio we can register the Zone for the Portfolio
-    # Case 2
+    # Case 2 (client_id comes from the user authentication token)
     (
         (
             "POST",
-            "/api/v1/registry/eits/zone",
+            "/api/v1/registry/clients/core/zones",
             {
-                "Zone": "simple-cloud-kit-api-production",
-                "AccountFacts": {
-                    "AwsAccountId": "123456789012",
-                    "Kms": {
-                        "AwsAccountId": "123456789012",
-                        "DelegateAwsAccountIds": ["123456789012"],
+                "zone": "simple-cloud-kit-api-production",
+                "account_facts": {
+                    "aws_account_id": "123456789012",
+                    "kms": {
+                        "aws_account_id": "123456789012",
+                        "delegate_aws_account_ids": ["123456789012"],
                     },
-                    "ResourceNamespace": "{{ context.ResourceNamespace | d('core-network') }}-dev-ss",
-                    "VpcAliases": {
-                        "public": "SharedServicesVpc",
-                        "private": "SharedServicesVpc",
+                    "resource_namespace": "{{ context.ResourceNamespace | d('core-network') }}-dev-ss",
+                    "vpc_aliases": {
+                        "public": {"name": "SharedServicesVpc", "vpc_id": "vpc-12345678", "cidr": ["192.168.1.0/24"]},
+                        "private": {"name": "SharedServicesVpc", "vpc_id": "vpc-12345679", "cidr": ["192.168.2.0/24"]},
                     },
-                    "SubnetAliases": {
-                        "public": "PublicSubnet",
-                        "app": "PrivateSubnet",
-                        "private": "PrivateSubnet",
+                    "subnet_aliases": {
+                        "public": [{"name": "PublicSubnet", "subnet_id": "sn-public", "cidr": "192.168.1.0/24"}],
+                        "app": [{"name": "PrivateSubnet", "subnet_id": "sn-app", "cidr": "192.168.2.0/24"}],
+                        "private": [{"name": "PrivateSubnet", "subnet_id": "sn-private", "cidr": "192.168.3.0/24"}],
                     },
-                    "Tags": {"AppGroup": "SharedServices", "CostCenter": "TCSE0344"},
+                    "tags": {"AppGroup": "SharedServices", "CostCenter": "TCSE0344"},
                 },
-                "RegionFacts": {
+                "region_facts": {
                     "sin": {
-                        "AwsRegion": "ap-southeast-1",
-                        "AzCount": 2,
-                        "ImageAliases": {
+                        "aws_region": "ap-southeast-1",
+                        "az_count": 2,
+                        "image_aliases": {
                             "amazon-linux-2": "ami-0e2e44c03b85f58b3",
                             "amazon-linux-2_1": "ami-03faaf9cde2b38e9f",
                             "rhel-7-linux-latest": "ami-0a65c2a629181e55e",
                         },
-                        "MinSuccessfulInstancesPercent": 100,
-                        "SecurityAliases": {
+                        "min_successful_instances_percent": 100,
+                        "security_aliases": {
                             "public-internet": [
                                 {
-                                    "Type": "cidr",
-                                    "Value": "0.0.0.0/0",
-                                    "Description": "Internet",
+                                    "type": "cidr",
+                                    "value": "0.0.0.0/0",
+                                    "description": "Internet",
                                 }
                             ],
                             "intranet": [
                                 {
-                                    "Type": "cidr",
-                                    "Value": "10.0.0.0/8",
-                                    "Description": "Summary route to on-prem",
+                                    "type": "cidr",
+                                    "value": "10.0.0.0/8",
+                                    "description": "Summary route to on-prem",
                                 }
                             ],
                         },
-                        "ProxyHost": "squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net",
-                        "ProxyPort": "3128",
-                        "ProxyUrl": "http://squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net:3128",
-                        "NoProxy": "127.0.0.1,logs.ap-southeast-1.amazonaws.com,localhost,169.254.169.253,169.254.169.254,s3.ap-southeast-1.amazonaws.com,dynamodb.ap-southeast-1.amazonaws.com,s3-ap-southeast-1.amazonaws.com,cloudformation.ap-southeast-1.amazonaws.com,amazonlinux.ap-southeast-1.amazonaws.com,10.*",
-                        "SecurityGroupAliases": {},
-                        "NameServers": [
+                        "proxy_host": "squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net",
+                        "proxy_port": "3128",
+                        "proxy_url": "http://squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net:3128",
+                        "no_proxy": "127.0.0.1,logs.ap-southeast-1.amazonaws.com,localhost,169.254.169.253,169.254.169.254,s3.ap-southeast-1.amazonaws.com,dynamodb.ap-southeast-1.amazonaws.com,s3-ap-southeast-1.amazonaws.com,cloudformation.ap-southeast-1.amazonaws.com,amazonlinux.ap-southeast-1.amazonaws.com,10.*",
+                        "security_group_aliases": {},
+                        "name_servers": [
                             "10.175.112.133",
                             "10.175.112.5",
                             "10.175.112.69",
@@ -188,42 +187,42 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
-                    "Client": "eits",
-                    "Zone": "simple-cloud-kit-api-production",
-                    "AccountFacts": {
-                        "AwsAccountId": "123456789012",
-                        "Kms": {
-                            "AwsAccountId": "123456789012",
-                            "DelegateAwsAccountIds": ["123456789012"],
+                    "zone": "simple-cloud-kit-api-production",
+                    "account_facts": {
+                        "aws_account_id": "123456789012",
+                        "kms": {
+                            "aws_account_id": "123456789012",
+                            "delegate_aws_account_ids": ["123456789012"],
                         },
                     },
-                    "RegionFacts": {"sin": {"AwsRegion": "ap-southeast-1"}},
+                    "region_facts": {"sin": {"aws_region": "ap-southeast-1"}},
                 },
             },
         ),
     ),
-    # Registry of Apps
+    # Registry of Apps (client_id comes from the user authentication token)
     # Case 3
     (
         (
             "POST",
-            "/api/v1/registry/eits/simple-cloud-kit/app",
+            "/api/v1/registry/clients/core/portfolios/simple-cloud-kit/apps",
             {
-                "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                "Zone": "simple-cloud-kit-api-production",
-                "Region": "sin",
-                "Environment": "prod",
-                "Metadata": {
-                    "StaticWebsiteImageAlias": "amazonlinux-2",
+                "app": "api",
+                "app_regex": "^prn:simple-cloud-kit:api:.*:.*$",
+                "zone": "simple-cloud-kit-api-production",
+                "region": "sin",
+                "environment": "prod",
+                "metadata": {
+                    "static_website_image_alias": "amazonlinux-2",
                 },
-                "Tags": {
+                "tags": {
                     "Name": "simple-cloud-kit-api",
-                    "Client": "eits",
+                    "Client": "core",
                     "Portfolio": "simple-cloud-kit",
                     "App": "api",
                     "Color": "Blue",
@@ -231,20 +230,21 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
         (
-            200,
+            201,
             {
                 "status": "ok",
-                "code": 200,
+                "code": 201,
                 "data": {
-                    "ClientPortfolio": "eits:simple-cloud-kit",
-                    "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                    "Zone": "simple-cloud-kit-api-production",
-                    "Environment": "prod",
-                    "Metadata": {"StaticWebsiteImageAlias": "amazonlinux-2"},
-                    "Region": "sin",
-                    "Tags": {
+                    "portfolio": "simple-cloud-kit",
+                    "app": "api",
+                    "app_regex": "^prn:simple-cloud-kit:api:.*:.*$",
+                    "zone": "simple-cloud-kit-api-production",
+                    "environment": "prod",
+                    "metadata": {"static_website_image_alias": "amazonlinux-2"},
+                    "region": "sin",
+                    "tags": {
                         "Name": "simple-cloud-kit-api",
-                        "Client": "eits",
+                        "Client": "core",
                         "Portfolio": "simple-cloud-kit",
                         "App": "api",
                         "Color": "Blue",
@@ -253,145 +253,131 @@ api_endpoints: list[tuple[tuple[str, str, dict], tuple[int, dict]]] = [
             },
         ),
     ),
-    # Get The Facts
+    # Get The Facts (client and client_id come from the user authentication token)
     # Case 4
     (
-        ("GET", "/api/v1/facts/eits?prn=prn:simple-cloud-kit:api:main:1", {}),
+        ("GET", "/api/v1/facts?prn=prn:simple-cloud-kit:api:main:1", {}),
         (
             200,
             {
                 "status": "ok",
                 "code": 200,
                 "data": {
-                    "AwsAccountId": "123456789012",
-                    "Kms": {
-                        "AwsAccountId": "123456789012",
-                        "DelegateAwsAccountIds": ["123456789012"],
-                    },
-                    "ResourceNamespace": "{{ context.ResourceNamespace | d('core-network') }}-dev-ss",
-                    "SubnetAliases": {
-                        "public": "PublicSubnet",
-                        "app": "PrivateSubnet",
-                        "private": "PrivateSubnet",
-                    },
-                    "Tags": {
-                        "CostCenter": "TCSE0344",
-                        "AppGroup": "SharedServices",
-                        "Environment": "prod",
-                        "Region": "sin",
-                        "Owner": "The Boss <boss@gmail.com>",
-                        "Contacts": "Contact 1 <contact1@gmail.com>",
-                        "App": "api",
-                        "Client": "eits",
-                        "Name": "simple-cloud-kit-api",
-                        "Portfolio": "simple-cloud-kit",
-                        "Color": "Blue",
-                    },
-                    "VpcAliases": {
-                        "public": "SharedServicesVpc",
-                        "private": "SharedServicesVpc",
-                    },
-                    "MinSuccessfulInstancesPercent": 100,
-                    "ProxyUrl": "http://squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net:3128",
-                    "NoProxy": "127.0.0.1,logs.ap-southeast-1.amazonaws.com,localhost,169.254.169.253,169.254.169.254,s3.ap-southeast-1.amazonaws.com,dynamodb.ap-southeast-1.amazonaws.com,s3-ap-southeast-1.amazonaws.com,cloudformation.ap-southeast-1.amazonaws.com,amazonlinux.ap-southeast-1.amazonaws.com,10.*",
-                    "ImageAliases": {
-                        "amazon-linux-2_1": "ami-03faaf9cde2b38e9f",
-                        "rhel-7-linux-latest": "ami-0a65c2a629181e55e",
-                        "amazon-linux-2": "ami-0e2e44c03b85f58b3",
-                    },
-                    "SecurityAliases": {
-                        "public-internet": [
-                            {
-                                "Value": "0.0.0.0/0",
-                                "Type": "cidr",
-                                "Description": "Internet",
-                            }
-                        ],
-                        "intranet": [
-                            {
-                                "Value": "10.0.0.0/8",
-                                "Type": "cidr",
-                                "Description": "Summary route to on-prem",
-                            }
-                        ],
-                    },
-                    "AwsRegion": "ap-southeast-1",
-                    "ProxyHost": "squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net",
-                    "SecurityGroupAliases": {},
-                    "NameServers": ["10.175.112.133", "10.175.112.5", "10.175.112.69"],
-                    "AzCount": 2,
-                    "ProxyPort": "3128",
-                    "Approvers": [
-                        {
-                            "DependsOn": [],
-                            "Email": "contact2@gmail.com",
-                            "Enabled": True,
-                            "Name": "Approver 1",
-                            "Sequence": 1,
-                        },
-                        {
-                            "DependsOn": [1],
-                            "Email": "contact2@gmail.com",
-                            "Enabled": True,
-                            "Name": "Approver 1",
-                            "Sequence": 2,
-                        },
-                    ],
-                    "Attributes": {"key1": "value1"},
-                    "Bizapp": {
-                        "Code": "Big Prj",
-                        "Description": "This is the Big Boss project",
-                        "Name": "CMDB Record Name",
-                    },
-                    "Client": "eits",
-                    "Contacts": [
-                        {
-                            "Email": "contact1@gmail.com",
-                            "Enabled": True,
-                            "Name": "Contact 1",
-                        }
-                    ],
-                    "Owner": {"Email": "boss@gmail.com", "Name": "The Boss"},
-                    "Portfolio": "simple-cloud-kit",
-                    "Project": {
-                        "Code": "MBBP",
-                        "Description": "This business project will impact people in a big way with big blue colors",
-                        "Name": "My Big Buisness Project",
-                        "Repository": "https://github.com/eits/mbbp.git",
-                    },
-                    "AppRegex": "^prn:simple-cloud-kit:api:.*:.*$",
-                    "ClientPortfolio": "eits:simple-cloud-kit",
-                    "Environment": "prod",
-                    "Metadata": {"StaticWebsiteImageAlias": "amazonlinux-2"},
-                    "Region": "sin",
-                    "Zone": "simple-cloud-kit-api-production",
-                    "App": "api",
-                    "Branch": "main",
-                    "BranchShortName": "main",
-                    "Build": "1",
-                    "Scope": "build",
-                    "DeliveredBy": "automation",
-                    "ArtefactsBucketName": "eits-core-automation-master",
-                    "ArtefactsBucketRegion": "us-east-1",
-                    "ArtefactsBucketUrl": os.path.join(volume, "core", "eits-core-automation-master"),
-                    "ArtefactsPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main", "1"),
-                    "ArtifactBucketName": "eits-core-automation-master",
-                    "ArtifactBucketRegion": "us-east-1",
-                    "ArtifactBaseUrl": os.path.join(volume, "core", "eits-core-automation-master"),
-                    "ArtifactKeyPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main", "1"),
-                    "ArtifactKeyBuildPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main", "1"),
-                    "FilesBucketName": "eits-core-automation-master",
-                    "FilesBucketRegion": "us-east-1",
-                    "FilesBucketUrl": os.path.join(volume, "core", "eits-core-automation-master"),
-                    "PortfolioFilesPrefix": os.path.join("files", "simple-cloud-kit"),
-                    "AppFilesPrefix": os.path.join("files", "simple-cloud-kit", "api"),
-                    "BranchFilesPrefix": os.path.join("files", "simple-cloud-kit", "api", "main"),
-                    "BuildFilesPrefix": os.path.join("files", "simple-cloud-kit", "api", "main", "1"),
-                    "ArtifactKeyPortfolioPrefix": os.path.join("artefacts", "simple-cloud-kit"),
-                    "ArtifactKeyAppPrefix": os.path.join("artefacts", "simple-cloud-kit", "api"),
-                    "ArtifactKeyBranchPrefix": os.path.join("artefacts", "simple-cloud-kit", "api", "main"),
-                    "SharedFilesPrefix": os.path.join("files", "shared"),
-                },
+                    'AwsAccountId': '123456789012', 
+                    'Kms': {
+                        'AwsAccountId': '123456789012'
+                    }, 
+                    'ResourceNamespace': "{{ context.ResourceNamespace | d('core-network') }}-dev-ss", 
+                    'VpcAliases': {
+                        'public': {'Name': 'SharedServicesVpc', 'Cidr': ['192.168.1.0/24'], 'VpcId': 'vpc-12345678'}, 
+                        'private': {'Name': 'SharedServicesVpc', 'Cidr': ['192.168.2.0/24'], 'VpcId': 'vpc-12345679'}
+                    }, 
+                    'SubnetAliases': {
+                        'public': [{'Name': 'PublicSubnet', 'Cidr': '192.168.1.0/24', 'SubnetId': 'sn-public'}], 
+                        'app': [{'Name': 'PrivateSubnet', 'Cidr': '192.168.2.0/24', 'SubnetId': 'sn-app'}], 
+                        'private': [{'Name': 'PrivateSubnet', 'Cidr': '192.168.3.0/24', 'SubnetId': 'sn-private'}]
+                    }, 
+                    'Tags': {
+                        'CostCenter': 'TCSE0344', 
+                        'AppGroup': 'SharedServices', 
+                        'App': 'api', 
+                        'Client': 'core', 
+                        'Name': 'simple-cloud-kit-api', 
+                        'Portfolio': 'simple-cloud-kit', 
+                        'Color': 'Blue', 
+                        'Environment': 'prod', 
+                        'Region': 'sin', 
+                        'Owner': 'The Boss <boss@gmail.com>', 
+                        'Contacts': 'Contact 1 <contact1@gmail.com>'
+                    }, 
+                    'AwsRegion': 'ap-southeast-1', 
+                    'AzCount': 2, 'ImageAliases': {
+                        'amazon-linux-2_1': 'ami-03faaf9cde2b38e9f', 
+                        'rhel-7-linux-latest': 'ami-0a65c2a629181e55e', 
+                        'amazon-linux-2': 'ami-0e2e44c03b85f58b3'
+                    }, 
+                    'MinSuccessfulInstancesPercent': 100, 
+                    'SecurityAliases': {
+                        'public-internet': [{'Type': 'cidr', 'Value': '0.0.0.0/0', 'Description': 'Internet'}], 
+                        'intranet': [{'Type': 'cidr', 'Value': '10.0.0.0/8', 'Description': 'Summary route to on-prem'}]
+                    }, 
+                    'SecurityGroupAliases': {}, 
+                    'ProxyHost': 'squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net', 
+                    'ProxyPort': 3128, 
+                    'ProxyUrl': 'http://squid-dev-proxy-squid.dmz.dev.aws.sg.simplegroup.net:3128', 
+                    'NoProxy': '127.0.0.1,logs.ap-southeast-1.amazonaws.com,localhost,169.254.169.253,169.254.169.254,s3.ap-southeast-1.amazonaws.com,dynamodb.ap-southeast-1.amazonaws.com,s3-ap-southeast-1.amazonaws.com,cloudformation.ap-southeast-1.amazonaws.com,amazonlinux.ap-southeast-1.amazonaws.com,10.*', 
+                    'NameServers': ['10.175.112.133', '10.175.112.5', '10.175.112.69'], 
+                    'Portfolio': 'simple-cloud-kit', 
+                    'Contacts': [{'Name': 'Contact 1', 'Email': 'contact1@gmail.com', 'Enabled': True}], 
+                    'Approvers': [
+                        {'Sequence': 1, 'Name': 'Approver 1', 'Email': 'contact2@gmail.com', 
+                          'Enabled': True}, 
+                        {'Sequence': 2, 'Name': 'Approver 1', 'Email': 'contact2@gmail.com', 
+                          'Enabled': True}
+                    ], 
+                    'Project': {
+                        'Name': 'My Big Buisness Project', 
+                        'Code': 'MBBP', 
+                        'Repository': 'https://github.com/core/mbbp.git', 
+                        'Description': 'This business project will impact people in a big way with big blue colors'
+                    }, 
+                    'Bizapp': {
+                        'Name': 'CMDB Record Name', 
+                        'Code': 'Big Prj', 
+                        'Description': 'This is the Big Boss project'
+                    }, 
+                    'Owner': {
+                        'Name': 'The Boss', 'Email': 'boss@gmail.com'
+                    }, 
+                    'Attributes': {
+                        'key1': 'value1'
+                    }, 
+                    'AppCount': 0, 
+                    'App': 'api', 
+                    'AppRegex': '^prn:simple-cloud-kit:api:.*:.*$', 
+                    'Name': 'api', 
+                    'Environment': 'prod', 
+                    'Zone': 'simple-cloud-kit-api-production', 
+                    'Region': 'sin', 
+                    'Metadata': {
+                        'static_website_image_alias': 'amazonlinux-2'
+                    }, 
+                    'ClientId': 'core_669a5fdd8be7', 
+                    'Client': 'core', 
+                    'Branch': 'main', 
+                    'BranchShortName': 'main', 
+                    'Build': '1', 
+                    'Scope': 'build', 
+                    'ArtefactsBucketName': 'art-core-automation-ap-southeast-1', 
+                    'ArtefactsBucketRegion': 'ap-southeast-1', 
+                    'ArtefactsBucketUrl': '/Users/jbarwick/core/art-core-automation-ap-southeast-1', 
+                    'ArtefactsPrefix': 'artefacts/simple-cloud-kit/api/main/1', 
+                    'ArtefactKeyBuildPrefix': 'artefacts/simple-cloud-kit/api/main/1', 
+                    'ArtifactBucketName': 'art-core-automation-ap-southeast-1', 
+                    'ArtifactBucketRegion': 'ap-southeast-1', 
+                    'ArtifactBaseUrl': '/Users/jbarwick/core/art-core-automation-ap-southeast-1', 
+                    'ArtifactKeyPrefix': 'artefacts/simple-cloud-kit/api/main/1', 
+                    'ArtifactKeyBuildPrefix': 'artefacts/simple-cloud-kit/api/main/1', 
+                    'FilesBucketName': 'art-core-automation-ap-southeast-1', 
+                    'FilesBucketRegion': 'ap-southeast-1', 
+                    'FilesBucketUrl': '/Users/jbarwick/core/art-core-automation-ap-southeast-1', 
+                    'PortfolioFilesPrefix': 'files/simple-cloud-kit', 
+                    'AppFilesPrefix': 'files/simple-cloud-kit/api', 
+                    'BranchFilesPrefix': 'files/simple-cloud-kit/api/main', 
+                    'BuildFilesPrefix': 'files/simple-cloud-kit/api/main/1', 
+                    'ArtifactKeyPortfolioPrefix': 'artefacts/simple-cloud-kit', 
+                    'ArtifactKeyAppPrefix': 'artefacts/simple-cloud-kit/api',
+                    'SharedFilesPrefix': 'files/shared',
+                    'OrganizationId': 'o-1234567890',
+                    'OrganizationName': 'My Organization',
+                    'OrganizationAccount': '1234566890',
+                    'AuditAccount': '1234566890',
+                    'AutomationAccount': '1234566890',
+                    'SecurityAccount': '1234566890',
+                    'MasterRegion': 'ap-southeast-1',
+                    'ClientRegion': 'ap-southeast-1',
+                    'UiBucket': 'core-automation-ui'
+                }
             },
         ),
     ),

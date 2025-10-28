@@ -156,12 +156,12 @@ auth_client_endpoints: dict[str, RouteEndpoint] = {
         register_client,
         permit_anonymous=False,
         token_type="session",
-        permissions=[Permission.REGISTRY_CLIENT_ADMIN],
+        required_permissions={Permission.REGISTRY_CLIENT_ADMIN},
     ),
     "PUT:/api/v1/clients/{client}": RouteEndpoint(
         update_client,
         permit_anonymous=False,
         token_type="session",
-        permissions=[Permission.REGISTRY_CLIENT_ADMIN],
+        required_permissions={Permission.REGISTRY_CLIENT_ADMIN},
     ),
 }

@@ -1,4 +1,5 @@
 from collections import ChainMap
+from heapq import merge
 from time import perf_counter
 import os
 
@@ -6,6 +7,7 @@ import core_logging as log
 
 from core_db.exceptions import NotFoundException
 from core_db.registry.client import ClientActions, ClientFact
+from moto.iot.exceptions import ConflictException
 
 from core_api.security import Permission
 
@@ -19,6 +21,14 @@ class ApiRegClientActions(ApiActions, ClientActions):
 
     pass
 
+
+def _merged(query_params: dict, path_params: dict, body: dict, skip: list[str] = None) -> dict:
+    args = dict(ChainMap(path_params, query_params, body))
+    if skip:
+        for key in skip:
+            if key in args: 
+                del args[key]
+    return args
 
 def get_client_list_action(
     *, query_params: dict, path_params: dict, body: dict, security: EnhancedSecurityContext, **kwargs
@@ -40,7 +50,9 @@ def get_client_list_action(
     try:
         client_id = security.client_id
 
-        results, paginator = ApiRegClientActions.list(client_id=client_id, **dict(ChainMap(body, path_params, query_params)))
+        args = _merged(query_params, path_params, body, skip=["client_id"])   
+
+        results, paginator = ApiRegClientActions.list(client_id=client_id, **args)
         include_fields = {
             "client",
             "client_id",
@@ -90,7 +102,7 @@ def get_client_action(
 
         result = ApiRegClientActions.get(client_id=client_id, client=client)
 
-        exclude_fields = {"client_secret", "credentials"}
+        exclude_fields = {"client_secret", "credentials", "client_id"}
 
         data = result.model_dump(by_alias=False, mode="json", exclude=exclude_fields)
 
@@ -129,13 +141,12 @@ def create_client_action(
 
         if not security.client_id:
             return ErrorResponse(message="Unauthorized to create client", code=403)
+        
+        merged = _merged(query_params, path_params, body, skip=["client_id"])
+        merged["client_id"] = security.client_id
 
-        client_fact = ClientFact.model_validate(dict(ChainMap(body, path_params, query_params)))
-
-        # any new client must belong to the caller's client_id (a.k.a client group ID.  Or a.k.a oauth client id)
-        client_fact.client_id = security.client_id
-
-        result = ApiRegClientActions.create(record=client_fact)
+        record = ClientFact.model_validate(merged)
+        result = ApiRegClientActions.create(record=record)
 
         exclude_fields = {"client_secret", "credentials"}
 
@@ -144,7 +155,15 @@ def create_client_action(
         duration = (perf_counter() - start) * 1000
         log.info("registry.client.create.success", extra={"client": data.get("client"), "duration_ms": round(duration, 2)})
 
-        return SuccessResponse(data=data, message="Client created successfully")
+        return SuccessResponse(code=201, data=data)
+    
+    except ConflictException as e:  # noqa: BLE001
+        duration = (perf_counter() - start) * 1000
+        log.warning(
+            "registry.client.create.conflict",
+            extra={"error": str(e), "body_keys": list(body.keys()), "duration_ms": round(duration, 2)},
+        )
+        return ErrorResponse(code=409, message=f"Client already exists: {str(e)}")
 
     except Exception as e:  # noqa: BLE001
         duration = (perf_counter() - start) * 1000
@@ -165,8 +184,10 @@ def update_client_action(
     start = perf_counter()
     log.debug("registry.client.update.start", extra={"path_params": path_params, "body_keys": list(body.keys())})
     try:
+        merged = _merged(query_params, path_params, body, skip=["client_id"])
+        merged["client_id"] = security.client_id
 
-        client_fact = ClientFact.model_validate(dict(ChainMap(body, path_params, query_params)))
+        client_fact = ClientFact.model_validate(merged)
 
         result = ApiRegClientActions.update(record=client_fact)
 
@@ -203,7 +224,10 @@ def patch_client_action(
     log.debug("registry.client.patch.start", extra={"path_params": path_params, "body_keys": list(body.keys())})
 
     try:
-        result = ApiRegClientActions.patch(**dict(ChainMap(body, path_params, query_params)))
+        merged = _merged(query_params, path_params, body, skip=["client_id"])
+        merged["client_id"] = security.client_id
+
+        result = ApiRegClientActions.patch(**merged)
 
         exclude_fields = {"client_secret", "credentials"}
 
@@ -238,20 +262,21 @@ def delete_client_action(
     start = perf_counter()
 
     log.debug("registry.client.delete.start", extra={"path_params": path_params})
+
+    client = path_params.get("client")
+    client_id = security.client_id
+
+    if not client or not client_id:
+        return ErrorResponse(message="Client identifier is required for deletion", code=400)
+
     try:
-
-        client = path_params.get("client")
-        client_id = security.client_id
-
-        if not client or not client_id:
-            return ErrorResponse(message="Client identifier is required for deletion", code=400)
 
         ApiRegClientActions.delete(client_id=client_id, client=client)
 
         duration = (perf_counter() - start) * 1000
         log.info("registry.client.delete.success", extra={"path_params": path_params, "duration_ms": round(duration, 2)})
 
-        return SuccessResponse(message="Client deleted successfully")
+        return SuccessResponse(code=204)
 
     except Exception as e:  # noqa: BLE001
         duration = (perf_counter() - start) * 1000

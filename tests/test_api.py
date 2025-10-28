@@ -8,13 +8,6 @@ import core_framework as util
 
 from core_execute.actionlib.actions.system.no_op import NoOpActionResource
 
-from core_db.event.models import EventModel
-from core_db.item.models import ItemModel
-from core_db.registry.client.models import ClientFactsModel
-from core_db.registry.portfolio.models import PortfolioFactsModel
-from core_db.registry.app.models import AppFactsModel
-from core_db.registry.zone.models import ZoneFactsModel
-
 from core_api.api.fast_api import get_app
 
 # Fixed: Add missing imports
@@ -31,9 +24,21 @@ http_client = TestClient(get_app())
 
 from .bootstrap import *
 
+@pytest.fixture(scope="module", autouse=True)
+def user_permissions() -> dict[str, list[str]]:
+    """Define user permissions for testing.
+    
+    Emulate the 'read user permissions' from the UserProfile database.
+    
+    """
+    return {
+        "registry": ["*:read", "*:write", "*:admin"],
+        "item": ["*:read", "*:write", "*:admin"],
+        "event": ["read", "write", "admin"],
+    }
 
 @pytest.fixture(scope="module")
-def session_token() -> str:
+def session_token(user_permissions) -> str:
     """Create a session token for testing."""
     # Mock boto3.client for STS
     mock_sts_client = MagicMock()
@@ -48,6 +53,7 @@ def session_token() -> str:
 
     with patch('boto3.client') as mock_client:
         mock_client.return_value = mock_sts_client
+
         # Create a test user and get a session token
         token = create_access_token_with_sts(
             aws_credentials={
@@ -58,7 +64,7 @@ def session_token() -> str:
             client="core",
             subject="simple-cloud-kit",
             scope="sck:admin sck:read sck:write",
-            permissions={"*": Permission.SYSTEM_ADMIN},  # Use highest permission for testing
+            permissions=user_permissions,
         )
     return token
 
@@ -140,6 +146,7 @@ def teardown_action(bootstrap_dynamo):
 @pytest.mark.parametrize("http_path,expected_result", api_endpoints)
 def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action, client_headers):
     """Test API endpoints with various HTTP methods."""
+    
     assert bootstrap_dynamo  # Fixed: ensure bootstrap completed
     assert teardown_action  # Fixed: ensure teardown action is available
 
@@ -160,37 +167,45 @@ def test_app(http_path, expected_result, bootstrap_dynamo, teardown_action, clie
         else:
             assert False, f"Unknown method: {method}"
 
-        response_envelope = response.json()
+        response_envelope = response.json() if response.content else {}
+
+        assert response.status_code == expected_result[0], response_envelope
+
         expected_response = expected_result[1]
 
-        if response.status_code != expected_result[0]:
-            assert False, response_envelope["data"]["message"]
+        if "status" in expected_response:
+            assert "status" in response_envelope
+            assert response_envelope["status"] == expected_response["status"]
 
-        assert "status" in response_envelope
-        assert response_envelope["status"] == expected_response["status"]
-        assert "code" in response_envelope
-        assert response_envelope["code"] == expected_response["code"]
+        if "message" in expected_response:
+            assert "message" in response_envelope
+            assert response_envelope["message"] == expected_response["message"]
 
-        response_data = response_envelope.get("data", None)
-        expected_data = expected_response.get("data", None)
+        if "code" in expected_response:
+            assert "code" in response_envelope
+            assert response_envelope["code"] == expected_response["code"]
 
-        if isinstance(expected_data, dict):
-            for k, v in expected_data.items():
-                assert k in response_data
-                assert response_data[k] == v
 
-        elif isinstance(expected_data, list):
-            assert len(response_data) > 0
-            for i in range(len(response_data)):
-                if isinstance(expected_data[i], dict):
-                    for k, v in expected_data[i].items():
-                        assert k in response_data[i]
-                        assert response_data[i][k] == v
-                elif isinstance(expected_data[i], str):
-                    assert response_data[i] == expected_data[i]
+        def compare_dicts(expected: any, actual: any):
+            if isinstance(expected, dict):
+                for k, v in expected.items():
+                    assert k in actual, f"Missing key: {k}"
+                    compare_dicts(v, actual[k])
+            elif isinstance(expected, list):
+                assert isinstance(actual, list), f"Expected list but got {type(actual)}"
+                assert len(expected) == len(actual), f"Expected list length {len(expected)} but got {len(actual)}"
+                for exp_item, act_item in zip(expected, actual):
+                    compare_dicts(exp_item, act_item)
+            else:
+                assert expected == actual, f"Expected value {expected} but got {actual}"
+                
+        if "data" in expected_response:
+            assert "data" in response_envelope
 
-        elif isinstance(expected_data, str):
-            assert response_data == expected_data
+            response_data = response_envelope.get("data", None)
+            expected_data = expected_response.get("data", None)
+
+            compare_dicts(expected_data, response_data)
 
     except Exception as e:
         assert False, f"Error: {str(e)}"
