@@ -669,7 +669,7 @@ class ErrorResponse(Response):
         return f"ErrorResponse(code={self.code}, message={message})"
 
 
-def _build_error_chain(exc: Exception) -> list[ErrorDetail]:
+def _build_error_chain(exc: BaseException) -> list[ErrorDetail]:
     """Build a chain of error details from an exception and its causes.
 
     This function traverses the exception chain (including __cause__ and __context__)
@@ -747,14 +747,15 @@ def _build_error_chain(exc: Exception) -> list[ErrorDetail]:
 
     # Handle regular exceptions
     error_chain = []
-    while exc:
+    ext_itr: Optional[BaseException] = exc
+    while ext_itr is not None:
         error_detail = ErrorDetail(
-            type=type(exc).__name__,
-            message=str(exc),
-            track="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+            type=type(ext_itr).__name__,
+            message=str(ext_itr),
+            track="".join(traceback.format_exception(type(ext_itr), ext_itr, ext_itr.__traceback__)),
         )
         error_chain.append(error_detail)
-        exc = exc.__cause__ or exc.__context__
+        ext_itr = ext_itr.__cause__ or ext_itr.__context__
 
     return error_chain
 
@@ -1220,7 +1221,6 @@ class OAuthJWKSResponse(OAuthSuccessResponse):
 class OAuthLogoutResponse(OAuthResponse):
     """OpenID Connect RP-Initiated Logout response."""
 
-    message: str = Field(description="Logout confirmation message")
     user: Optional[str] = Field(default=None, description="User that was logged out")
 
 

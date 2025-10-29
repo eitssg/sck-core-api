@@ -54,9 +54,10 @@ def get_cognito_identity(session_token: str, role: Optional[str] = None) -> Opti
         CognitoIdentity: Identity payload suitable for inclusion in a proxy ``event``.
     """
 
-    identity_data = get_user_information(session_token, role)
+    identity_data = get_user_information(session_token, role) or {}
 
     cognito_identity = CognitoIdentity(
+        # AWS account information
         accountId=identity_data.get("Account"),
         user=identity_data.get("UserId"),
         userArn=identity_data.get("Arn"),
@@ -89,7 +90,9 @@ async def authorize_request(request: Request) -> CognitoIdentity:
     """
 
     # Your OAuth-based authentication
-    jwt_token, _ = get_authenticated_user(cookies=request.cookies, headers=request.headers)
+    headers = dict(request.headers)
+    cookies = dict(request.cookies)
+    jwt_token, _ = get_authenticated_user(cookies=cookies, headers=headers)
 
     aws_credentials = decrypt_creds(jwt_token.enc) if jwt_token and jwt_token.enc else {}
 

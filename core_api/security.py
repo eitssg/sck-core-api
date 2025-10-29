@@ -29,6 +29,7 @@ class PermissionCategory(str, Enum):
     DATA = "data"
     TASK = "task"
 
+
 class Permission(str, Enum):
     """System permissions that can be granted to users."""
 
@@ -143,6 +144,7 @@ class Role(str, Enum):
     APPROVER = "approver"
     SERVICE = "service"
 
+
 def get_matched_permissions(perm_with_wilecard: str) -> Set[str]:
     """Get all permissions that match a wildcard permission."""
     matched_permissions = set()
@@ -168,6 +170,7 @@ def get_matched_permissions(perm_with_wilecard: str) -> Set[str]:
                 matched_permissions.add(perm.value)
 
     return matched_permissions
+
 
 @dataclass
 class EnhancedSecurityContext:
@@ -327,11 +330,11 @@ def has_permission_with_wildcard(user_permissions: Set[str], required_permission
             category, action = parts[0], parts[2]
         else:
             return False
-        
+
         # Perform all actions in the category
         if f"{category}:*" in user_permissions:
             return True
-    
+
         # Perform the specific action across all categories and resoruces
         if f"*:{action}" in user_permissions:
             return True
@@ -460,10 +463,8 @@ def extract_security_context(
         # If no role ARN resolved and none provided, use default from util
         resolved_role_arn = util.get_automation_api_role_arn(write=need_write_role)
 
-    return EnhancedSecurityContext(
-        permissions=permissions,
-        roles=roles,
-        jwt_payload=jwt_payload,
-        aws_credentials=AwsCredentials.model_validate(aws_credentials),
-        role_arn=resolved_role_arn if require_aws_credentials else None,
-    )
+    ctx = EnhancedSecurityContext(permissions=permissions, roles=roles, jwt_payload=jwt_payload)
+    ctx.aws_credentials = AwsCredentials.model_validate(aws_credentials)
+    ctx.role_arn = resolved_role_arn if require_aws_credentials else None
+
+    return ctx

@@ -398,21 +398,54 @@ class CognitoIdentity(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    cognitoIdentityPoolId: Optional[str] = Field(None, description="Cognito Identity Pool ID for federated identities")
-    accountId: Optional[str] = Field(None, description="AWS account ID associated with the user")
-    cognitoIdentityId: Optional[str] = Field(None, description="Unique identifier for the Cognito identity")
-    caller: Optional[str] = Field(None, description="Identifier of the calling service or application")
-    sourceIp: Optional[str] = Field(None, description="IP address from which the request originated")
-    principalOrgId: Optional[str] = Field(None, description="AWS Organizations principal organization ID")
-    accessKey: Optional[str] = Field(None, description="AWS access key for assumed role credentials")
+    cognitoIdentityPoolId: Optional[str] = Field(
+        default=None,
+        description="Cognito Identity Pool ID for federated identities",
+    )
+    accountId: Optional[str] = Field(
+        default=None,
+        description="AWS account ID associated with the user",
+    )
+    cognitoIdentityId: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the Cognito identity",
+    )
+    caller: Optional[str] = Field(
+        default=None,
+        description="Identifier of the calling service or application",
+    )
+    sourceIp: Optional[str] = Field(
+        default=None,
+        description="IP address from which the request originated",
+    )
+    principalOrgId: Optional[str] = Field(
+        default=None,
+        description="AWS Organizations principal organization ID",
+    )
+    accessKey: Optional[str] = Field(
+        default=None,
+        description="AWS access key for assumed role credentials",
+    )
     cognitoAuthenticationType: Optional[str] = Field(
-        None,
+        default=None,
         description="Type of Cognito authentication ('authenticated' or 'unauthenticated')",
     )
-    cognitoAuthenticationProvider: Optional[str] = Field(None, description="Cognito authentication provider used for login")
-    userArn: Optional[str] = Field(None, description="AWS ARN of the authenticated user")
-    userAgent: Optional[str] = Field(None, description="HTTP User-Agent string from the client request")
-    user: Optional[str] = Field(None, description="User identifier (username, email, or user ID)")
+    cognitoAuthenticationProvider: Optional[str] = Field(
+        default=None,
+        description="Cognito authentication provider used for login",
+    )
+    userArn: Optional[str] = Field(
+        default=None,
+        description="AWS ARN of the authenticated user",
+    )
+    userAgent: Optional[str] = Field(
+        default=None,
+        description="HTTP User-Agent string from the client request",
+    )
+    user: Optional[str] = Field(
+        default=None,
+        description="User identifier (username, email, or user ID)",
+    )
 
 
 class RequestContext(BaseModel):
@@ -689,7 +722,7 @@ class ProxyEvent(BaseModel):
         method = self.httpMethod.upper()
         return f"{method}:{self.resource}"
 
-    def get_header(self, name: str, default: Optional[str] = None) -> Optional[str]:
+    def get_header(self, name: str, default: Optional[str] = None) -> tuple[str, str | None]:
         """Get header value case-insensitively.
 
         Args:

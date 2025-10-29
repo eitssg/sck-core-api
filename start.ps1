@@ -16,7 +16,7 @@ try {
     $Env:LOG_LEVEL = $LogLevel.ToUpper()
     $Env:VOLUME = "P:\core"
     $Env:LOG_PATH = "P:\core\logs"
-    $Env:CLIENT = "test-client"
+    $Env:CLIENT = "core"
 
     # Ensure directories exist
     @($Env:VOLUME, $Env:LOG_PATH) | ForEach-Object {
@@ -46,15 +46,15 @@ try {
     if (Test-Path $EnvFile) {
         $uvicornArgs += @("--env-file", $EnvFile)
         Write-Host "Using env file: $EnvFile" -ForegroundColor Yellow
-    } else {
+    }
+    else {
         Write-Host "No .env file found at: $EnvFile" -ForegroundColor DarkYellow
     }
 
     Write-Host "Starting FastAPI server..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  Client: $Env:CLIENT" -ForegroundColor Cyan
-    Write-Host "  Host: $Env:HOST" -ForegroundColor Cyan
-    Write-Host "  Port: $Env:PORT" -ForegroundColor Cyan
+    Write-Host "  Host: ${Env:HOST}:${Env:PORT}" -ForegroundColor Cyan
     Write-Host "  Log Level: $Env:LOG_LEVEL" -ForegroundColor Cyan
     Write-Host "  Volume: $Env:VOLUME" -ForegroundColor Cyan
     Write-Host "  Log Path: $Env:LOG_PATH" -ForegroundColor Cyan
@@ -63,7 +63,8 @@ try {
     # Start the server
     & uvicorn @uvicornArgs
 
-} catch {
+}
+catch {
     Write-Host "Error starting server: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
